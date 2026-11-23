@@ -110,7 +110,10 @@ test("per-job overrides are strict unless the secondary is requested, and never 
   assert.deepEqual(effectiveTtsPreferences(adopted, faber), { primary: faber, secondary: null, allow_online_fallback: false })
   assert.equal(effectiveTtsPreferences({ primary: faber, secondary: system, allow_online_fallback: false }, faber, true).policy_version, undefined)
   const saved = { primary: faber, secondary: edge, allow_online_fallback: true }
-  assert.deepEqual(effectiveTtsPreferences(saved, { engine: "edge" }, true), { primary: { engine: "edge" }, secondary: null, allow_online_fallback: false })
+  // An Edge primary override carries the saved online consent, never more than that.
+  assert.deepEqual(effectiveTtsPreferences(saved, { engine: "edge" }, true), { primary: { engine: "edge" }, secondary: null, allow_online_fallback: true })
+  assert.deepEqual(effectiveTtsPreferences({ ...saved, allow_online_fallback: false }, { engine: "edge" }), { primary: { engine: "edge" }, secondary: null, allow_online_fallback: false })
+  assert.deepEqual(effectiveTtsPreferences(saved, faber), { primary: faber, secondary: null, allow_online_fallback: false })
   assert.deepEqual(effectiveTtsPreferences(saved, { ...edge, voice: "pt-BR-AntonioNeural" }, true).secondary, edge)
   const inherited = effectiveTtsPreferences(saved, null)
   inherited.primary.engine = "edge"

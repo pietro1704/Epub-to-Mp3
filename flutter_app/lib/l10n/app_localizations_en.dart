@@ -416,7 +416,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use book-language Piper with system voice fallback';
 
   @override
-  String get ttsAllowOnlineSecondary => 'Allow online secondary';
+  String get ttsAllowOnlineSecondary => 'Allow online fallback';
 
   @override
   String get ttsOnlineSecondaryDescription =>

@@ -160,7 +160,7 @@
   "ttsNoSecondary": "None",
   "ttsSystemOffline": "System voice · Offline fallback",
   "ttsUseRecommendedDefaults": "Use book-language Piper with system voice fallback",
-  "ttsAllowOnlineSecondary": "Allow online secondary",
+  "ttsAllowOnlineSecondary": "Allow online fallback",
   "ttsOnlineSecondaryDescription": "Send failed segments to Edge only when enabled.",
   "ttsUsePreferences": "Use audio preferences",
   "ttsAllowJobSecondary": "Allow configured secondary for this conversion",

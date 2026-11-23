@@ -853,7 +853,7 @@ abstract class AppLocalizations {
   /// No description provided for @ttsAllowOnlineSecondary.
   ///
   /// In en, this message translates to:
-  /// **'Allow online secondary'**
+  /// **'Allow online fallback'**
   String get ttsAllowOnlineSecondary;
 
   /// No description provided for @ttsOnlineSecondaryDescription.

@@ -416,7 +416,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'Usar Piper según el idioma del libro con voz del sistema como alternativa';
 
   @override
-  String get ttsAllowOnlineSecondary => 'Permitir voz secundaria en línea';
+  String get ttsAllowOnlineSecondary => 'Permitir respaldo en línea';
 
   @override
   String get ttsOnlineSecondaryDescription =>

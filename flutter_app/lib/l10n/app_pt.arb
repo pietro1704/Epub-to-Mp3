@@ -156,7 +156,7 @@
   "ttsNoSecondary": "Nenhuma",
   "ttsSystemOffline": "Voz do sistema · Alternativa offline",
   "ttsUseRecommendedDefaults": "Usar Piper no idioma do livro com voz do sistema como alternativa",
-  "ttsAllowOnlineSecondary": "Permitir voz secundária online",
+  "ttsAllowOnlineSecondary": "Permitir reserva online",
   "ttsOnlineSecondaryDescription": "Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.",
   "ttsUsePreferences": "Usar preferências de áudio",
   "ttsAllowJobSecondary": "Permitir a voz secundária configurada nesta conversão",
