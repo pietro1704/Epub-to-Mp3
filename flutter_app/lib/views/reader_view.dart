@@ -1,3 +1,4 @@
+import '../services/reader/narration_pairing.dart';
 import '../models/reader_listening_position.dart';
 import '../features/reader/rich_reader_surface.dart';
 
@@ -75,6 +76,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   bool _usesPaginatedSurface = false;
   int? _visibleSourceAnchor;
   final FocusNode _focusNode = FocusNode();
+  final NarrationPairing _pairing = NarrationPairing();
+  bool? _publishedPairing;
+  bool _forceFollow = false;
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _spanKeys = {};
   String? _lastScrolledTo;
@@ -112,6 +116,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       _pageLayoutKey = null;
       _currentPage = 0;
       _committedChapterToken = token;
+      _pairing.resume();
     } else if (!spansContentEqual(oldWidget.spans, widget.spans)) {
       // Same chapter, genuinely different content (e.g. settings-driven
       // re-split). Repaginate but keep the reader near its current page.
@@ -132,7 +137,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     super.dispose();
   }
 
+  /// Turns to [page] without it counting as a manual turn (narration following).
+  void _showPage(int page) => setState(() => _currentPage = page);
+
   void advancePage() {
+    _pairing.suspendAfterManualTurn();
     if (_currentPage + 1 < _pages.length) {
       setState(() => _currentPage += 1);
     } else {
@@ -142,6 +151,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   void retreatPage() {
+    _pairing.suspendAfterManualTurn();
     if (_currentPage > 0) {
       setState(() => _currentPage -= 1);
     } else {
@@ -182,6 +192,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   Widget build(BuildContext context) {
     _publishListeningAnchor();
+    // "Go to the narrated page": resume following even if it is switched off.
+    ref.listen(readerPairRequestProvider, (_, _) {
+      _pairing.resume();
+      _forceFollow = true;
+      if (mounted) setState(() {});
+    });
     final settings = ref.watch(
       readerSettingsProvider(ref.watch(currentlyReadingBookIdProvider)),
     );
@@ -236,6 +252,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               onAutoHideChrome: widget.onAutoHideChrome,
               onNextChapter: widget.onAdvanceChapter,
               onPreviousChapter: widget.onPreviousChapter,
+              followNarration: settings.readerAutoScroll,
+              pairRequest: ref.watch(readerPairRequestProvider),
+              onPairedChanged: (paired) =>
+                  ref.read(readerNarrationPairedProvider.notifier).state = paired,
             ),
           ),
         ),
