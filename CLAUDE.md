@@ -24,8 +24,9 @@ installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
 available. If Piper is missing or persistently fails, continue with the working
 native fallback, report the active voice, retain Piper as primary and retry it
 at bounded recovery points. Explicit per-job selections remain authoritative.
-Edge fallback requires explicit consent and is disabled by default. Web native
-fallback is listening-only; MP3 export requires Piper. Installed eSpeak NG is
+Edge fallback requires explicit consent and is disabled by default. Edge as
+primary also requires that consent; without it the job is refused with an
+actionable reason. Web native fallback is listening-only; MP3 export requires Piper. Installed eSpeak NG is
 an accepted Linux fallback with its backend/voice identified. Model installation
 requires an explicit user action, except that the HTTP `converter-server` downloads a
 missing catalog voice on demand when a conversion needs it; preserve existing models
