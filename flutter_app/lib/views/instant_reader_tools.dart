@@ -14,12 +14,14 @@ extension _InstantReaderTools on _InstantReaderViewState {
     }
     final queueIndex = player.chapterIndexForPlayerIndex(playerIndex);
     if (queueIndex < 0 || queueIndex >= player.chapters.length) return null;
+    // The audio queue names a chapter by its place in the book, which is not
+    // the parser's FulltextChapter.index (that one starts at 1 for Rust books).
     final sourceIndex = player.chapters[queueIndex].index;
-    final chapter = widget.fulltext.chapters
-        .where((candidate) => candidate.index == sourceIndex)
-        .firstOrNull;
-    if (chapter == null) return null;
-    final shown = _resolveChapter(_currentChapterIndex)?.index == sourceIndex;
+    if (sourceIndex < 0 || sourceIndex >= widget.fulltext.chapters.length) {
+      return null;
+    }
+    final chapter = widget.fulltext.chapters[sourceIndex];
+    final shown = identical(_resolveChapter(_currentChapterIndex), chapter);
     var measured = shown ? _measuredRange : null;
     final audio = player.currentAudioUri;
     final seconds = player.positionSeconds;
@@ -34,11 +36,13 @@ extension _InstantReaderTools on _InstantReaderViewState {
     }
     return liveSentenceStart(
           chapter: chapter,
+          position: sourceIndex,
           measured: measured,
           liveSentenceId: shown ? _liveSentenceId : null,
         ) ??
         estimatedSentenceStart(
           chapter: chapter,
+          position: sourceIndex,
           seconds: seconds,
           durationSeconds: player.durationSeconds,
         );

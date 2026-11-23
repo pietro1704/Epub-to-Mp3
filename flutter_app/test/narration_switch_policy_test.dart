@@ -108,35 +108,39 @@ void main() {
 
 void _estimateTests() {
   final chapter = FulltextChapter(
-    index: 1,
+    index: 9,
     text: 'One here now. Two comes next. Three follows after. Four ends it.',
   );
 
   test('estimate picks the sentence at the same fraction of the text', () {
     final start = estimatedSentenceStart(
       chapter: chapter,
+      position: 4,
       seconds: 5,
       durationSeconds: 10,
     );
-    expect(start?.chapterIndex, 1);
+    expect(start?.chapterIndex, 4, reason: 'the book position, not FulltextChapter.index');
     final spoken = String.fromCharCodes(chapter.text.runes.skip(start!.textOffset));
     expect(spoken.startsWith('Three') || spoken.startsWith('Two'), isTrue);
   });
 
   test('estimate starts at the first sentence at time zero', () {
-    final start = estimatedSentenceStart(chapter: chapter, seconds: 0, durationSeconds: 10);
+    final start = estimatedSentenceStart(chapter: chapter,
+      position: 4, seconds: 0, durationSeconds: 10);
     expect(start?.textOffset, 0);
   });
 
   test('estimate is null without a known duration', () {
-    expect(estimatedSentenceStart(chapter: chapter, seconds: 4, durationSeconds: 0), isNull);
-    expect(estimatedSentenceStart(chapter: chapter, seconds: double.nan, durationSeconds: 10), isNull);
+    expect(estimatedSentenceStart(chapter: chapter,
+      position: 4, seconds: 4, durationSeconds: 0), isNull);
+    expect(estimatedSentenceStart(chapter: chapter,
+      position: 4, seconds: double.nan, durationSeconds: 10), isNull);
   });
 }
 
 void _liveSentenceTests() {
   final chapter = FulltextChapter(
-    index: 2,
+    index: 9,
     text: 'First sentence here. Second sentence follows. Third one ends.',
   );
 
@@ -144,10 +148,11 @@ void _liveSentenceTests() {
     final second = chapter.text.indexOf('sentence follows');
     final start = liveSentenceStart(
       chapter: chapter,
+      position: 4,
       measured: TextRange(start: second, end: second + 8),
       liveSentenceId: null,
     );
-    expect(start?.chapterIndex, 2);
+    expect(start?.chapterIndex, 4, reason: 'the book position, not FulltextChapter.index');
     expect(chapter.text.runes.skip(start!.textOffset).take(6), 'Second'.runes);
   });
 
@@ -156,22 +161,25 @@ void _liveSentenceTests() {
     final second = spans[1];
     final start = liveSentenceStart(
       chapter: chapter,
+      position: 4,
       measured: null,
       liveSentenceId: second.id,
     );
-    expect(start?.chapterIndex, 2);
+    expect(start?.chapterIndex, 4, reason: 'the book position, not FulltextChapter.index');
     expect(start?.textOffset, second.startChar);
     expect(chapter.text.runes.skip(start!.textOffset).take(6), 'Second'.runes);
   });
 
   test('live sentence start is null without audible text or outside it', () {
     expect(
-      liveSentenceStart(chapter: chapter, measured: null, liveSentenceId: null),
+      liveSentenceStart(chapter: chapter,
+      position: 4, measured: null, liveSentenceId: null),
       isNull,
     );
     expect(
       liveSentenceStart(
         chapter: chapter,
+      position: 4,
         measured: const TextRange(start: 9999, end: 10000),
         liveSentenceId: null,
       ),

@@ -30,8 +30,11 @@ ReaderListeningPosition? narrationSwitchRestartPosition({
 /// Exact source position of the sentence being spoken in [chapter]: the
 /// measured speech range when alignment exists, otherwise the live sentence.
 /// Returns null when neither is known or does not fit the chapter text.
+/// [position] is the chapter's place in the book (the axis of the audio queue
+/// and of listening starts), not the parser's `FulltextChapter.index`.
 ReaderListeningPosition? liveSentenceStart({
   required FulltextChapter chapter,
+  required int position,
   required TextRange? measured,
   required String? liveSentenceId,
 }) {
@@ -39,14 +42,14 @@ ReaderListeningPosition? liveSentenceStart({
     if (measured != null) {
       // The measured range is the spoken word; resume at its sentence start.
       final word = ReaderListeningPosition.fromUtf16(
-        chapter.index,
+        position,
         chapter.text,
         measured.start,
       );
       var start = word;
       for (final span in chapter.splitSentences()) {
         final candidate = ReaderListeningPosition.fromDisplayScalar(
-          chapter.index,
+          position,
           chapter.text,
           span.startChar,
         );
@@ -61,7 +64,7 @@ ReaderListeningPosition? liveSentenceStart({
         .firstOrNull;
     if (span == null) return null;
     return ReaderListeningPosition.fromDisplayScalar(
-      chapter.index,
+      position,
       chapter.text,
       span.startChar,
     );
@@ -75,6 +78,7 @@ ReaderListeningPosition? liveSentenceStart({
 /// [seconds] sits in the chapter audio. Returns null for unknown durations.
 ReaderListeningPosition? estimatedSentenceStart({
   required FulltextChapter chapter,
+  required int position,
   required double seconds,
   required double durationSeconds,
 }) {
@@ -95,7 +99,7 @@ ReaderListeningPosition? estimatedSentenceStart({
   }
   try {
     return ReaderListeningPosition.fromDisplayScalar(
-      chapter.index,
+      position,
       chapter.text,
       chosen.startChar,
     );
