@@ -188,5 +188,6 @@
   "errorRateLimited": "El servicio de voz está ocupado. Inténtalo de nuevo en un momento.",
   "errorInputUnreadable": "No se pudo leer este libro. El archivo puede estar dañado.",
   "errorUnsupportedInput": "Este tipo de archivo no es compatible.",
-  "errorConversionGeneric": "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros."
+  "errorConversionGeneric": "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros.",
+  "errorEdgeConsentRequired": "Edge es una voz en línea. Activa “Permitir respaldo en línea” en Ajustes para usarla o elige una voz sin conexión."
 }

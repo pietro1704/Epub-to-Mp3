@@ -1041,6 +1041,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The book could not be converted to audio. Please try again. Technical details are available in the logs.'**
   String get errorConversionGeneric;
+
+  /// No description provided for @errorEdgeConsentRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Edge is an online voice. Turn on “Allow online fallback” in Settings to use it, or choose an offline voice.'**
+  String get errorEdgeConsentRequired;
 }
 
 class _AppLocalizationsDelegate

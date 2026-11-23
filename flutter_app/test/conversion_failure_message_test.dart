@@ -33,7 +33,7 @@ void main() {
         'invalid_selection', 'synthesis_timeout', 'edge_failed', 'rate_limited', 'input_unreadable',
         'unsupported_input', 'invalid_audio', 'synthesis_failed', 'platform_speech_failed',
         'audio_output', 'storage', 'io', 'job_state', 'text_coverage', 'conversion_control',
-        'book_language_uncertain',
+        'book_language_uncertain', 'edge_consent_required',
       ];
       for (final language in ['en', 'pt', 'es']) {
         final t = await _l10n(language);
@@ -65,6 +65,26 @@ void main() {
         localizedConversionFailure(es, Exception(_coded('x', 'synthesis_timeout'))),
         endsWith('La voz tardó demasiado en responder. Inténtalo de nuevo.'),
       );
+    });
+
+    test('the Edge consent refusal cites the Settings option, with or without a code', () async {
+      const marker =
+          'Edge needs consent [[edge_consent_required_v1]]{"engine":"edge","role":"primary"}[[/edge_consent_required_v1]]';
+      for (final (language, option) in [
+        ('en', 'Allow online fallback'),
+        ('pt', 'Permitir reserva online'),
+        ('es', 'Permitir respaldo en línea'),
+      ]) {
+        final t = await _l10n(language);
+        final withCode = localizedConversionFailure(
+          t,
+          Exception(_coded(marker, 'edge_consent_required')),
+        );
+        final withoutCode = localizedConversionFailure(t, Exception(marker));
+        expect(withCode, contains(option), reason: language);
+        expect(withoutCode, withCode, reason: 'works before the converter appends codes');
+        expect(withCode, isNot(contains('role')), reason: 'no raw evidence is shown');
+      }
     });
 
     test('a job that merely stopped reports nothing', () async {

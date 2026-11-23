@@ -529,4 +529,8 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get errorConversionGeneric =>
       'No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros.';
+
+  @override
+  String get errorEdgeConsentRequired =>
+      'Edge es una voz en línea. Activa “Permitir respaldo en línea” en Ajustes para usarla o elige una voz sin conexión.';
 }

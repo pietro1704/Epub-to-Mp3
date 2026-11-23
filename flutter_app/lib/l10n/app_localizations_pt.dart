@@ -528,4 +528,8 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get errorConversionGeneric =>
       'Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.';
+
+  @override
+  String get errorEdgeConsentRequired =>
+      'Edge é uma voz online. Ative “Permitir reserva online” nos Ajustes para usá-la ou escolha uma voz offline.';
 }

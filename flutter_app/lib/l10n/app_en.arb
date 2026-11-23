@@ -192,5 +192,6 @@
   "errorRateLimited": "The voice service is busy. Please try again in a moment.",
   "errorInputUnreadable": "This book could not be read. The file may be damaged.",
   "errorUnsupportedInput": "This kind of file is not supported.",
-  "errorConversionGeneric": "The book could not be converted to audio. Please try again. Technical details are available in the logs."
+  "errorConversionGeneric": "The book could not be converted to audio. Please try again. Technical details are available in the logs.",
+  "errorEdgeConsentRequired": "Edge is an online voice. Turn on “Allow online fallback” in Settings to use it, or choose an offline voice."
 }
