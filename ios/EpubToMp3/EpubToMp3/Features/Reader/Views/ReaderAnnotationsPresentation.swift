@@ -135,6 +135,9 @@ private func play(from range: NSRange) {
     guard valid(range),
           let source = document.activePreparedChapter?.chapter ?? document.fulltext?.chapters[safe: document.selectedChapter],
           let ratio = ReaderSavedHighlights.playbackRatio(selection: range, rendered: textView.text, source: source.text) else { return }
+    // Play from here leaves the selection mode: no selection stays behind the narration and the edit menu closes.
+    textView.selectedRange = NSRange(location: range.location, length: 0)
+    textView.resignFirstResponder()
     onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
 private func toggleHighlight(_ selection: ReaderHighlightEditor.Selection) {

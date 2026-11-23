@@ -109,6 +109,8 @@ private func currentSelection(_ sender: NSMenuItem) -> ReaderHighlightEditor.Sel
           let source = chapter(at: selectedChapter),
           let ratio = ReaderSavedHighlights.playbackRatio(selection: highlightEditor.playbackRange(for: selection, in: storage),
               rendered: textView.string, source: source.text) else { return }
+    // Play from here leaves the selection mode: no selection stays behind the narration.
+    textView.setSelectedRange(NSRange(location: textView.selectedRange().location, length: 0))
     onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
 
