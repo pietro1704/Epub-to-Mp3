@@ -1,0 +1,4 @@
+* whole class
+testConfirmedOutputDisappearsImmediatelyOnPauseAndSeek
+testExpandedSliderCommitsArbitraryPositionAndLatestSeekWins
+testFifteenSecondCommandsAndChapterBoundariesPreservePause

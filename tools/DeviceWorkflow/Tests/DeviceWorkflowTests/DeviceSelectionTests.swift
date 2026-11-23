@@ -62,6 +62,23 @@ final class DeviceSelectionTests: XCTestCase {
             environment: ["IOS_TESTS": "EpubToMp3Tests/ReaderListeningSessionTests"]))
     }
 
+    func testAuditedClassesComeFromOneFilePerClassUnderTheRepositoryRoot() throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("audited-\(UUID().uuidString)")
+        let directory = scratch.appendingPathComponent("tools/DeviceWorkflow/Audited")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try "# comment\ntestOne\ntestTwo\n".write(to: directory.appendingPathComponent("FreshTests.txt"), atomically: true, encoding: .utf8)
+        try "* whole class\ntestA\ntestB\n".write(to: directory.appendingPathComponent("WholeTests.txt"), atomically: true, encoding: .utf8)
+        func filters(_ value: String) throws -> Options {
+            try Options(arguments: ["test"], root: scratch, environment: ["IOS_TESTS": value])
+        }
+        XCTAssertEqual(try filters("EpubToMp3Tests/FreshTests/testOne").expectedTestCount, 1)
+        XCTAssertThrowsError(try filters("EpubToMp3Tests/FreshTests/testMissing"))
+        XCTAssertThrowsError(try filters("EpubToMp3Tests/FreshTests"), "A partially audited class needs exact methods")
+        XCTAssertEqual(try filters("EpubToMp3Tests/WholeTests").expectedTestCount, 2)
+        XCTAssertThrowsError(try filters("EpubToMp3Tests/Unaudited/testX"))
+    }
+
     func testExactMethodSelectorRemainsLiteral() throws {
         let selector = "EpubToMp3Tests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"
         let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
