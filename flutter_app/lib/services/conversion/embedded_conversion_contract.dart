@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
 import 'model_install/model_install_models.dart';
 import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
 import 'embedded_conversion_result.dart';
@@ -60,6 +61,19 @@ abstract interface class EmbeddedConverter {
   );
   Future<String> ttsModels() =>
       throw EmbeddedConverterUnavailable('TTS model catalog is unavailable');
+
+  /// Base languages with at least one catalog model on this platform.
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages();
+
+  /// Rust's answer to "which narration plays this book language". Pure; never
+  /// downloads (`docs/models-by-language-contract.md`).
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  );
+
+  /// What Rust detects in the book file. Blocking natively; implementations run
+  /// it off the UI thread.
+  Future<BookLanguageAnalysis> bookLanguage(String path);
   Future<String> ttsDefaultEngine({
     required String language,
     required String platform,
