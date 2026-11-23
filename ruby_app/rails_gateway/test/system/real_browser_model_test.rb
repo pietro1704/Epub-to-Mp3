@@ -16,6 +16,8 @@ class RealBrowserModelTest < ApplicationSystemTestCase
     assert_runtime_ready
     assert_no_selector "meta[name=conversion-test-fixture]", visible: :all
     assert_empty requests
+    # #1318 moved the installer into the collapsed "Model downloads" section.
+    find("summary", text: "Model downloads").click
     click_button "Install selected model"
     assert_selector "[data-install-state=installed]", wait: 150
     assert_equal [ "huggingface.co", "us.aws.cdn.hf.co" ], requests.uniq.sort
