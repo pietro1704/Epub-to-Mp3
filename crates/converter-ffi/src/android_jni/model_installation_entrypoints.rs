@@ -230,7 +230,9 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
 }
 
 // Model install operation: the handle crosses JNI as a `jlong` owned by the
-// Kotlin channel until `nativeTtsModelInstallOperationFree`.
+// Kotlin channel until `nativeTtsModelInstallOperationFree`. Create returns the
+// handle, 0 on error (see `nativeLastError`) and -1 when a recover has nothing
+// to resume.
 
 fn install_operation_ptr(handle: jlong) -> *mut ConverterModelInstallOperation {
     handle as usize as *mut ConverterModelInstallOperation
@@ -287,6 +289,14 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
                     )
                 }
             };
+            if handle.is_null() {
+                // No error set means a recover found nothing to resume.
+                return if LAST_ERROR.with(|error| error.borrow().is_none()) {
+                    -1
+                } else {
+                    0
+                };
+            }
             handle as usize as jlong
         },
     )

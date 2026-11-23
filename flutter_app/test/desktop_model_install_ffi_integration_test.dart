@@ -27,7 +27,7 @@ void main() {
     );
     addTearDown(operation.dispose);
 
-    final plan = operation.plan();
+    final plan = await operation.plan();
     expect(plan.modelId, modelId);
     expect(plan.ready, isTrue);
     expect(plan.requiredBytes, greaterThan(1000000));
@@ -48,16 +48,16 @@ void main() {
 
     // The same model cannot be installed twice at once.
     expect(
-      () => operations.begin(modelId: modelId, root: root.path, availableBytes: 1 << 40),
+      () async => operations.begin(modelId: modelId, root: root.path, availableBytes: 1 << 40),
       throwsA(isA<ModelInstallBindingError>().having((e) => e.message, 'message', contains('duplicate'))),
     );
 
-    operation.recordProgress(0, 1234);
-    expect(operation.event().bytesCompleted, 1234);
-    expect(operation.event().stage, ModelInstallStage.downloading);
+    await operation.recordProgress(0, 1234);
+    expect((await operation.event()).bytesCompleted, 1234);
+    expect((await operation.event()).stage, ModelInstallStage.downloading);
 
-    operation.cancel();
-    expect(operation.event().stage, ModelInstallStage.cancelled);
+    await operation.cancel();
+    expect((await operation.event()).stage, ModelInstallStage.cancelled);
   }, skip: skip);
 
   test('a preflight with too little space is refused by the converter', () async {
@@ -68,7 +68,7 @@ void main() {
     );
     final operation = operations.begin(modelId: modelId, root: root.path, availableBytes: 1024);
     addTearDown(operation.dispose);
-    final plan = operation.plan();
+    final plan = await operation.plan();
     expect(plan.ready, isFalse);
     expect(plan.event.stage, ModelInstallStage.failed);
     expect(plan.event.failure?.kind, isNotEmpty);

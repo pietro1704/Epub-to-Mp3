@@ -160,6 +160,15 @@ internal class ConversionModelChannels(
                         }
                     }
                 }
+                "modelInstallOperation" -> {
+                    val operation = call.argument<String>("op")
+                    val handle = call.argument<Number>("handle")?.toLong() ?: 0L
+                    if (operation == null) {
+                        result.error("BAD_ARGS", "op is required", null)
+                    } else {
+                        runInstallOperation(result) { installOperation(operation, handle, call) }
+                    }
+                }
                 "piperSynthesize" -> {
                     val text = call.argument<String>("text").orEmpty()
                     val output = call.argument<String>("output").orEmpty()
@@ -236,6 +245,70 @@ internal class ConversionModelChannels(
                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, error, null)
                 else result.success(value)
             }
+        }
+    }
+
+    // Operations on a model install are short and ordered, so they get their own
+    // thread instead of queueing behind a long conversion.
+    private val installExecutor: java.util.concurrent.ExecutorService = Executors.newSingleThreadExecutor()
+
+    fun close() {
+        installExecutor.shutdown()
+    }
+
+    private fun runInstallOperation(result: MethodChannel.Result, action: () -> Any?) {
+        try {
+            installExecutor.execute {
+                try {
+                    val value = action()
+                    activity.runOnUiThread { result.success(value) }
+                } catch (error: Throwable) {
+                    activity.runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                }
+            }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            result.error("ACTIVITY_DESTROYED", "Activity closed before the request completed", null)
+        }
+    }
+
+    /** Returns the JSON/path/handle result, or throws with the converter's last error. */
+    private fun installOperation(operation: String, handle: Long, call: io.flutter.plugin.common.MethodCall): Any? = with(activity) {
+        fun <T> converterValue(value: T?): T = value ?: throw IllegalStateException(nativeLastError())
+        fun ensure(ok: Boolean) { if (!ok) throw IllegalStateException(nativeLastError()) }
+        when (operation) {
+            "create", "recover" -> {
+                val modelId = call.argument<String>("modelId")
+                val root = call.argument<String>("root")
+                val available = call.argument<Number>("availableBytes")?.toLong() ?: 0L
+                if (modelId.isNullOrBlank() || root.isNullOrBlank()) throw IllegalArgumentException("modelId and root are required")
+                val created = nativeTtsModelInstallOperationCreate(modelId, root, available, operation == "recover")
+                if (created == 0L) throw IllegalStateException(nativeLastError())
+                created // -1 means a recover found nothing to resume.
+            }
+            "plan" -> converterValue(nativeTtsModelInstallOperationPlan(handle))
+            "event" -> converterValue(nativeTtsModelInstallOperationEvent(handle))
+            "recordProgress" -> {
+                ensure(nativeTtsModelInstallOperationRecordProgress(
+                    handle, call.argument<Int>("index") ?: -1, call.argument<Number>("bytes")?.toLong() ?: -1L))
+                null
+            }
+            "accept" -> {
+                ensure(nativeTtsModelInstallOperationAccept(handle, call.argument<Int>("index") ?: -1, call.argument<String>("path").orEmpty()))
+                null
+            }
+            "publish" -> converterValue(nativeTtsModelInstallOperationPublish(handle))
+            "fail" -> {
+                ensure(nativeTtsModelInstallOperationFail(handle, call.argument<String>("kind").orEmpty(), call.argument<String>("message").orEmpty()))
+                null
+            }
+            "cancel" -> { nativeTtsModelInstallOperationCancel(handle); null }
+            "free" -> { nativeTtsModelInstallOperationFree(handle); null }
+            "freeBytes" -> {
+                val root = call.argument<String>("root").orEmpty()
+                val directory = java.io.File(root).let { if (it.exists()) it else it.parentFile ?: it }
+                android.os.StatFs(directory.absolutePath).availableBytes
+            }
+            else -> throw IllegalArgumentException("unknown install operation $operation")
         }
     }
 

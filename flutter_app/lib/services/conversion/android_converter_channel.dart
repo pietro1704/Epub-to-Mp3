@@ -8,8 +8,9 @@ import 'package:flutter/services.dart';
 
 import '../../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
+import 'model_install/android_model_install_operations.dart';
 import 'model_install/model_install_models.dart';
-import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
+import 'model_install/model_install_runner.dart';
 import 'embedded_conversion_result.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/android_speech_fallback.dart';
