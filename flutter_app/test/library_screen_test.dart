@@ -143,7 +143,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.sort));
     await tester.pumpAndSettle();
 
-    expect(find.text('Last opened'), findsOneWidget);
+    expect(find.text('Recently played'), findsOneWidget);
     expect(find.text('Title'), findsOneWidget);
     expect(find.text('Date added'), findsOneWidget);
   });

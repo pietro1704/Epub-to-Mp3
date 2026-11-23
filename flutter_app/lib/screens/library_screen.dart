@@ -19,6 +19,8 @@ import '../services/linux_book_import.dart';
 import '../services/storage/library_store.dart';
 import '../state/providers.dart';
 import '../views/tag_editor_sheet.dart';
+import '../services/playback/playback_recency_recorder.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 part 'library_book_tile.dart';
 part 'library_filter_controls.dart';
@@ -28,7 +30,45 @@ final libraryStoreProvider = ChangeNotifierProvider<LibraryStore>((ref) {
   return LibraryStore(prefs: prefs, metadataReader: readEpubMetadata);
 });
 
-enum _SortMode { lastOpened, title, dateAdded }
+enum _SortMode { lastPlayed, title, dateAdded }
+
+const _sortModePreferenceKey = 'library.sortMode.v1';
+
+_SortMode _savedSortMode(SharedPreferences prefs) {
+  final stored = prefs.getString(_sortModePreferenceKey);
+  return _SortMode.values.firstWhere(
+    (mode) => mode.name == stored,
+    orElse: () => _SortMode.lastPlayed,
+  );
+}
+
+/// Orders the library as Apple does: played books by last audible playback,
+/// then the never-played ones by date added. Opening a book never reorders.
+List<BookEntity> sortBooksByRecentPlayback(List<BookEntity> books) =>
+    List.of(books)..sort((a, b) {
+      final aPlayed = a.lastPlayedAt;
+      final bPlayed = b.lastPlayedAt;
+      if (aPlayed != null && bPlayed != null) {
+        final byPlayed = bPlayed.compareTo(aPlayed);
+        if (byPlayed != 0) return byPlayed;
+      } else if (aPlayed != null) {
+        return -1;
+      } else if (bPlayed != null) {
+        return 1;
+      }
+      return b.addedAt.compareTo(a.addedAt);
+    });
+
+/// Records playback recency for the book whose audio is audible.
+final playbackRecencyProvider = Provider<PlaybackRecencyRecorder>((ref) {
+  final recorder = PlaybackRecencyRecorder(
+    player: ref.watch(globalAudioPlayerProvider),
+    bookId: () => ref.read(currentlyPlayingBookIdProvider),
+    onPlayed: (bookId) => ref.read(libraryStoreProvider).recordPlayback(bookId),
+  );
+  ref.onDispose(recorder.dispose);
+  return recorder;
+});
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -38,7 +78,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  _SortMode _sortMode = _SortMode.lastOpened;
+  late _SortMode _sortMode = _savedSortMode(ref.read(sharedPrefsProvider));
   String? _selectedTag;
   String _searchQuery = '';
 
@@ -273,12 +313,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       }).toList();
     }
     switch (_sortMode) {
-      case _SortMode.lastOpened:
-        base.sort((a, b) {
-          final aDate = a.lastOpenedAt ?? a.addedAt;
-          final bDate = b.lastOpenedAt ?? b.addedAt;
-          return bDate.compareTo(aDate);
-        });
+      case _SortMode.lastPlayed:
+        base = sortBooksByRecentPlayback(base);
       case _SortMode.title:
         base.sort(
           (a, b) => a.resolvedTitle.toLowerCase().compareTo(
@@ -307,9 +343,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             child: PopupMenuButton<_SortMode>(
               icon: const Icon(Icons.sort),
               tooltip: t.sortLibrary,
-              onSelected: (mode) => setState(() => _sortMode = mode),
+              onSelected: (mode) {
+                ref
+                    .read(sharedPrefsProvider)
+                    .setString(_sortModePreferenceKey, mode.name);
+                setState(() => _sortMode = mode);
+              },
               itemBuilder: (_) => [
-                _sortItem(t.sortLastOpened, _SortMode.lastOpened),
+                _sortItem(t.sortLastPlayed, _SortMode.lastPlayed),
                 _sortItem(t.sortTitle, _SortMode.title),
                 _sortItem(t.sortDateAdded, _SortMode.dateAdded),
               ],

@@ -41,6 +41,9 @@ class BookEntity {
   final DateTime addedAt;
   DateTime? lastOpenedAt;
 
+  /// Last moment audio of this book was audible. Opening a book never sets it.
+  DateTime? lastPlayedAt;
+
   int? lastChapterIndex;
   double? lastPositionSeconds;
 
@@ -64,6 +67,7 @@ class BookEntity {
     required this.displayFilename,
     required this.addedAt,
     this.lastOpenedAt,
+    this.lastPlayedAt,
     this.lastChapterIndex,
     this.lastPositionSeconds,
     this.coverBase64,
@@ -92,6 +96,7 @@ class BookEntity {
         'addedAt': addedAt.toIso8601String(),
         if (lastOpenedAt != null)
           'lastOpenedAt': lastOpenedAt!.toIso8601String(),
+        if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt!.toIso8601String(),
         if (lastChapterIndex != null) 'lastChapterIndex': lastChapterIndex,
         if (lastPositionSeconds != null)
           'lastPositionSeconds': lastPositionSeconds,
@@ -111,6 +116,9 @@ class BookEntity {
             DateTime.fromMillisecondsSinceEpoch(0),
         lastOpenedAt: json['lastOpenedAt'] is String
             ? DateTime.tryParse(json['lastOpenedAt'] as String)
+            : null,
+        lastPlayedAt: json['lastPlayedAt'] is String
+            ? DateTime.tryParse(json['lastPlayedAt'] as String)
             : null,
         lastChapterIndex: (json['lastChapterIndex'] as num?)?.toInt(),
         lastPositionSeconds:

@@ -78,7 +78,7 @@
     }
   },
 
-  "sortLastOpened": "Último abierto",
+  "sortLastPlayed": "Reproducidos recientemente",
   "sortTitle": "Título",
   "sortDateAdded": "Fecha de adición",
   "libraryEmptyDesc": "Toca + para importar un EPUB o PDF, o comparte uno desde otra app.",
