@@ -1,4 +1,5 @@
 #if os(iOS)
+import AVFoundation
 import UIKit
 import XCTest
 @testable import EpubToMp3
@@ -46,6 +47,140 @@ final class TocDownloadRefreshTests: XCTestCase {
         try await assertRetainedDownloadInContents(sharedBookContents: true)
     }
 
+    func testColdReaderContentsButtonSynthesizesChapterAndPublishesMP3() async throws {
+        try await assertColdDownload(invalidateSource: false)
+    }
+
+    func testColdContentsKeepsDownloadAvailableAfterSourceFailure() async throws {
+        try await assertColdDownload(invalidateSource: true)
+    }
+
+    private func assertColdDownload(invalidateSource: Bool) async throws {
+        if !invalidateSource && ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] != "1" {
+            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for the installed-system-voice Download journey.")
+        }
+        let suite = "ColdTOC-\(UUID().uuidString)"
+        let (book, library) = try importDownloadFixture(named: suite)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let settings = AppSettings(defaults: defaults)
+        settings.selectPrimaryNarration(.systemDefault)
+        settings.selectSecondaryNarration(nil)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let store = LocalAudioArtifactStore.shared
+        addTeardownBlock {
+            try await store.removeAllAudio(bookID: book.id)
+            try await RustConversionOutputStore.shared.removeAudio(bookID: book.id)
+        }
+        let retainedBefore = try await store.downloadedChapterIndices(bookID: book.id)
+        let publishedBefore = try await store.downloadedChapterIndicesInFiles(bookID: book.id)
+        let playableBefore = try await store.playableSnapshot(bookID: book.id, engine: "local", voice: "auto", language: nil)
+        XCTAssertTrue(retainedBefore.isEmpty && publishedBefore.isEmpty)
+        XCTAssertTrue(playableBefore?.playableChapters.isEmpty ?? true)
+
+        let playingKey = AudioPlayer.currentBookIDDefaultsKey
+        let saved = [playingKey, ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                     AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey,
+                     "readerWarmBookIDs.v1"].map { ($0, UserDefaults.standard.object(forKey: $0)) }
+        defer {
+            player.stop()
+            for (key, value) in saved { UserDefaults.standard.set(value, forKey: key) }
+            LocalFulltextCache.evict(bookId: book.id)
+            ReaderProgressStore.evict(bookId: book.id)
+        }
+        let reader = BookOpenScreenController(book: book, library: library, settings: settings,
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), player: player,
+            sessionDefaults: defaults)
+        let (window, previousWindow) = try showContents(reader)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !reader.isLoadingBookContent && reader.playbackChapterEstimates.count == 1
+        }, object: nil)
+        await fulfillment(of: [ready], timeout: 10)
+        reader.perform(NSSelectorFromString("presentTOC"))
+        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            reader.presentedViewController?.viewIfLoaded?.window === window
+        }, object: nil)
+        await fulfillment(of: [presented], timeout: 5)
+        let navigation = try XCTUnwrap(reader.presentedViewController as? UINavigationController)
+        let contents = try XCTUnwrap(navigation.topViewController as? TocScreenController)
+        let chapter = IndexPath(row: 0, section: 0)
+        let available = try await waitForVisibleChapter(in: contents, window: window, at: chapter) {
+            $0.accessoryView?.accessibilityLabel == L10n.string("player.downloadChapter")
+        }
+        XCTAssertTrue(available)
+        let download = try XCTUnwrap(contents.tableView.cellForRow(at: chapter)?.accessoryView as? UIButton)
+        if invalidateSource {
+            let imported = try await library.openBookFileAsync(id: book.id)
+            let ownedRoot = FileManager.default.temporaryDirectory.appendingPathComponent(suite).resolvingSymlinksInPath()
+            guard imported.resolvingSymlinksInPath().path.hasPrefix(ownedRoot.path + "/") else {
+                return XCTFail("Expected the isolated test library copy.")
+            }
+            try FileManager.default.removeItem(at: imported)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: imported.path))
+        }
+        download.sendActions(for: .touchUpInside)
+        XCTAssertEqual(contents.navigationItem.prompt, L10n.string("toc.audioPreparing"))
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard contents.navigationItem.prompt == nil else { return false }
+            if invalidateSource {
+                guard let alert = contents.presentedViewController as? UIAlertController else { return false }
+                return alert.title == L10n.string("player.downloadFailed") && alert.viewIfLoaded?.window === window
+            }
+            return true
+        }, object: nil)
+        await fulfillment(of: [finished], timeout: 30)
+        let folder = try XCTUnwrap(DownloadedAudioFilesMirror.userVisible?.root)
+            .appendingPathComponent(book.resolvedTitle, isDirectory: true)
+        if invalidateSource {
+            let alert = try XCTUnwrap(contents.presentedViewController as? UIAlertController)
+            await withCheckedContinuation { continuation in
+                alert.dismiss(animated: false) { continuation.resume() }
+            }
+            XCTAssertNil(contents.presentedViewController)
+            let retained = try await store.downloadedChapterIndices(bookID: book.id)
+            let published = try await store.downloadedChapterIndicesInFiles(bookID: book.id)
+            XCTAssertTrue(retained.isEmpty && published.isEmpty)
+            if FileManager.default.fileExists(atPath: folder.path) {
+                let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+                XCTAssertFalse(files.contains { $0.pathExtension.lowercased() == "mp3" })
+            }
+            let row = try XCTUnwrap(contents.tableView.cellForRow(at: chapter))
+            let retry = try XCTUnwrap(row.accessoryView as? UIButton)
+            XCTAssertTrue(retry.isEnabled && retry.window === window)
+            XCTAssertEqual(retry.accessibilityLabel, L10n.string("player.downloadChapter"))
+            XCTAssertNotEqual(row.accessibilityValue, L10n.string("toc.downloaded"))
+            XCTAssertNotEqual(retry.accessibilityValue, L10n.string("toc.downloaded"))
+            return
+        }
+        XCTAssertNil((contents.presentedViewController as? UIAlertController)?.message)
+        let updated = try await waitForVisibleChapter(in: contents, window: window, at: chapter) {
+            $0.accessibilityValue == L10n.string("toc.downloaded")
+                && $0.accessoryView?.accessibilityValue == L10n.string("toc.downloaded")
+        }
+        XCTAssertTrue(updated, "The chapter and its button must display Downloaded.")
+        let published = try await store.downloadedChapterIndicesInFiles(bookID: book.id)
+        XCTAssertEqual(published, [0])
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension.lowercased() == "mp3" }
+        XCTAssertEqual(files.count, 1)
+        let copy = try XCTUnwrap(files.first)
+        let retained = try await store.canonicalURL(bookID: book.id, chapterIndex: 0)
+        let bytes = try Data(contentsOf: copy)
+        XCTAssertEqual(bytes, try Data(contentsOf: retained))
+        let audio = try AVAudioFile(forReading: copy)
+        let pcm = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 4096))
+        try audio.read(into: pcm)
+        XCTAssertGreaterThan(pcm.frameLength, 0, "The visible MP3 must decode to audio frames.")
+        let recording = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.mp3")
+        recording.name = "cold-reader-download.mp3"
+        recording.lifetime = .keepAlways
+        add(recording)
+    }
+
     func testSharedContentsRemovesFilesCopiesWithoutPlaybackSnapshot() async throws {
         let bookID = "toc-withdraw-\(UUID().uuidString)"
         let book = BookEntity(id: bookID, title: bookID, bookmark: Data(),
@@ -53,7 +188,13 @@ final class TocDownloadRefreshTests: XCTestCase {
         let suite = "toc-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let library = LibraryStore(defaults: defaults)
-        let settings = AppSettings()
+        let settings = AppSettings(defaults: defaults)
+        let bookmarks = BookmarkStore(defaults: defaults)
+        let annotation = bookmarks.addBookmark(bookId: bookID, chapterIndex: 1, chapterTitle: "Chapter 2",
+            startChar: 11, endChar: 21, selectedText: "Saved text", note: "Keep this annotation")
+        ReaderProgressStore.save(bookId: bookID, chapterIndex: 1, offsetFraction: 0.4,
+                                 characterOffset: 11, defaults: defaults)
+        let progress = try XCTUnwrap(ReaderProgressStore.read(bookId: bookID, defaults: defaults))
         let source = FileManager.default.temporaryDirectory.appendingPathComponent("\(bookID).mp3")
         let bytes = Data("Offline chapter fixture".utf8)
         let store = LocalAudioArtifactStore.shared
@@ -63,24 +204,52 @@ final class TocDownloadRefreshTests: XCTestCase {
             try? FileManager.default.removeItem(at: source)
         }
         try bytes.write(to: source)
-        for index in 0...1 {
+        for index in 0...2 {
             _ = try await store.retainDownload(from: source, request: .init(
                 bookID: bookID, bookTitle: book.title, author: nil,
                 chapterIndex: index, chapterTitle: "Chapter \(index + 1)"), requireVisibleCopy: true)
         }
+        let otherBookID = "toc-unrelated-\(UUID().uuidString)"
+        let outputs = RustConversionOutputStore.shared
+        addTeardownBlock {
+            try await outputs.removeAudio(bookID: otherBookID)
+            try await store.removeAllAudio(bookID: otherBookID)
+        }
+        _ = try await store.retainDownload(from: source, request: .init(
+            bookID: otherBookID, bookTitle: otherBookID, author: nil,
+            chapterIndex: 0, chapterTitle: "Other chapter"), requireVisibleCopy: true)
+        let lease = try await outputs.begin(bookID: otherBookID, jobID: UUID().uuidString, cancel: {})
+        let otherConversion = lease.outputDirectory.appendingPathComponent("chapter.mp3")
+        do {
+            try bytes.write(to: otherConversion)
+        } catch {
+            await outputs.finish(lease)
+            throw error
+        }
+        await outputs.finish(lease)
         try FileManager.default.removeItem(at: source)
         let files = try XCTUnwrap(DownloadedAudioFilesMirror.userVisible?.root)
             .appendingPathComponent(book.title, isDirectory: true)
         let firstCopy = files.appendingPathComponent("01 - Chapter 1.mp3")
         let secondCopy = files.appendingPathComponent("02 - Chapter 2.mp3")
+        let editedCopy = files.appendingPathComponent("03 - Chapter 3.mp3")
+        let listenerBytes = Data("Listener-owned edit".utf8)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: editedCopy)
+            if (try? FileManager.default.contentsOfDirectory(atPath: files.path))?.isEmpty == true {
+                try FileManager.default.removeItem(at: files)
+            }
+        }
         XCTAssertEqual(try Data(contentsOf: firstCopy), bytes)
         XCTAssertEqual(try Data(contentsOf: secondCopy), bytes)
 
+        var selectedChapter: Int?
         let navigation = ReaderContentsPresentation.makeSheet(book: book, rows: [
             ReaderTocRow(title: "Chapter 1", level: 0, chapterIndex: 0),
-            ReaderTocRow(title: "Chapter 2", level: 0, chapterIndex: 1)
+            ReaderTocRow(title: "Chapter 2", level: 0, chapterIndex: 1),
+            ReaderTocRow(title: "Chapter 3", level: 0, chapterIndex: 2)
         ], library: library, settings: settings, snapshot: nil,
-            playingIndex: nil, readingIndex: nil, onSelect: { _ in })
+            playingIndex: nil, readingIndex: progress.chapterIndex, onSelect: { selectedChapter = $0 })
         let controller = try XCTUnwrap(navigation.topViewController as? TocScreenController)
         let (window, previousWindow) = try showContents(navigation)
         defer {
@@ -95,6 +264,8 @@ final class TocDownloadRefreshTests: XCTestCase {
             $0.accessoryView?.accessibilityLabel == removeLabel
         }
         XCTAssertTrue(downloaded, "The visible chapter must offer removal after publishing its MP3.")
+        let accessory = try XCTUnwrap(controller.tableView.cellForRow(at: indexPath)?.accessoryView as? UIButton)
+        XCTAssertEqual((accessory.menu?.children.first as? UIAction)?.title, removeLabel)
         let downloads = ReaderChapterDownloads(book: book, library: library, settings: settings, snapshot: nil)
         await downloads.remove(chapter: 0)
         let returnedToDownload = try await waitForVisibleChapter(in: controller, window: window, at: indexPath) {
@@ -102,15 +273,30 @@ final class TocDownloadRefreshTests: XCTestCase {
         }
         XCTAssertTrue(returnedToDownload, "The visible chapter must offer Download again after removing its Files copy.")
         let remaining = try await store.downloadedChapterIndicesInFiles(bookID: bookID)
-        XCTAssertEqual(remaining, [1])
+        XCTAssertEqual(remaining, [1, 2])
         XCTAssertFalse(FileManager.default.fileExists(atPath: firstCopy.path))
         XCTAssertEqual(try Data(contentsOf: secondCopy), bytes)
+        try listenerBytes.write(to: editedCopy)
         await downloads.remove(chapter: nil)
         XCTAssertFalse(FileManager.default.fileExists(atPath: secondCopy.path))
+        XCTAssertEqual(try Data(contentsOf: editedCopy), listenerBytes)
+        let otherFiles = try await store.downloadedChapterIndicesInFiles(bookID: otherBookID)
+        XCTAssertEqual(otherFiles, [0])
+        XCTAssertEqual(try Data(contentsOf: otherConversion), bytes)
+        XCTAssertEqual(BookmarkStore(defaults: defaults).highlights(for: bookID), [annotation])
+        XCTAssertEqual(ReaderProgressStore.read(bookId: bookID, defaults: defaults), progress)
+        XCTAssertNil(selectedChapter, "Removing audio must not select a chapter.")
+        let focusedPath = IndexPath(row: 1, section: 0)
+        let isFocused = try await waitForVisibleChapter(in: controller, window: window, at: focusedPath) {
+            $0.accessibilityTraits.contains(.selected) && $0.accessoryView?.accessibilityLabel == downloadLabel
+        }
+        XCTAssertTrue(isFocused, "The reader focus must survive the Files refresh.")
+        controller.tableView(controller.tableView, didSelectRowAt: focusedPath)
+        XCTAssertEqual(selectedChapter, 1)
         let published = try await store.downloadedChapterIndicesInFiles(bookID: bookID)
         XCTAssertTrue(published.isEmpty)
         let retained = try await store.downloadedChapterIndices(bookID: bookID)
-        XCTAssertEqual(retained, [0, 1])
+        XCTAssertEqual(retained, [0, 1, 2])
         for index in retained {
             let canonical = try await store.canonicalURL(bookID: bookID, chapterIndex: index)
             XCTAssertEqual(try Data(contentsOf: canonical), bytes)
