@@ -76,10 +76,11 @@ struct LibraryGridModel: Equatable {
         }
         switch sortMode {
         case .lastPlayed:
+            // "Recently read or played": opening a book to read or to listen puts it first at once, without
+            // waiting for audio; playing later moves it again. Never-touched books follow in added order.
             return base.sorted { lhs, rhs in
-                if lhs.lastPlayedAt != rhs.lastPlayedAt {
-                    return (lhs.lastPlayedAt ?? .distantPast) > (rhs.lastPlayedAt ?? .distantPast)
-                }
+                let (left, right) = (lhs.lastInteractionAt, rhs.lastInteractionAt)
+                if left != right { return left > right }
                 return lhs.addedAt > rhs.addedAt
             }
         case .lastOpened:
