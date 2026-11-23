@@ -71,7 +71,8 @@ final class FullPlayerScreenController: UIViewController {
             skipForwardTapped: #selector(skipForwardTapped),
             nextChapterTapped: #selector(nextChapterTapped),
             tocTapped: #selector(tocTapped),
-            coverTapped: #selector(coverTapped)
+            coverTapped: #selector(coverTapped),
+            goToReadingTapped: #selector(coverTapped)
         ), traits: traitCollection)
         bind()
         render()
@@ -103,6 +104,11 @@ final class FullPlayerScreenController: UIViewController {
                     .sink { [weak self] _ in self?.render() }
                     .store(in: &cancellables)
             }
+
+        player.readerPairing.$isPaired
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.renderGoToReading() }
+            .store(in: &cancellables)
 
         playbackClock.$snapshot
             .sink { [weak self] snapshot in self?.renderPlaybackPosition(snapshot) }
@@ -144,7 +150,13 @@ final class FullPlayerScreenController: UIViewController {
         renderSkipButtons()
         renderPlayPauseButton()
         renderRateMenu()
+        renderGoToReading()
         renderSleepMenu()
+    }
+
+    /// Offered whenever the reader is not showing the narrated passage and there is a book to open there.
+    private func renderGoToReading() {
+        content.goToReadingButton.isHidden = player.readerPairing.isPaired || !content.coverButton.isEnabled
     }
 
     private func renderSkipButtons() {
@@ -252,7 +264,7 @@ final class FullPlayerScreenController: UIViewController {
         [
             content.slider, content.volumeView, content.airPlayContainer,
             content.previousChapterButton, content.skipBackButton, content.playPauseButton, content.skipForwardButton, content.nextChapterButton,
-            content.rateButton, content.tocButton, content.sleepButton, content.coverButton,
+            content.rateButton, content.goToReadingButton, content.tocButton, content.sleepButton, content.coverButton,
         ]
     }
 

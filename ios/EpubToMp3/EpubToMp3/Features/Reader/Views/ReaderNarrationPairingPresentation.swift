@@ -1,0 +1,76 @@
+#if os(iOS)
+import Combine
+import UIKit
+
+/// Publishes whether the visible page holds the narrated passage, so the expanded player can offer
+/// "Go to reading" only when the reader and the narration have diverged. Read-only: it never moves the reader.
+@MainActor
+final class ReaderNarrationPairingPresentation {
+    private let document: ReaderBookDocument
+    private let player: AudioPlayer
+    private let composition: ReaderViewComposition
+    private var observations: Set<AnyCancellable> = []
+    private var isObserving = false
+
+    init(document: ReaderBookDocument, player: AudioPlayer, composition: ReaderViewComposition) {
+        self.document = document
+        self.player = player
+        self.composition = composition
+    }
+
+    func observe() {
+        guard !isObserving else { return }
+        isObserving = true
+        player.playbackClock.audioOutput.$position
+            .throttle(for: .milliseconds(400), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &observations)
+        player.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.refresh() }
+            .store(in: &observations)
+        refresh()
+    }
+
+    func stop() {
+        observations.removeAll()
+        isObserving = false
+        player.readerPairing.release(owner: ObjectIdentifier(self))
+    }
+
+    /// Call after anything that moves the viewport or changes the chapter.
+    func refresh() {
+        guard isObserving else { return }
+        player.readerPairing.publish(paired: computePaired(), owner: ObjectIdentifier(self))
+    }
+
+    private func computePaired() -> Bool {
+        guard player.isPlaybackForReaderBook(document.book.id),
+              let chapter = currentChapter,
+              let location = ReaderPlaybackLocation(player: player) else { return false }
+        let textView = composition.textView
+        let offset = location.chapterIndex == chapter.zeroBasedEpubIndex
+            ? location.characterOffset(chapterText: chapter.text, renderedText: textView.text) : nil
+        return ReaderNarrationPairing.isPaired(
+            spokenChapter: location.chapterIndex, spokenOffset: offset,
+            readerChapter: chapter.zeroBasedEpubIndex, visible: Self.visibleCharacterRange(in: textView, scrollView: composition.scrollView))
+    }
+
+    private var currentChapter: EbookFulltext.Chapter? {
+        if let chapters = document.fulltext?.chapters, chapters.indices.contains(document.selectedChapter) {
+            return chapters[document.selectedChapter]
+        }
+        return document.activePreparedChapter?.chapter
+    }
+
+    static func visibleCharacterRange(in textView: UITextView, scrollView: UIScrollView) -> NSRange? {
+        guard textView.textStorage.length > 0, scrollView.bounds.height > 0 else { return nil }
+        let manager = textView.layoutManager
+        var rect = scrollView.convert(scrollView.bounds, to: textView)
+        rect.origin.y -= textView.textContainerInset.top
+        let glyphs = manager.glyphRange(forBoundingRect: rect, in: textView.textContainer)
+        guard glyphs.length > 0 else { return nil }
+        return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    }
+}
+#endif

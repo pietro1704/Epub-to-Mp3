@@ -190,7 +190,11 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
         max(1, textPresentation.paginatedLayoutResult?.canonicalPageOffsets.count ?? textPresentation.paginatedPageOffsets.count)
     }
 
+    /// Notified after any viewport movement (drag, page turn, programmatic reveal).
+    var onViewportChange: (() -> Void)?
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        defer { onViewportChange?() }
         readingPosition.playback.publish(facts: .init(chromeHidden: textPresentation.chromeHidden,
             isPaginated: textPresentation.isPaginatedMode, isLoading: isLoadingContent(), layoutResult: textPresentation.paginatedLayoutResult),
             isViewportTransitioning: readingPosition.isViewportTransitioning)

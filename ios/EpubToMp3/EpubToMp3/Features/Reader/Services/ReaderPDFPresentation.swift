@@ -55,6 +55,10 @@ final class ReaderPDFPresentation {
             player.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
             player.speechOutput.$spokenWord.sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
             Timer.publish(every: 0.1, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
+            player.playbackClock.audioOutput.$position
+                .throttle(for: .milliseconds(400), scheduler: DispatchQueue.main, latest: true)
+                .sink { [weak self] _ in self?.refreshPairing() }.store(in: &observers)
+            player.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.refreshPairing() }.store(in: &observers)
         }
         applyLayout(settings?.readerLayout ?? .scrolling)
     }
@@ -175,8 +179,34 @@ final class ReaderPDFPresentation {
 
     func refreshPosition() { publishPosition() }
 
+    deinit {
+        // The reader is going away: it no longer shows anything, so the player must offer "Go to reading".
+        let pairing = player?.readerPairing
+        let owner = ObjectIdentifier(self)
+        Task { @MainActor in pairing?.release(owner: owner) }
+    }
+
+    /// Publishes whether a visible page holds the narrated character (see ReaderNarrationPairing).
+    private func refreshPairing() {
+        guard let player else { return }
+        player.readerPairing.publish(paired: computePaired(player), owner: ObjectIdentifier(self))
+    }
+
+    private func computePaired(_ player: AudioPlayer) -> Bool {
+        guard hasLoaded, player.isPlaybackForReaderBook(bookID), let map = audioMap, let document = view.document,
+              let location = ReaderPlaybackLocation(player: player),
+              map.chapters.indices.contains(location.chapterIndex) else { return false }
+        let text = map.chapters[location.chapterIndex].text
+        let offset = location.characterOffset(chapterText: text, renderedText: text)
+        let spoken = map.displayLocation(chapter: location.chapterIndex, character: offset)?.page
+        var visible = view.visiblePages.map { document.index(for: $0) }.filter { $0 != NSNotFound }
+        if let current = currentPage { visible.append(current) }
+        return ReaderNarrationPairing.isPaired(spokenPage: spoken, visiblePages: visible)
+    }
+
     private func publishPosition() {
         guard hasLoaded, !isViewportTransitioning, let index = currentPage, let document = view.document else { return }
+        refreshPairing()
         persistPosition()
         view.accessibilityValue = L10n.string("reader.pageOf", index + 1, document.pageCount)
         let anchor = currentAnchor
