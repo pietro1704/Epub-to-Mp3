@@ -119,6 +119,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     // through book_open_screen → InstantReaderView gets the same
     // sentence-level highlight that the retired player-reader screen had.
     _wireSentenceSync();
+    // A cover tap that opened this reader leaves its request pending.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyPlaybackJump(ref.read(readerPlaybackJumpProvider));
+    });
   }
 
   void _wireSentenceSync() {
@@ -248,6 +252,11 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   @override
   Widget build(BuildContext context) {
+    // A request raised while this reader is already open for the same book.
+    ref.listen(
+      readerPlaybackJumpProvider,
+      (_, request) => _applyPlaybackJump(request),
+    );
     final settings = ref.watch(settingsProvider);
     final chapter = _resolveChapter(_currentChapterIndex);
     // Slice 25: re-prime the sentence-sync engine for the resolved

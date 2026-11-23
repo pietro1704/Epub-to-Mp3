@@ -178,5 +178,6 @@
   "ttsShowLowQuality": "Show low-quality models",
   "ttsManualModelUnavailable": "Could not prepare this narration model.",
   "readerNarrationModel": "Narration model",
-  "readerFootnotes": "Footnotes"
+  "readerFootnotes": "Footnotes",
+  "openReaderAtPlayback": "Open in reader"
 }

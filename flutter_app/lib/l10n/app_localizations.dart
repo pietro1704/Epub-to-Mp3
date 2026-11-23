@@ -957,6 +957,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Footnotes'**
   String get readerFootnotes;
+
+  /// No description provided for @openReaderAtPlayback.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in reader'**
+  String get openReaderAtPlayback;
 }
 
 class _AppLocalizationsDelegate

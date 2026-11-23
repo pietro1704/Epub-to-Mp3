@@ -39,6 +39,39 @@ Widget _wrap(
 
 void main() {
   group('FullPlayerSheet', () {
+    testWidgets('cover tap opens the reader at the playing chapter', (t) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService()..currentBookId = 'book-1';
+      await player.setQueue([
+        ChapterProgress(index: 1, name: 'Two', status: 'completed', downloadUrl: 'file:///a.mp3'),
+      ]);
+      await t.pumpWidget(_wrap(prefs, player, bookTitle: 'Test Book', bookId: 'book-1'));
+      final container = ProviderScope.containerOf(t.element(find.byType(FullPlayerSheet)));
+
+      await t.tap(find.byKey(const ValueKey('fullPlayer.cover')));
+      await t.pump();
+
+      expect(container.read(readerPlaybackJumpProvider), (bookId: 'book-1', chapterIndex: 1));
+      expect(container.read(currentlyReadingBookIdProvider), 'book-1');
+      expect(container.read(appDestinationProvider), AppDestination.reader);
+    });
+
+    testWidgets('cover tap ignores a sheet whose book is not the one playing', (t) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService()..currentBookId = 'other-book';
+      await player.setQueue([
+        ChapterProgress(index: 1, name: 'One', status: 'completed', downloadUrl: 'file:///a.mp3'),
+      ]);
+      await t.pumpWidget(_wrap(prefs, player, bookTitle: 'Test Book', bookId: 'book-1'));
+      final container = ProviderScope.containerOf(t.element(find.byType(FullPlayerSheet)));
+
+      await t.tap(find.byKey(const ValueKey('fullPlayer.cover')));
+      await t.pump();
+
+      expect(container.read(readerPlaybackJumpProvider), isNull);
+      expect(container.read(currentlyReadingBookIdProvider), isNull);
+    });
+
     testWidgets('renders with placeholder when no cover art', (t) async {
       final prefs = await _mockPrefs();
       final player = FakeAudioPlayerService();

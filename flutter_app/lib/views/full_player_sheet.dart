@@ -16,6 +16,7 @@ import '../l10n/app_localizations.dart';
 import '../models/job_snapshot.dart';
 import '../services/playback/audio_player_service.dart';
 import '../screens/library_screen.dart';
+import '../state/providers.dart';
 
 part 'player_chapter_list.dart';
 part 'player_transport_controls.dart';
@@ -231,7 +232,41 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
+  /// Opens the reader on the chapter that is playing. Only when the player is
+  /// really playing this sheet's book, so a stale sheet never moves the reader.
+  void _openReaderAtPlayback() {
+    final bookId = widget.bookId;
+    final player = widget.player;
+    final index = player.currentIndexValue;
+    if (bookId == null || player.currentBookId != bookId || index == null) {
+      return;
+    }
+    final queueIndex = player.chapterIndexForPlayerIndex(index);
+    if (queueIndex < 0 || queueIndex >= player.chapters.length) return;
+    ref.read(readerPlaybackJumpProvider.notifier).state = (
+      bookId: bookId,
+      chapterIndex: player.chapters[queueIndex].index,
+    );
+    ref.read(currentlyReadingBookIdProvider.notifier).set(bookId);
+    ref.read(appDestinationProvider.notifier).state = AppDestination.reader;
+    Navigator.of(context).maybePop();
+  }
+
   Widget _coverHero(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    return Semantics(
+      button: true,
+      label: t?.openReaderAtPlayback ?? 'Open in reader',
+      child: InkWell(
+        key: const ValueKey('fullPlayer.cover'),
+        borderRadius: BorderRadius.circular(20),
+        onTap: _openReaderAtPlayback,
+        child: _coverArt(context),
+      ),
+    );
+  }
+
+  Widget _coverArt(BuildContext context) {
     final t = AppLocalizations.of(context);
     if (widget.coverArt != null) {
       return Semantics(

@@ -48,6 +48,15 @@ extension _InstantReaderTools on _InstantReaderViewState {
         );
   }
 
+  /// Moves to the playing chapter named by a pending player request for this
+  /// book. The request carries the chapter's place in the book, the axis of
+  /// the audio queue, which is also the reader's own chapter axis.
+  void _applyPlaybackJump(({String bookId, int chapterIndex})? request) {
+    if (request == null || request.bookId != widget.bookId) return;
+    ref.read(readerPlaybackJumpProvider.notifier).state = null;
+    _jumpToChapter(request.chapterIndex);
+  }
+
   void _jumpToChapter(int index) {
     if (index < 0 || index >= widget.fulltext.chapters.length) return;
     _update(() {

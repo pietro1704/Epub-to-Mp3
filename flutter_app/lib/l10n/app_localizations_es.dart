@@ -477,4 +477,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get readerFootnotes => 'Notas al pie';
+
+  @override
+  String get openReaderAtPlayback => 'Abrir en el lector';
 }

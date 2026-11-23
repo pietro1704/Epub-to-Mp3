@@ -166,5 +166,63 @@ void main() {
       expect(find.text('2'), findsOneWidget, reason: 'unlabelled notes are numbered by position');
     });
 
+
+    testWidgets('a pending player request opens the playing chapter once', (t) async {
+      final prefs = await _mockPrefs();
+      final fulltext = EbookFulltext.fromJson({
+        'jobId': 'jump',
+        'chapters': [
+          {'index': 10, 'name': 'First', 'text': 'First chapter prose.'},
+          {'index': 20, 'name': 'Second', 'text': 'Second chapter prose.'},
+          {'index': 30, 'name': 'Third', 'text': 'Third chapter prose.'},
+        ],
+      });
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          sharedPrefsProvider.overrideWithValue(prefs),
+          readerPlaybackJumpProvider.overrideWith((ref) => (bookId: 'b1', chapterIndex: 1)),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(body: InstantReaderView(fulltext: fulltext, bookId: 'b1')),
+        ),
+      ));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.text('Second chapter prose.'), findsOneWidget);
+      expect(
+        ProviderScope.containerOf(t.element(find.byType(InstantReaderView)))
+            .read(readerPlaybackJumpProvider),
+        isNull,
+        reason: 'the request is consumed',
+      );
+    });
+
+    testWidgets('a request raised while open moves the reader; another book is ignored', (t) async {
+      final prefs = await _mockPrefs();
+      final fulltext = EbookFulltext.fromJson({
+        'jobId': 'jump2',
+        'chapters': [
+          {'index': 10, 'name': 'First', 'text': 'First chapter prose.'},
+          {'index': 20, 'name': 'Second', 'text': 'Second chapter prose.'},
+        ],
+      });
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: fulltext, bookId: 'b1')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.text('First chapter prose.'), findsOneWidget);
+      final container = ProviderScope.containerOf(t.element(find.byType(InstantReaderView)));
+
+      container.read(readerPlaybackJumpProvider.notifier).state = (bookId: 'other', chapterIndex: 1);
+      await t.pump();
+      expect(find.text('First chapter prose.'), findsOneWidget);
+
+      container.read(readerPlaybackJumpProvider.notifier).state = (bookId: 'b1', chapterIndex: 1);
+      await t.pumpAndSettle();
+      expect(find.text('Second chapter prose.'), findsOneWidget);
+      expect(container.read(readerPlaybackJumpProvider), isNull);
+    });
+
   });
 }
