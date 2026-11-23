@@ -3,14 +3,15 @@ import XCTest
 /// VOICE-SWITCH-RESUME-EXACT on a physical iPhone, with real engines and the real library: while listening, every
 /// switch of the narration voice (Piper → Piper, Piper → System, System → Piper, Piper → Edge) must keep PLAYING on its
 /// own, continue from the same place in the chapter, and never leave the player stuck. The place is judged on the
-/// chapter clock's progress ratio (elapsed / (elapsed + remaining)), which maps to the same text for any voice.
+/// chapter clock's progress ratio (the progress slider's value), which maps to the same text for any voice.
 @MainActor
 final class VoiceSwitchResumeDeviceUITests: XCTestCase {
     /// The retained "O jardim das Aflicoes" EPUB on the 16e (Piper pt-BR, system pt-BR and Edge are all available).
     private let bookTile = "library.bookTile.ff676d7fa5b703fb8d4c6708fad2d52b"
     private let ratioTolerance = 0.06
 
-    private struct Reading { let elapsed: Double; let remaining: Double; var ratio: Double { elapsed / max(1, elapsed + remaining) } }
+    /// `ratio` is the progress slider's position: the chapter clock over the chapter's estimated duration.
+    private struct Reading { let elapsed: Double; let ratio: Double }
 
     func testEveryVoiceSwitchKeepsPlayingFromTheSamePlace() throws {
         #if targetEnvironment(simulator)
@@ -42,6 +43,14 @@ final class VoiceSwitchResumeDeviceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 90), "The reader must open.")
 
         let harness = ReaderModesHarness(app: app)
+        // Listen from a late page of the chapter, like the reported failure (a chapter clock far from its start):
+        // an engine of another speed then has a long way to go before it reaches the old voice's seconds.
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 30))
+        for _ in 0..<12 {
+            viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
         let toolbarListen = app.navigationBars.buttons["reader.listen"].firstMatch
         XCTAssertTrue(toolbarListen.waitForExistence(timeout: 10), "The reader toolbar must expose Listen.")
         toolbarListen.tap()
@@ -51,31 +60,36 @@ final class VoiceSwitchResumeDeviceUITests: XCTestCase {
         XCTAssertTrue(open.waitForExistence(timeout: 90), "Listening must show the mini player.")
         open.tap()
         let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
-        let remaining = app.staticTexts["fullPlayer.remaining"].firstMatch
+        let remaining = app.otherElements["fullPlayer.progress"].firstMatch
         XCTAssertTrue(elapsed.waitForExistence(timeout: 15))
         XCTAssertTrue(waitUntil(timeout: 240) { self.seconds(elapsed.label) >= 3 }, "Narration must start playing.")
         log.append("START \(read(elapsed, remaining))")
 
-        // Faber → Cadu, Cadu → System, System → a Piper voice, Piper → Edge.
+        // Whatever voice the book starts with (the 16e starts on Edge): to Faber, Faber → Cadu (Piper → Piper),
+        // Cadu → System (Piper → System), System → Faber (System → Piper) and Faber → Edge (Piper → Edge).
         let steps: [(name: String, matches: (String) -> Bool)] = [
-            ("Piper → Piper", { $0.localizedCaseInsensitiveContains("cadu") || $0.localizedCaseInsensitiveContains("faber") }),
+            ("start → Piper (Faber)", { $0.localizedCaseInsensitiveContains("faber") }),
+            ("Piper → Piper (Cadu)", { $0.localizedCaseInsensitiveContains("cadu") }),
             ("Piper → System", { $0.localizedCaseInsensitiveContains("system") || $0.localizedCaseInsensitiveContains("sistema") }),
-            ("System → Piper", { $0.localizedCaseInsensitiveContains("faber") || $0.localizedCaseInsensitiveContains("cadu") }),
+            ("System → Piper (Faber)", { $0.localizedCaseInsensitiveContains("faber") }),
             ("Piper → Edge", { $0.localizedCaseInsensitiveContains("edge") }),
         ]
         for step in steps {
+            if !remaining.exists, open.waitForExistence(timeout: 10) { open.tap() }
+            XCTAssertTrue(remaining.waitForExistence(timeout: 15), "\(step.name): the full player must be readable")
             let before = read(elapsed, remaining)
             closeFullPlayer(app)
             harness.activateReaderTool(identifier: "reader.voiceModels", title: "Voice models")
-            let sheet = app.otherElements["reader.voicePicker"].firstMatch
+            let sheet = app.sheets["reader.voicePicker"].firstMatch
             XCTAssertTrue(sheet.waitForExistence(timeout: 10), "\(step.name): the voice menu must open")
-            let choices = app.sheets.firstMatch.buttons.allElementsBoundByIndex.isEmpty
-                ? sheet.buttons.allElementsBoundByIndex : app.sheets.firstMatch.buttons.allElementsBoundByIndex
+            let choices = sheet.buttons.allElementsBoundByIndex
             let candidates = choices.filter { !$0.label.hasPrefix("✓") && step.matches($0.label) }
             log.append("\(step.name): choices=\(choices.map(\.label))")
             guard let choice = candidates.first else {
                 log.append("\(step.name): no matching, not-yet-selected choice; skipped")
-                app.buttons["Cancel"].firstMatch.tap()
+                // The picker is a popover without Cancel on this layout: tap outside it.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.66)).tap()
+                Thread.sleep(forTimeInterval: 1)
                 continue
             }
             log.append("\(step.name): choosing \"\(choice.label)\" at \(before)")
@@ -105,16 +119,27 @@ final class VoiceSwitchResumeDeviceUITests: XCTestCase {
 
     private func closeFullPlayer(_ app: XCUIApplication) {
         let close = app.buttons["fullPlayer.close"].firstMatch
-        if close.exists && close.isHittable { close.tap() }
+        if close.exists && close.isHittable {
+            close.tap()
+            _ = close.waitForNonExistence(timeout: 8)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        // The chrome may be hidden by earlier page taps: bring it back so the reader's tools are reachable.
+        if !app.buttons["reader.more"].firstMatch.isHittable {
+            app.scrollViews["reader.viewport"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
     }
 
-    private func read(_ elapsed: XCUIElement, _ remaining: XCUIElement) -> Reading {
-        Reading(elapsed: Double(seconds(elapsed.label)), remaining: Double(seconds(remaining.label)))
+    private func read(_ elapsed: XCUIElement, _ progress: XCUIElement) -> Reading {
+        let percent = (progress.value as? String).flatMap { Double($0.replacingOccurrences(of: "%", with: "")) } ?? 0
+        return Reading(elapsed: Double(seconds(elapsed.label)), ratio: percent / 100)
     }
 
+    /// "≈ 25:40", "1:02:03" or "About 19:44 remaining" → seconds.
     private func seconds(_ clock: String) -> Int {
-        let digits = clock.replacingOccurrences(of: "-", with: "").split(separator: ":").compactMap { Int($0) }
-        return digits.reduce(0) { $0 * 60 + $1 }
+        guard let range = clock.range(of: #"\d+(:\d+)+"#, options: .regularExpression) else { return 0 }
+        return clock[range].split(separator: ":").compactMap { Int($0) }.reduce(0) { $0 * 60 + $1 }
     }
 
     private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
