@@ -14,8 +14,6 @@ jobs:
     timeout-minutes: 25
     env:
       MISE_ENABLE_TOOLS: ruby,rust
-      CARGO_BUILD_JOBS: '1'
-      CMAKE_BUILD_PARALLEL_LEVEL: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,7 +36,7 @@ jobs:
           mise exec -- ruby scripts/test_device_workflow_entrypoint.rb
       - name: Type-check inherited-lease adapter without launching it
         run: mise exec -- ruby scripts/native_job.rb build -- xcrun swiftc -typecheck scripts/ios_simulator_smoke.swift
-      - name: Test the actual DeviceWorkflow Swift package serially
-        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swift test --package-path tools/DeviceWorkflow --jobs 1
-      - name: Build the actual eSpeak dependency serially
-        run: mise exec -- ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys --jobs 1
+      - name: Test the actual DeviceWorkflow Swift package
+        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swift test --package-path tools/DeviceWorkflow
+      - name: Build the actual eSpeak dependency
+        run: mise exec -- ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys

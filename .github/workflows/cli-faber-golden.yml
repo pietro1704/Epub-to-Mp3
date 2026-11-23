@@ -21,7 +21,6 @@ jobs:
       MISE_ENABLE_TOOLS: rust,ruby
       ORT_PREFER_DYNAMIC_LINK: '1'
       ORT_SKIP_DOWNLOAD: '1'
-      CARGO_BUILD_JOBS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

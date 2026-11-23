@@ -141,7 +141,7 @@ jobs:
             'piper::cancellation_tests',
             'worker::segment_audio_cache::tests'
           )) {
-            mise exec -- cargo test --locked --release -p converter-core --lib --target-dir $target --jobs 1 $filter -- --nocapture
+            mise exec -- cargo test --locked --release -p converter-core --lib --target-dir $target $filter -- --nocapture
             if ($LASTEXITCODE -ne 0) { throw "Windows audio regression failed: $filter" }
           }
       - name: Convert exactly two chapters through the packaged Windows DLL

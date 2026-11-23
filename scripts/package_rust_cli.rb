@@ -36,7 +36,7 @@ build_environment = {}
 if macos
   build_environment = { 'ORT_LIB_LOCATION' => runtime, 'ORT_PREFER_DYNAMIC_LINK' => '1', 'MACOSX_DEPLOYMENT_TARGET' => '12.0', 'SDKROOT' => nil, 'CMAKE_TOOLCHAIN_FILE' => nil, 'CMAKE_GENERATOR' => nil, 'CC' => nil, 'CXX' => nil, 'CFLAGS' => nil, 'CXXFLAGS' => nil }
 end
-abort 'Rust CLI build failed' unless system(build_environment, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-cli', '--bin', 'converter-cli', '--release', '--jobs', '1', out: $stderr, err: $stderr, **(windows ? {} : NativeJob.child_options))
+abort 'Rust CLI build failed' unless system(build_environment, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-cli', '--bin', 'converter-cli', '--release', '--jobs', (windows ? 1 : NativeJob.build_jobs).to_s, out: $stderr, err: $stderr, **(windows ? {} : NativeJob.child_options))
 name = windows ? 'converter-cli.exe' : 'converter-cli'
 compiled = File.join(root, 'target', 'release', name)
 abort "Missing compiled native CLI: #{compiled}" unless File.file?(compiled)
