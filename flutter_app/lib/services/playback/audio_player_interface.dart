@@ -31,6 +31,13 @@ abstract class AudioPlayerInterface {
   List<int> sourceChapterIndices = const [];
   /// Adds the requested source chapter to the playback queue when available.
   Future<bool> Function(int sourceChapter)? onPrepareSourceChapter;
+
+  /// A skip landed outside the audio that exists (the playing chapter is still
+  /// being synthesized, so it cannot be sought). The owner restarts synthesis at
+  /// the estimated text position of [target] (media time in that chapter's audio)
+  /// and returns true; false lets the skip continue into the next chapter.
+  Future<bool> Function(int sourceChapter, Duration target)?
+  onSkipOutsideCache;
   PlaybackPhase get phase => isLoading
       ? PlaybackPhase.loading
       : isPlaying

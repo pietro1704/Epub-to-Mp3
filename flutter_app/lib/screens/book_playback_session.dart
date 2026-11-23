@@ -241,6 +241,39 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       );
       return ready.future;
     };
+    player.onSkipOutsideCache = (sourceChapter, target) async {
+      final chapters = _fulltext?.chapters;
+      if (!mounted ||
+          player.currentBookId != widget.bookId ||
+          chapters == null ||
+          sourceChapter < 0 ||
+          sourceChapter >= chapters.length ||
+          ref.read(embeddedConverterProvider) is! PositionedChapterConverter) {
+        return false;
+      }
+      final start = _activeListeningStart;
+      final restart = skipRestartPosition(
+        chapter: chapters[sourceChapter],
+        position: sourceChapter,
+        startSourceOffset: start != null && start.chapterIndex == sourceChapter
+            ? start.textOffset
+            : 0,
+        targetSeconds: target.inMilliseconds / 1000,
+      );
+      if (restart == null) return false;
+      debugPrint(
+        'BookOpenScreen: skip outside the audio that exists -> restart '
+        '${restart.chapterIndex}:${restart.textOffset} (target ${target.inSeconds}s)',
+      );
+      unawaited(
+        _startLocalConversion(
+          readerPosition: restart,
+          playbackChapterIndex: restart.chapterIndex,
+          explicitNarration: true,
+        ),
+      );
+      return true;
+    };
     final library = ref.read(libraryStoreProvider);
     final idx = library.books.indexWhere((b) => b.id == widget.bookId);
     if (idx < 0) return;

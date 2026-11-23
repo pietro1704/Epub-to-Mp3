@@ -7,19 +7,51 @@ mixin _AudioPlayerNavigation on AudioPlayerInterface {
   set _seekGeneration(int value);
   Future<void> _waitForChapterSeek(int playerIndex);
 
+  /// The chapter's audio is still being synthesized, so it cannot be sought.
+  bool _isChapterStillGrowing(int sourceChapter);
+
+  /// Repeated skip taps accumulate into one navigation instead of replacing
+  /// each other; it runs once the taps pause.
+  static const _skipAccumulationWindow = Duration(milliseconds: 250);
+  Duration _pendingSkip = Duration.zero;
+  Timer? _pendingSkipTimer;
+
+  void _accumulateSkip(Duration offset) {
+    _pendingSkip += offset;
+    _pendingSkipTimer?.cancel();
+    _pendingSkipTimer = Timer(_skipAccumulationWindow, () {
+      final total = _pendingSkip;
+      _pendingSkip = Duration.zero;
+      _pendingSkipTimer = null;
+      if (total != Duration.zero) _startNavigation(total);
+    });
+  }
+
+  void _dropPendingSkip() {
+    _pendingSkipTimer?.cancel();
+    _pendingSkipTimer = null;
+    _pendingSkip = Duration.zero;
+  }
+
   @override
   void skipForward({int? seconds}) =>
-      _startNavigation(Duration(seconds: seconds ?? seekForwardSeconds));
+      _accumulateSkip(Duration(seconds: seconds ?? seekForwardSeconds));
 
   @override
   void skipBackward({int? seconds}) =>
-      _startNavigation(Duration(seconds: -(seconds ?? seekBackwardSeconds)));
+      _accumulateSkip(Duration(seconds: -(seconds ?? seekBackwardSeconds)));
 
   @override
-  void nextChapter() => _startNavigation(null, direction: 1);
+  void nextChapter() {
+    _dropPendingSkip();
+    _startNavigation(null, direction: 1);
+  }
 
   @override
-  void previousChapter() => _startNavigation(null, direction: -1);
+  void previousChapter() {
+    _dropPendingSkip();
+    _startNavigation(null, direction: -1);
+  }
 
   void _startNavigation(Duration? offset, {int? direction}) {
     final generation = ++_seekGeneration;
@@ -107,8 +139,24 @@ mixin _AudioPlayerNavigation on AudioPlayerInterface {
     try {
       while (isCurrent()) {
         if (offset != null) {
-          await _waitForChapterSeek(playerIndex);
+          // A chapter that is still being synthesized cannot be sought: restart
+          // synthesis at the estimated text position instead of waiting for the
+          // whole chapter to finish ("loading forever").
+          final skipOutside = onSkipOutsideCache;
+          final playing = _sourceAt(playerIndex);
+          if (playing != null &&
+              _isChapterStillGrowing(playing) &&
+              skipOutside != null &&
+              target >= Duration.zero &&
+              await skipOutside(playing, target)) {
+            return;
+          }
           if (!isCurrent()) return;
+          // Going back past this chapter's start never needs its audio.
+          if (target >= Duration.zero) {
+            await _waitForChapterSeek(playerIndex);
+            if (!isCurrent()) return;
+          }
         }
         final measured = _player.duration;
         final duration = measured != null && measured > Duration.zero
