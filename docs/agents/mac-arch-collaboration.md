@@ -73,7 +73,11 @@ Pietro set these roles on 2026-11-22. He talks only to `epub-coord`.
 | `epub-android` | Arch pane in ai-jail | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
 
 A task card states ID, goal, scope, files and worktree, acceptance, verification,
-out-of-scope items and where to record evidence. Send executors only work: Mac via
+out-of-scope items and where to record evidence.
+When `epub-coord` adds an iOS/macOS card, it adds the matching Flutter parity
+card for `epub-android` to the board at the same time. Between Apple cards,
+`epub-android` keeps Android/tablet and Linux/Windows matching the current
+iOS/macOS behavior and UI, each with its own platform guidelines. Send executors only work: Mac via
 `herdr agent prompt epub-apple ...`, Arch via the [Arch channel limits](#arch-channel-limits).
 Use Fable high only for a large audit, an architecture decision or a bug that
 failed twice (switch with `/model`, then switch back). Search and reading
