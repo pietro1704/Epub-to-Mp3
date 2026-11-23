@@ -33,7 +33,9 @@ class ReaderDocumentGeometry {
         // A selection range counts the text of the document, not the widget
         // placeholders of wrapper paragraphs that hold nothing else.
         if (text.replaceAll('\uFFFC', '').isNotEmpty) {
-          segments.add(ReaderContentSegment(object, contentCursor, text.length));
+          segments.add(
+            ReaderContentSegment(object, contentCursor, text.length),
+          );
           contentCursor += text.length;
         }
         final origin = object.localToGlobal(Offset.zero, ancestor: content);

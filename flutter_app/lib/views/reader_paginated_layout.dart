@@ -245,23 +245,11 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: fg.withValues(alpha: 0.1),
-                      ),
-                      child: Text(
-                        '${pageIndex + 1} / ${_pages.length}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: fg.withValues(alpha: 0.5),
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
+                    child: ReaderPageIndicator(
+                      page: pageIndex + 1,
+                      pages: _pages.length,
+                      background: bg,
+                      foreground: fg,
                     ),
                   ),
                 ),

@@ -1,5 +1,6 @@
 import '../models/reader_listening_position.dart';
 import '../features/reader/rich_reader_surface.dart';
+import '../features/reader/reader_page_indicator.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
