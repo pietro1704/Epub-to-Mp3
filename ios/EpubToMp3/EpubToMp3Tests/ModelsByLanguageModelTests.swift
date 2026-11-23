@@ -3,7 +3,9 @@ import XCTest
 
 @MainActor
 final class ModelsByLanguageModelTests: XCTestCase {
-    final class FakeSource: ModelsByLanguageSource, @unchecked Sendable {
+    class FakeSource: ModelsByLanguageSource, @unchecked Sendable {
+        /// Makes `snapshot(language:)` slow, like a cold catalogue scan.
+        var snapshotDelayNanoseconds: UInt64 = 0
         private let lock = NSLock()
         private var installed: Set<String> = ["pt_BR-faber-medium"]
         private(set) var installs: [(model: String, fingerprint: String?, language: String)] = []
@@ -18,7 +20,8 @@ final class ModelsByLanguageModelTests: XCTestCase {
         }
 
         func snapshot(language: String) async throws -> SpeechModelSnapshot {
-            try await snapshot(language: language, includeLow: false)
+            if snapshotDelayNanoseconds > 0 { try await Task.sleep(nanoseconds: snapshotDelayNanoseconds) }
+            return try await snapshot(language: language, includeLow: false)
         }
 
         /// Languages asked for with the install browser (the only catalogue that lists Piper Low voices).

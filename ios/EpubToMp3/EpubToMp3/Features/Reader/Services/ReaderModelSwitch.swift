@@ -23,6 +23,9 @@ enum ReaderModelSwitch {
 
     private static var cachedLanguages: [String: String] = [:]
 
+    /// Test hook: forget everything cached for the menu.
+    static func resetCachesForTesting() { cachedLanguages = [:] }
+
     /// The authoritative language of the book, analyzed once per book by Rust.
     static func bookLanguage(of book: BookEntity, library: LibraryStore) async -> String? {
         if let cached = cachedLanguages[book.id] { return cached }
@@ -39,10 +42,13 @@ enum ReaderModelSwitch {
     static func content(
         picker: ReaderVoicePicker, request: ReaderVoicePickerRequest,
         source: ModelsByLanguageSource = SpeechModelsSource(),
-        systemVoiceLanguages: @Sendable () -> Set<String> = ModelsByLanguageModel.installedSystemVoiceLanguages
+        systemVoiceLanguages: @Sendable () -> Set<String> = ModelsByLanguageModel.installedSystemVoiceLanguages,
+        languageOf: ((BookEntity) async -> String?)? = nil
     ) async -> Content? {
-        guard let book = request.currentContext()?.book,
-              let tag = await bookLanguage(of: book, library: request.library),
+        guard let book = request.currentContext()?.book else { return nil }
+        let resolved: String?
+        if let languageOf { resolved = await languageOf(book) } else { resolved = await bookLanguage(of: book, library: request.library) }
+        guard let tag = resolved,
               let snapshot = try? await source.snapshot(language: SpeechPreferences.languageKey(tag)) else { return nil }
         let state = ModelsByLanguageViewState.make(
             languages: [.init(tag: SpeechPreferences.languageKey(tag), snapshot: snapshot)],
