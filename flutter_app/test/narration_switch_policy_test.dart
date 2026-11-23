@@ -9,6 +9,7 @@ void main() {
     expect(
       narrationSwitchRestartPosition(
         position: position,
+        playingChapter: 3,
         listening: true,
         supportsPositionedStart: true,
       ),
@@ -20,6 +21,7 @@ void main() {
     expect(
       narrationSwitchRestartPosition(
         position: position,
+        playingChapter: 3,
         listening: false,
         supportsPositionedStart: true,
       ),
@@ -31,6 +33,7 @@ void main() {
     expect(
       narrationSwitchRestartPosition(
         position: null,
+        playingChapter: null,
         listening: true,
         supportsPositionedStart: true,
       ),
@@ -39,10 +42,34 @@ void main() {
     expect(
       narrationSwitchRestartPosition(
         position: position,
+        playingChapter: 3,
         listening: true,
         supportsPositionedStart: false,
       ),
       isNull,
+    );
+  });
+
+  test('restarts from the playing chapter when the reader shows another one', () {
+    final restart = narrationSwitchRestartPosition(
+      position: position,
+      playingChapter: 5,
+      listening: true,
+      supportsPositionedStart: true,
+    );
+    expect(restart?.chapterIndex, 5);
+    expect(restart?.textOffset, 0);
+  });
+
+  test('uses the requested start while the first audio is still preparing', () {
+    expect(
+      narrationSwitchRestartPosition(
+        position: position,
+        playingChapter: null,
+        listening: true,
+        supportsPositionedStart: true,
+      ),
+      same(position),
     );
   });
 }

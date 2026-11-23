@@ -16,6 +16,8 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   int _localConversionGeneration = 0;
   int? _requestedPlaybackChapterIndex;
   ReaderListeningPosition? _readerListeningPosition;
+  // Start of the conversion now running; the reader clears its own position while listening.
+  ReaderListeningPosition? _activeListeningStart;
   int? _readerStartGeneration;
   final PlaybackFirstResourcePolicy _resourcePolicy =
       PlaybackFirstResourcePolicy();
@@ -88,11 +90,21 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   /// starts at the reader's current position and captures the saved model.
   /// Idle readers only persist the choice; the next listen uses it.
   Future<void> _narrationModelChanged(TtsSelection selection) async {
+    final player = ref.read(globalAudioPlayerProvider);
+    final playerIndex = player.currentIndexValue;
     final position = narrationSwitchRestartPosition(
-      position: _readerListeningPosition,
-      listening: ref.read(globalAudioPlayerProvider).isPlaying || _isConverting,
+      position: _readerListeningPosition ?? _activeListeningStart,
+      playingChapter: player.isPlaying && playerIndex != null
+          ? _sourceChapterIndexForPlayerIndex(player, playerIndex)
+          : null,
+      listening: player.isPlaying || _isConverting,
       supportsPositionedStart:
           ref.read(embeddedConverterProvider) is PositionedChapterConverter,
+    );
+    debugPrint(
+      'BookOpenScreen: narration switch playing=${player.isPlaying} '
+      'converting=$_isConverting readerPosition=${_readerListeningPosition?.chapterIndex}:'
+      '${_readerListeningPosition?.textOffset} restart=${position?.chapterIndex}:${position?.textOffset}',
     );
     if (!mounted || position == null) return;
     await _startLocalConversion(
@@ -127,6 +139,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     }
     _publishPlaybackWindow(playbackChapterIndex);
     final generation = ++_localConversionGeneration;
+    if (readerPosition != null) _activeListeningStart = readerPosition;
     _readerStartGeneration = readerPosition == null ? null : generation;
     if (readerPosition != null) {
       _playableChapters.clear();
@@ -355,6 +368,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     _localPlaybackConversion = null;
     _requestedPlaybackChapterIndex = null;
     _readerListeningPosition = null;
+    _activeListeningStart = null;
     _readerStartGeneration = null;
     _closePlaybackWindowChanges(recreate: true);
 
