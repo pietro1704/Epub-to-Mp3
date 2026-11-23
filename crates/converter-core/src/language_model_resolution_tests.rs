@@ -175,3 +175,61 @@ fn json_contract_defaults_and_snake_case_response() {
     assert!(json.get("selection").is_none());
     assert_eq!(json["missing"]["language"], "pt");
 }
+
+#[test]
+fn the_automatic_step_follows_the_jobs_own_ranking_before_any_other_installed_model() {
+    // The job's automatic Piper ranking prefers the high-quality English voice over the medium one.
+    let both = resolve(&request(
+        "en-US",
+        &["en_US-ljspeech-medium", "en_US-ljspeech-high"],
+    ));
+    assert_eq!(both.source, Some(Source::Automatic));
+    assert_eq!(both.selection, Some(piper("en_US-ljspeech-high")));
+    // Only the lower-ranked one installed: it is still used rather than reporting a missing model.
+    let medium = resolve(&request("en-US", &["en_US-ljspeech-medium"]));
+    assert_eq!(medium.selection, Some(piper("en_US-ljspeech-medium")));
+}
+
+#[test]
+fn a_portuguese_book_keeps_faber_first_and_falls_back_to_another_installed_voice() {
+    let with_faber = resolve(&request("pt", &["pt_BR-cadu-medium", "pt_BR-faber-medium"]));
+    assert_eq!(
+        with_faber.selection,
+        Some(piper("pt_BR-faber-medium")),
+        "the app's Portuguese default"
+    );
+    let only_cadu = resolve(&request("pt-BR", &["pt_BR-cadu-medium"]));
+    assert_eq!(only_cadu.selection, Some(piper("pt_BR-cadu-medium")));
+}
+
+#[test]
+fn a_different_language_without_a_choice_never_keeps_an_incompatible_primary() {
+    // Primary pt Faber, English book, nothing English installed: system voice (setting on), else missing.
+    let mut r = request("en", &["pt_BR-faber-medium"]);
+    r.primary = Some(piper("pt_BR-faber-medium"));
+    r.system_voices = vec!["en-US".into()];
+    let system = resolve(&r);
+    assert_eq!(system.status, Status::SystemFallback);
+    assert!(system
+        .reasons
+        .contains(&"primary:model_incompatible_with_language".to_owned()));
+    r.allow_automatic_system_voice_fallback = false;
+    let missing = resolve(&r);
+    assert_eq!(missing.status, Status::MissingModel);
+    assert!(!missing.missing.unwrap().suggested.is_empty());
+    // With an English model installed it is chosen before the system voice.
+    r.installed_model_ids.push("en_US-ljspeech-high".into());
+    r.allow_automatic_system_voice_fallback = true;
+    let english = resolve(&r);
+    assert_eq!(english.source, Some(Source::Automatic));
+    assert_eq!(english.selection, Some(piper("en_US-ljspeech-high")));
+}
+
+#[test]
+fn a_book_compatible_with_the_primary_keeps_it_exactly_as_today() {
+    let mut r = request("pt-BR", &["pt_BR-faber-medium", "pt_BR-cadu-medium"]);
+    r.primary = Some(piper("pt_BR-faber-medium"));
+    let out = resolve(&r);
+    assert_eq!(out.source, Some(Source::Primary));
+    assert_eq!(out.selection, r.primary);
+}
