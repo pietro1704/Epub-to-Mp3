@@ -528,7 +528,10 @@ try {
   $chapterOne = (Wait-ForReaderUi 'the opening chapter passage' { Find-AppText 'a neblina cobria a colina' }).Name
   Save-ReaderFrame 'chapter-1'
 
-  $contents = Wait-ForReaderUi 'the reader Table of contents control' { Find-AppText '^Table of contents$' }
+  # The reader chrome shows the recent tool beside More; Contents lives in the menu.
+  $more = Wait-ForReaderUi 'the reader More menu' { Find-AppText '^Show menu$' }
+  Click-FlutterElement $more
+  $contents = Wait-ForReaderUi 'the reader Table of contents menu item' { Find-AppText '^Table of contents$' }
   Click-FlutterElement $contents
   $secondEntry = Wait-ForReaderUi 'the second chapter in the table of contents' { Find-AppText '^O mapa antigo$' }
   Click-FlutterElement $secondEntry
