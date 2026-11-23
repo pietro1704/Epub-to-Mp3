@@ -134,7 +134,7 @@ fn app_policy_rate_limited_primary_waits_while_native_continues() {
             voice: None,
         },
         secondary: None,
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     worker
         .synthesize_preferences(

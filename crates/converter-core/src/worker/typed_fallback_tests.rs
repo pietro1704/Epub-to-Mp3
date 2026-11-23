@@ -35,7 +35,7 @@ fn explicit_preferences_retry_primary_after_invalid_audio_and_publish_mixed_segm
             model_id: None,
             voice: None,
         }),
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     let text = "A sentence for voice selection. ".repeat(40);
     let providers = Mutex::new(Vec::new());
@@ -94,7 +94,7 @@ fn strict_preferences_do_not_use_registered_system_fallback() {
             voice: None,
         },
         secondary: None,
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     let result = worker.synthesize_preferences(
         &preference_test_request(),

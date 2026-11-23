@@ -23,7 +23,9 @@ fn migrated_explicit_selection_is_idempotent_and_survives_default_changes() {
         Some("pt-BR-FranciscaNeural")
     );
     assert!(preferences.secondary.is_none());
-    assert!(!preferences.allow_online_fallback);
+    // A legacy job that names Edge is itself the explicit online choice: it is
+    // captured with the consent that Edge as a primary voice now requires.
+    assert!(preferences.allow_online_fallback);
     worker.config.engine = "system".into();
     assert_eq!(
         worker

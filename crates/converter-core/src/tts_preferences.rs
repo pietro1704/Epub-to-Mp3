@@ -136,6 +136,16 @@ impl TtsSelection {
     }
 }
 
+/// Refusal for an Edge selection without online consent. The marker carries the
+/// role so clients can show a localized, actionable message (turn on the online
+/// consent in Settings) instead of the English reason.
+pub fn edge_consent_required_message(role: &str) -> String {
+    let evidence = serde_json::json!({ "engine": "edge", "role": role });
+    format!(
+        "Online Edge fallback requires explicit permission [[edge_consent_required_v1]]{evidence}[[/edge_consent_required_v1]]"
+    )
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsPreferences {
@@ -181,6 +191,11 @@ impl TtsPreferences {
             language
         };
         self.primary.validate(primary_language)?;
+        // Online Edge speech never runs without the user's online consent, as the
+        // primary voice either; the job is refused before any synthesis.
+        if self.primary.engine == "edge" && !self.allow_online_fallback {
+            return Err(edge_consent_required_message("primary"));
+        }
         if let Some(secondary) = &self.secondary {
             if secondary.engine == "piper" {
                 crate::model_catalog::validate_piper_quality(
@@ -192,7 +207,7 @@ impl TtsPreferences {
                 return Err("Secondary voice must differ from primary".into());
             }
             if secondary.engine == "edge" && !self.allow_online_fallback {
-                return Err("Online Edge fallback requires explicit permission".into());
+                return Err(edge_consent_required_message("secondary"));
             }
         }
         Ok(())
@@ -469,6 +484,73 @@ mod tests {
         assert!(p.validate(Some("pt-BR")).is_ok());
         assert!(p.validate(Some("en-US")).is_err());
     }
+    fn edge_selection() -> TtsSelection {
+        TtsSelection {
+            session: None,
+            engine: "edge".into(),
+            model_id: None,
+            voice: None,
+        }
+    }
+
+    #[test]
+    fn edge_primary_without_consent_is_refused_with_an_actionable_marker() {
+        let mut p = TtsPreferences::default();
+        p.primary = edge_selection();
+        let error = p.validate(Some("en-US")).unwrap_err();
+        assert!(error.contains("[[edge_consent_required_v1]]"), "{error}");
+        assert!(error.contains("\"role\":\"primary\""), "{error}");
+        // The refusal is the same whatever the language or the policy version.
+        p.policy_version = Some(2);
+        assert!(p
+            .validate(None)
+            .unwrap_err()
+            .contains("[[edge_consent_required_v1]]"));
+    }
+
+    #[test]
+    fn edge_primary_with_consent_is_accepted() {
+        let mut p = TtsPreferences::default();
+        p.primary = edge_selection();
+        p.allow_online_fallback = true;
+        assert!(p.validate(Some("en-US")).is_ok());
+    }
+
+    #[test]
+    fn local_primaries_do_not_need_online_consent() {
+        let mut p = TtsPreferences::default();
+        assert!(!p.allow_online_fallback);
+        assert!(p.validate(Some("pt-BR")).is_ok());
+        p.primary = TtsSelection {
+            session: None,
+            engine: "system".into(),
+            model_id: None,
+            voice: None,
+        };
+        assert!(p.validate(Some("pt-BR")).is_ok());
+    }
+
+    #[test]
+    fn secondary_refusal_uses_the_same_marker_with_its_role() {
+        let mut p = TtsPreferences::default();
+        p.secondary = Some(edge_selection());
+        let error = p.validate(Some("pt-BR")).unwrap_err();
+        assert!(error.contains("[[edge_consent_required_v1]]"), "{error}");
+        assert!(error.contains("\"role\":\"secondary\""), "{error}");
+    }
+
+    #[test]
+    fn legacy_job_naming_edge_is_an_explicit_online_choice() {
+        let captured =
+            TtsPreferences::capture_legacy_selection(Some("edge"), None, None, false).unwrap();
+        assert_eq!(captured.primary.engine, "edge");
+        assert!(captured.allow_online_fallback);
+        assert!(captured.validate(None).is_ok());
+        let piper =
+            TtsPreferences::capture_legacy_selection(Some("piper"), None, None, false).unwrap();
+        assert!(!piper.allow_online_fallback);
+    }
+
     #[test]
     fn failures_stop_and_success_resets() {
         let mut p = SegmentPolicy::default();

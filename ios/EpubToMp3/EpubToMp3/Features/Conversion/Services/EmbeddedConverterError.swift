@@ -27,6 +27,7 @@ extension EmbeddedConverterError {
             if TtsLanguageMismatch.decode(self) != nil || reason.contains("Model does not support this language") {
                 return L10n.string("error.modelLanguage")
             }
+            if EdgeConsentRequired.decode(self) != nil { return L10n.string("error.edgeConsentRequired") }
             if BookLanguageUncertain.decode(self) != nil { return L10n.string("error.bookLanguageUncertain") }
             if reason.contains("Language is unavailable") { return L10n.string("error.voiceLanguage") }
             if reason.contains("Unsupported TTS engine") { return L10n.string("error.unsupportedEngine") }
@@ -34,5 +35,18 @@ extension EmbeddedConverterError {
             if reason.localizedCaseInsensitiveContains("cancelled") { return L10n.string("convert.cancelled") }
             return L10n.string("error.conversionFailed")
         }
+    }
+}
+
+/// Rust refused an online Edge voice (primary or secondary) because the online
+/// consent is off. The marker is the contract; the English reason is never parsed.
+struct EdgeConsentRequired: Decodable, Sendable, Equatable {
+    let role: String?
+    static func decode(_ error: Error) -> Self? {
+        guard case .conversionFailed(let reason) = error as? EmbeddedConverterError,
+              let start = reason.range(of: "[[edge_consent_required_v1]]"),
+              let end = reason.range(of: "[[/edge_consent_required_v1]]", range: start.upperBound..<reason.endIndex)
+        else { return nil }
+        return try? JSONDecoder().decode(Self.self, from: Data(reason[start.upperBound..<end.lowerBound].utf8))
     }
 }

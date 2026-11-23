@@ -36,6 +36,9 @@ impl TtsPreferences {
                 voice: None,
                 session: None,
             }),
+            // A legacy job that names Edge as its engine is itself the explicit
+            // online choice; typed preferences must carry the consent instead.
+            allow_online_fallback: engine == "edge",
             ..Self::default()
         };
         preferences.validate(None)?;

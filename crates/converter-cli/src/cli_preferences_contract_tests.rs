@@ -260,12 +260,14 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
     };
     converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
     let stored = fs::read(preference_path(&config)).unwrap();
+    // Local primary: an Edge primary without the consent is refused outright, and
+    // this test is about the captured voice and consent replacing the saved ones.
     let captured = TtsPreferences {
         policy_version: None,
         primary: TtsSelection {
             session: None,
-            engine: "edge".into(),
-            model_id: None,
+            engine: "piper".into(),
+            model_id: Some("pt_BR-faber-medium".into()),
             voice: None,
         },
         secondary: None,

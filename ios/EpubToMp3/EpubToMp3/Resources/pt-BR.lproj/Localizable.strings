@@ -462,6 +462,7 @@
 "error.unsupportedEngine" = "O mecanismo de voz selecionado não é compatível.";
 "error.conversionFailed" = "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.";
 "error.bookLanguageUncertain" = "Não foi possível identificar com segurança o idioma deste texto. Escolha o idioma e tente novamente.";
+"error.edgeConsentRequired" = "As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.";
 "tts.recovery.title" = "Escolher um modelo compatível";
 "tts.recovery.message" = "O modelo atual não suporta %@. Modelo sugerido: %@. A troca vale somente para esta conversão.";
 "tts.recovery.use" = "Usar %@";

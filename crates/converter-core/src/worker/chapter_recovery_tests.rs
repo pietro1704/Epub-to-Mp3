@@ -81,7 +81,7 @@ fn app_policy_uses_short_system_passages_until_primary_recovers() {
             voice: None,
         },
         secondary: Some(TtsSelection::default()),
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     let providers = Mutex::new(Vec::new());
     worker

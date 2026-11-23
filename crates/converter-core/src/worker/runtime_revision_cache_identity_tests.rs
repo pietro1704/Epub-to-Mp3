@@ -86,6 +86,8 @@ fn chapter_request_key_is_byte_identical_to_the_package_version_era() {
     fs::write(&model, b"pinned synthetic model").unwrap();
     fs::write(model.with_extension("onnx.json"), b"{}").unwrap();
     let worker = ConversionWorker::new(config).unwrap();
+    // Edge now needs the online consent, so the pinned Edge key is the consented
+    // request's; the key function itself is unchanged.
     let edge = TtsPreferences {
         policy_version: None,
         primary: TtsSelection {
@@ -95,7 +97,7 @@ fn chapter_request_key_is_byte_identical_to_the_package_version_era() {
             voice: Some("pt-BR-FranciscaNeural".into()),
         },
         secondary: None,
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     for (preferences, expected) in [
         (
@@ -104,7 +106,7 @@ fn chapter_request_key_is_byte_identical_to_the_package_version_era() {
         ),
         (
             edge,
-            "9c60892aa1390d708b82a45fd6b06951c727e837fb2cc58c3c6a795cdb8f56e4",
+            "4ef5ef84cfc9722fd8a5bbec2f7dd9757e43e9b4f2c2011a46d9861394023a3f",
         ),
     ] {
         let mut request = preference_test_request();

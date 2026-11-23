@@ -172,9 +172,11 @@ async fn resume_of_a_legacy_snapshot_repeats_the_selection_its_worker_recorded()
     let input_dir = state.config.paths.job_inputs_dir.join("legacy-resume");
     std::fs::create_dir_all(&input_dir).unwrap();
     std::fs::write(input_dir.join("source.epub"), b"invalid epub fixture").unwrap();
+    // A legacy job names `engine: "edge"` without typed preferences: that explicit
+    // choice is captured with the online consent Edge as a primary voice requires.
     let preferences: TtsPreferences = serde_json::from_value(serde_json::json!({
         "primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},
-        "secondary":null,"allow_online_fallback":false
+        "secondary":null,"allow_online_fallback":true
     }))
     .unwrap();
     // The worker's durable record keeps the selection it captured.
@@ -184,12 +186,12 @@ async fn resume_of_a_legacy_snapshot_repeats_the_selection_its_worker_recorded()
             .run(ConversionRequest {
                 input: input_dir.join("source.epub"),
                 job_id: "legacy-resume".into(),
-                engine: None,
-                voice: None,
+                engine: Some("edge".into()),
+                voice: Some("pt-BR-FranciscaNeural".into()),
                 language: None,
                 piper_model: None,
                 piper_config: None,
-                tts_preferences: Some(preferences.clone()),
+                tts_preferences: None,
                 models_root: None,
                 chapter_indices: None,
                 no_parallel: false,
@@ -215,4 +217,42 @@ async fn resume_of_a_legacy_snapshot_repeats_the_selection_its_worker_recorded()
     let resumed = terminal_snapshot(&state, "legacy-resume").await;
     assert_eq!(resumed.tts_preferences, Some(preferences));
     assert!(resumed.error.as_deref().unwrap().starts_with("EPUB error:"));
+}
+
+#[tokio::test]
+async fn resume_refuses_typed_edge_preferences_recorded_without_consent() {
+    let root = TestRoot::new();
+    let state = root.state();
+    let input_dir = state.config.paths.job_inputs_dir.join("unconsented-resume");
+    std::fs::create_dir_all(&input_dir).unwrap();
+    std::fs::write(input_dir.join("source.epub"), b"invalid epub fixture").unwrap();
+    // The snapshot recorded typed preferences that select Edge without the online
+    // consent: unlike a legacy `engine: "edge"` job, that is not an explicit
+    // consent, so the resumed job is refused before any synthesis.
+    let unconsented: TtsPreferences = serde_json::from_value(serde_json::json!({
+        "primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},
+        "secondary":null,"allow_online_fallback":false
+    }))
+    .unwrap();
+    let mut snapshot = initial_job("unconsented-resume".into(), &CreateJob::default());
+    snapshot.state = JobPhase::Failed;
+    snapshot.tts_preferences = Some(unconsented);
+    let (events, _receiver) = broadcast::channel(8);
+    state.jobs.write().await.insert(
+        snapshot.job_id.clone(),
+        Job {
+            snapshot,
+            events,
+            cancellation: Default::default(),
+            worker_active: false,
+        },
+    );
+    let response = resume_job(AxumPath("unconsented-resume".into()), State(state.clone())).await;
+    // Refused up front as a client error, with the structured, actionable reason.
+    assert!(response.status().is_client_error(), "{}", response.status());
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("[[edge_consent_required_v1]]"), "{text}");
 }

@@ -85,6 +85,7 @@ fn typed_playback_window_change_does_not_count_as_provider_failure() {
     let mut preferences = crate::tts_preferences::TtsPreferences::default();
     preferences.primary.engine = "edge".into();
     preferences.primary.model_id = None;
+    preferences.allow_online_fallback = true;
     let result = worker.synthesize_preferences(
         &preference_test_request(),
         &preferences,
@@ -140,7 +141,7 @@ fn typed_provider_returning_audio_after_cancellation_never_publishes_or_falls_ba
             model_id: None,
             voice: None,
         }),
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     let result = worker.synthesize_preferences(
         &preference_test_request(),
@@ -186,7 +187,7 @@ fn typed_policy_stops_third_failure_and_cancellation_never_falls_back() {
             model_id: None,
             voice: None,
         }),
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     };
     let result = worker.synthesize_preferences(
         &preference_test_request(),

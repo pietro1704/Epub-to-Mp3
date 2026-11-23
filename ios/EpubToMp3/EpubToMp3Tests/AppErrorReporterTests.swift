@@ -63,6 +63,27 @@ final class AppErrorReporterTests: XCTestCase {
                        L10n.string("error.conversionFailed"))
     }
 
+    func testEdgeWithoutOnlineConsentShowsALocalizedActionableMessage() throws {
+        let reasons = [
+            "unsupported input: Online Edge fallback requires explicit permission "
+                + "[[edge_consent_required_v1]]{\"engine\":\"edge\",\"role\":\"primary\"}[[/edge_consent_required_v1]]",
+            "Online Edge fallback requires explicit permission "
+                + "[[edge_consent_required_v1]]{\"engine\":\"edge\",\"role\":\"secondary\"}[[/edge_consent_required_v1]]",
+        ]
+        for (index, reason) in reasons.enumerated() {
+            let error = EmbeddedConverterError.conversionFailed(reason)
+            XCTAssertEqual(EdgeConsentRequired.decode(error)?.role, index == 0 ? "primary" : "secondary")
+            XCTAssertEqual(error.errorDescription, L10n.string("error.edgeConsentRequired"))
+            XCTAssertNotEqual(error.errorDescription, L10n.string("error.conversionFailed"))
+        }
+        // L10n returns the key itself for a missing entry, which would make the checks above pass.
+        XCTAssertNotEqual(L10n.string("error.edgeConsentRequired"), "error.edgeConsentRequired")
+        // The message names the setting the user has to turn on, exactly as Settings spells it.
+        XCTAssertTrue(L10n.string("error.edgeConsentRequired").contains(L10n.string("settings.onlineFallback")))
+        // A reason without the marker is not mistaken for it.
+        XCTAssertNil(EdgeConsentRequired.decode(EmbeddedConverterError.conversionFailed("Online Edge fallback requires explicit permission")))
+    }
+
     func testMismatchEnvelopePreservesLanguageAndModelWithoutParsingEnglish() throws {
         let payload = "[[tts_language_mismatch_v1]]{\"language\":\"en-US\",\"model_id\":\"pt_BR-faber-medium\"}[[/tts_language_mismatch_v1]]"
         let error = EmbeddedConverterError.conversionFailed("wrapped system speech error: " + payload)
