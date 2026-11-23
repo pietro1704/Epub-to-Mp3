@@ -26,16 +26,27 @@ void main() {
   final t0 = DateTime(2026, 11, 1);
 
   group('Recently played order', () {
-    test('opening a book never moves it to the front', () {
+    test('opening a book (to read or to listen) puts it first at once, with no audio played', () {
       final a = _book('a', t0, played: t0.add(const Duration(days: 3)));
       final b = _book('b', t0.add(const Duration(days: 1)));
       final c = _book('c', t0.add(const Duration(days: 2)));
-      // The user opens (reads or starts listening to) c just now.
-      c.lastOpenedAt = t0.add(const Duration(days: 9));
-      expect(sortBooksByRecentPlayback([b, c, a]).map((x) => x.id), ['a', 'c', 'b']);
+      // The user opens b just now: reading, or starting to listen. No audio is heard.
+      b.lastOpenedAt = t0.add(const Duration(days: 9));
+      expect(sortBooksByRecentPlayback([a, b, c]).map((x) => x.id), ['b', 'a', 'c']);
+      // Then c is opened: it takes the first place.
+      c.lastOpenedAt = t0.add(const Duration(days: 10));
+      expect(sortBooksByRecentPlayback([a, b, c]).map((x) => x.id), ['c', 'b', 'a']);
     });
 
-    test('played books come first by last playback, the rest keep newest-added first', () {
+    test('the latest of opened and played decides: playing later moves a book ahead of one only opened', () {
+      final opened = _book('opened', t0, opened: t0.add(const Duration(days: 5)));
+      final played = _book('played', t0.add(const Duration(days: 1)), played: t0.add(const Duration(days: 6)));
+      expect(sortBooksByRecentPlayback([opened, played]).map((x) => x.id), ['played', 'opened']);
+      opened.lastOpenedAt = t0.add(const Duration(days: 7));
+      expect(sortBooksByRecentPlayback([opened, played]).map((x) => x.id), ['opened', 'played']);
+    });
+
+    test('books never opened or played keep newest-added first, after the ones with activity', () {
       final old = _book('old', t0, played: t0.add(const Duration(days: 5)));
       final recent = _book('recent', t0.add(const Duration(days: 1)), played: t0.add(const Duration(days: 6)));
       final newUnplayed = _book('new', t0.add(const Duration(days: 8)));
@@ -52,18 +63,27 @@ void main() {
       expect(BookEntity.fromJson(_book('b', t0).toJson()).lastPlayedAt, isNull);
     });
 
-    test('openBookFile does not touch playback recency', () async {
+    test('openBookFile puts the book first right away, before any audio; playing keeps it there', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final store = LibraryStore(prefs: prefs);
-      final dir = await Directory.systemTemp.createTemp('recent_playback_');
-      final file = File('${dir.path}/x.epub')..writeAsBytesSync(List.filled(40, 7));
-      final book = await store.importBook(file.path);
-      await store.openBookFile(book.id);
-      expect(store.books.single.lastPlayedAt, isNull);
-      store.recordPlayback(book.id);
-      expect(store.books.single.lastPlayedAt, isNotNull);
-      expect(LibraryStore(prefs: prefs).books.single.lastPlayedAt, isNotNull, reason: 'persisted');
+      final dir = await Directory.systemTemp.createTemp('recent_open_');
+      final first = File('${dir.path}/a.epub')..writeAsBytesSync(List.filled(40, 7));
+      final second = File('${dir.path}/b.epub')..writeAsBytesSync(List.filled(40, 9));
+      final a = await store.importBook(first.path);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final b = await store.importBook(second.path);
+      expect(sortBooksByRecentPlayback(store.books).first.id, b.id, reason: 'b was added last');
+
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await store.openBookFile(a.id);
+      expect(sortBooksByRecentPlayback(store.books).first.id, a.id, reason: 'opening a (no audio) moves it to the front');
+      expect(store.books.firstWhere((x) => x.id == a.id).lastPlayedAt, isNull);
+
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      store.recordPlayback(b.id);
+      expect(sortBooksByRecentPlayback(store.books).first.id, b.id, reason: 'playing b afterwards moves it to the front');
+      expect(LibraryStore(prefs: prefs).books.firstWhere((x) => x.id == b.id).lastPlayedAt, isNotNull, reason: 'persisted');
     });
   });
 
