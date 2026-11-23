@@ -28,15 +28,22 @@ final _indicator = find.byWidgetPredicate(
 /// Effective text and pill colors of the indicator, composited over [readerBackground].
 (Color text, Color pill) _colors(WidgetTester tester, Color readerBackground) {
   final text = tester.widget<Text>(_indicator);
+  // Behind the text: the nearest solid color (a capsule would show here too).
   var pill = readerBackground;
-  final box = find
-      .ancestor(of: _indicator, matching: find.byType(Container))
+  final solid = find
+      .ancestor(of: _indicator, matching: find.byType(ColoredBox))
       .evaluate()
-      .map((e) => (e.widget as Container).decoration)
-      .whereType<BoxDecoration>()
-      .where((d) => d.color != null)
+      .map((e) => (e.widget as ColoredBox).color)
       .firstOrNull;
-  if (box != null) pill = _over(box.color!, readerBackground);
+  if (solid != null) pill = _over(solid, readerBackground);
+  final capsule = find
+      .ancestor(of: _indicator, matching: find.byType(DecoratedBox))
+      .evaluate()
+      .map((e) => (e.widget as DecoratedBox).decoration)
+      .whereType<BoxDecoration>()
+      .where((d) => d.color != null && d.borderRadius != null)
+      .firstOrNull;
+  expect(capsule, isNull, reason: 'the indicator has no capsule');
   return (_over(text.style!.color!, pill), pill);
 }
 
