@@ -22,7 +22,7 @@ final class MacReaderBookLoad {
     private let observation: ReaderOpenJourney
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let send: (Event) -> Void
-    private var loadTask: Task<Void, Never>?
+    private let opening: ReaderOpenSession
     private var preparedRead: MacReaderPreparedRead?
     private var tocRows: [ReaderTocRow] { document.tocRows }
     private var loadGeneration: UUID {
@@ -74,6 +74,7 @@ final class MacReaderBookLoad {
          stageObserver: (@Sendable (String, UInt64) -> Void)?, send: @escaping (Event) -> Void) {
         self.location = location
         self.document = document
+        opening = ReaderOpenSession(document: document)
         self.library = library
         self.settings = settings
         preparedRenderer = renderer
@@ -86,19 +87,23 @@ final class MacReaderBookLoad {
         self.send = send
     }
 
-    deinit { loadTask?.cancel() }
     private func observeOpenStage(_ name: String) { openStageObserver?(name, DispatchTime.now().uptimeNanoseconds) }
-    private func isActiveLoad(_ id: UUID, bookID: String) -> Bool { document.isActiveLoad(id, bookID: bookID) }
+    private func isActiveLoad(_ id: UUID, bookID: String) -> Bool {
+        document.isActiveLoad(id, bookID: bookID) && location.readingBookID == bookID
+    }
+
+    func cancel() {
+        opening.cancel()
+        preparedRead?.cancel()
+        preparedRead = nil
+        loadGeneration = UUID()
+        presentationGeneration = UUID()
+    }
 
     func loadCurrentBook() {
         LocalFulltextCache.cancelPrewarming()
-        loadTask?.cancel()
-        preparedRead?.cancel()
-        preparedRead = nil
-        observation.cancelActiveBookOpenJourney()
-        let generation = UUID()
-        loadGeneration = generation
-        presentationGeneration = UUID()
+        cancel()
+        let generation = loadGeneration
         isRestoringInitialPosition = false
         pendingAppearanceRefresh = false
         activePreparedChapter = nil
@@ -117,14 +122,14 @@ final class MacReaderBookLoad {
             hasRestoredInitialPosition = false
         }
         document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: book.id)
-        let journeyID = document.openJourney.begin(for: book)
+        let attempt = opening.begin(book: book, generation: generation) { [weak document, weak location] in
+            document?.isActiveLoad(generation, bookID: book.id) == true && location?.readingBookID == book.id
+        }
         observeOpenStage("journey_started")
         // Process-warm reader opens must not clear the visible chapter or
         // show the loading cover. The last two prepared books are retained
         // in memory precisely so this route can paint immediately.
-        if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: book.id),
-           !warmPayload.chapters.isEmpty {
-            LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
+        if let warmPayload = opening.warmPayload(for: attempt) {
             fulltext = warmPayload
             LocalFulltextCache.recordWarmOpen(bookId: book.id)
             send(.warmHeader(book, warmPayload.chapters.count))
@@ -142,12 +147,11 @@ final class MacReaderBookLoad {
                 presentLoadedChapter(bookID: book.id)
             } else {
                 send(.showLoading(book))
-                loadTask = Task { [weak self] in
+                opening.schedule(attempt) { [weak self] attempt in
                     guard let self else { return }
-                    await textPresentation.restoreSelectedChapter(bookID: book.id)
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
+                    try await attempt.read { await self.textPresentation.restoreSelectedChapter(bookID: book.id) }
                     presentLoadedChapter(bookID: book.id)
-                }
+                } failure: { [weak self] error in self?.send(.failure(error)) }
             }
             return
         }
@@ -164,121 +168,101 @@ final class MacReaderBookLoad {
         send(.showLoading(book))
         observeOpenStage("loading_overlay_show_completed")
         observeOpenStage("reader_load_task_scheduled")
-        loadTask = Task { [weak self] in
+        opening.schedule(attempt) { [weak self] attempt in
             defer {
                 prepared.cancel()
                 if let self, self.loadGeneration == generation { self.preparedRead = nil }
             }
-            guard !Task.isCancelled, let self else { return }
+            guard let self else { return }
             observeOpenStage("reader_load_task_started")
-            do {
-                var next = arrivals.makeAsyncIterator()
-                let first = await next.next()
-                observeOpenStage(first.map {
-                    if case .chapter(let prepared) = $0 {
-                        return prepared == nil ? "first_arrival_projection_miss" : "first_arrival_projection"
-                    }
-                    return "first_arrival_catalog"
-                } ?? "first_arrival_end")
-                guard isActiveLoad(generation, bookID: book.id) else { return }
-                if case .chapter(let prepared?) = first {
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
-                    activePreparedChapter = prepared
-                    selectedChapter = prepared.chapterOrdinal
-                    send(.chapterCount(prepared.chapterCount))
-                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
-                    await textPresentation.restoreSelectedChapter(bookID: book.id)
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
-                    presentLoadedChapter(bookID: book.id, onControlsResolved: startCatalog)
-                } else {
-                    startCatalog()
+            var next = arrivals.makeAsyncIterator()
+            let first = try await attempt.read { await next.next() }
+            observeOpenStage(first.map {
+                if case .chapter(let prepared) = $0 {
+                    return prepared == nil ? "first_arrival_projection_miss" : "first_arrival_projection"
                 }
-                let cachedPayload: EbookFulltext?
-                if case .catalog(let payload) = first { cachedPayload = payload }
-                else { cachedPayload = await catalogTask.value }
-                guard isActiveLoad(generation, bookID: book.id) else { return }
-                let payload: EbookFulltext
-                if let cachedPayload {
-                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
-                    payload = cachedPayload
-                } else {
-                    LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
-                    let fileURL = try await library.openBookFileAsync(id: book.id)
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                    if book.fileType == .pdf {
-                        document.openJourney.pendingPDFPageJourneyID = journeyID
-                        guard let wasNormalized = await textPresentation.showPDF(fileURL) else { return }
-                        guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                        observation.recordFirstPDFPage(wasNormalized: wasNormalized)
-                        self.send(.hideLoading)
-                        observation.recordControlsUsable()
-                        return
-                    }
-                    let fonts = await Task.detached(priority: .utility) {
-                        EpubFontManager.registerFonts(from: fileURL, bookID: book.id)
-                    }.value
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                    document.registeredFontURLs = fonts
-                    payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
-                }
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                // A validated disk payload is already durable; do not reencode it on MainActor.
-                if cachedPayload == nil {
-                    let writer = preparedFulltextWriter
-                    await Task.detached(priority: .utility) { writer(payload, book.id) }.value
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                }
-                LocalFulltextCache.recordWarmOpen(bookId: book.id)
-                let prepared = activePreparedChapter
-                let catalogMatches = prepared?.catalogChapters.map { catalog in
-                    catalog.count == payload.chapters.count && zip(catalog, payload.chapters).allSatisfy { pair in
-                        pair.0.index == pair.1.index && pair.0.name == pair.1.name
-                            && pair.0.contentKind == pair.1.contentKind
-                    }
-                } ?? true
-                let alreadyPresented = prepared.map {
-                    $0.chapterCount == payload.chapters.count && $0.title == payload.bookTitle
-                        && $0.author == payload.bookAuthor && $0.toc == payload.toc
-                        && payload.chapters[safe: $0.chapterOrdinal] == $0.chapter
-                } == true && catalogMatches
-                if prepared != nil, !alreadyPresented {
-                    presentationGeneration = UUID()
-                    isRestoringInitialPosition = false
-                    hasRestoredInitialPosition = false
-                }
-                fulltext = payload
-                activePreparedChapter = nil
-                send(.chapterCount(payload.chapters.count))
-                send(.reloadContents)
-                if alreadyPresented {
-                    send(.selectCurrentContents)
-                    prepareChapterProjection(bookID: book.id, ordinal: selectedChapter)
-                    if hasRestoredInitialPosition, !isRestoringInitialPosition {
-                        observation.recordControlsUsable()
-                    }
-                    return
-                }
-                if prepared != nil { hasRestoredInitialPosition = false }
-                if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                    selectedChapter = entry.chapterIndex
-                } else {
-                    let firstReadableChapter = payload.chapters.firstIndex {
-                        $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80
-                    } ?? 0
-                    selectedChapter = min(max(selectedChapter, firstReadableChapter), max(0, payload.chapters.count - 1))
-                }
-                selectedChapter = min(max(selectedChapter, 0), max(0, payload.chapters.count - 1))
-                if let row = self.tocRows.firstIndex(where: { $0.chapterIndex == self.selectedChapter }) {
-                    send(.selectRow(row))
-                }
-                await textPresentation.restoreSelectedChapter(bookID: book.id)
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                presentLoadedChapter(bookID: book.id)
-            } catch {
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                send(.failure(error))
+                return "first_arrival_catalog"
+            } ?? "first_arrival_end")
+            if book.fileType != .pdf, case .chapter(let prepared?) = first {
+                activePreparedChapter = prepared
+                selectedChapter = prepared.chapterOrdinal
+                send(.chapterCount(prepared.chapterCount))
+                attempt.classify(.preparedDisk)
+                try await attempt.read { await self.textPresentation.restoreSelectedChapter(bookID: book.id) }
+                presentLoadedChapter(bookID: book.id, onControlsResolved: startCatalog)
+            } else {
+                startCatalog()
             }
+            let cachedPayload: EbookFulltext?
+            if case .catalog(let payload) = first { cachedPayload = payload }
+            else { cachedPayload = try await attempt.read { await catalogTask.value } }
+            let arrival = try await opening.resolve(attempt, cached: cachedPayload,
+                openSource: { try await self.library.openBookFileAsync(id: $0) }) { url, attempt in
+                    let fonts = try await attempt.read {
+                        await Task.detached(priority: .utility) {
+                            EpubFontManager.registerFonts(from: url, bookID: book.id)
+                        }.value
+                    }
+                    self.document.registeredFontURLs = fonts
+                    return try await MacEpubParser.parse(at: url, bookId: book.id)
+                }
+            switch arrival {
+            case .pdf(let url):
+                guard let wasNormalized = try await attempt.read({ await self.textPresentation.showPDF(url) }) else { return }
+                observation.recordFirstPDFPage(wasNormalized: wasNormalized)
+                send(.hideLoading)
+                try attempt.check()
+                observation.recordControlsUsable()
+            case .text(let payload, let fromDisk):
+                try await publish(payload, fromDisk: fromDisk, attempt: attempt)
+            }
+        } failure: { [weak self] error in self?.send(.failure(error)) }
+    }
+
+    private func publish(_ payload: EbookFulltext, fromDisk: Bool, attempt: ReaderOpenSession.Attempt) async throws {
+        let bookID = attempt.book.id
+        // A disk payload is already durable.
+        if !fromDisk {
+            let writer = preparedFulltextWriter
+            try await attempt.read { await Task.detached(priority: .utility) { writer(payload, bookID) }.value }
         }
+        LocalFulltextCache.recordWarmOpen(bookId: bookID)
+        let prepared = activePreparedChapter
+        let alreadyPresented = prepared?.matchesCatalog(payload, bookID: bookID, chapterOrdinal: selectedChapter) == true
+        if prepared != nil, !alreadyPresented {
+            presentationGeneration = UUID()
+            isRestoringInitialPosition = false
+            hasRestoredInitialPosition = false
+        }
+        fulltext = payload
+        activePreparedChapter = nil
+        send(.chapterCount(payload.chapters.count))
+        try attempt.check()
+        send(.reloadContents)
+        try attempt.check()
+        if alreadyPresented {
+            send(.selectCurrentContents)
+            try attempt.check()
+            prepareChapterProjection(bookID: bookID, ordinal: selectedChapter)
+            if hasRestoredInitialPosition, !isRestoringInitialPosition {
+                observation.recordControlsUsable()
+            }
+            return
+        }
+        if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: bookID) {
+            selectedChapter = entry.chapterIndex
+        } else {
+            let firstReadableChapter = payload.chapters.firstIndex {
+                $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80
+            } ?? 0
+            selectedChapter = min(max(selectedChapter, firstReadableChapter), max(0, payload.chapters.count - 1))
+        }
+        selectedChapter = min(max(selectedChapter, 0), max(0, payload.chapters.count - 1))
+        if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
+            send(.selectRow(row))
+        }
+        try await attempt.read { await textPresentation.restoreSelectedChapter(bookID: bookID) }
+        presentLoadedChapter(bookID: bookID)
     }
 
     private func presentLoadedChapter(bookID: String, onControlsResolved: (() -> Void)? = nil) {

@@ -196,6 +196,11 @@ final class MacReaderViewController: NSViewController {
         textPresentation: textPresentation, observation: document.openJourney, stageObserver: openStageObserver,
         send: { [weak self] in self?.applyLoadEvent($0) }
     )
+    func cancelBookOpen() {
+        guard isViewLoaded else { return }
+        bookLoad.cancel()
+    }
+
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
         bookLoad.loadCurrentBook()
