@@ -165,6 +165,8 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
                                "-reader.recentTool.v1", "listen",
                                // Local Piper English pinned for this launch only; the saved settings stay as they are.
                                SettingsDefaultsSourceArguments.speechSelection, "piper:en_US-ljspeech-high",
+                               // Breadcrumb log (lifecycle, audio session, output, segments) copied afterwards with devicectl.
+                               "-uiTestPlaybackTrace",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         var log: [String] = ["Book: retained LOTR EPUB. Voice: local Piper en_US-ljspeech-high pinned for the launch (asserted on the player label; engine proven by the copied conversion.log)."]

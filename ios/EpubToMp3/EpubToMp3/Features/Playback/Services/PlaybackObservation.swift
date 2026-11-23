@@ -150,6 +150,8 @@ final class PlaybackObservation {
             }, outputChanged: { [weak self] isRendering in
                 guard let self else { return }
                 let state = self.actions.state()
+                PlaybackTrace.shared.record("output rendering=\(isRendering) playing=\(state.isPlaying) "
+                    + "segmentMode=\(state.segmentMode) awaitingSynthesis=\(state.isAwaitingSynthesis)")
                 self.queueSession.starvation.update(
                     wantsAudio: state.isPlaying && state.segmentMode,
                     awaitingSynthesis: state.isAwaitingSynthesis, isRendering: isRendering)

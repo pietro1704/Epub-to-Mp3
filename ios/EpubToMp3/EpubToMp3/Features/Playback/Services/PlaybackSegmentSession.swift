@@ -274,6 +274,7 @@ final class PlaybackSegmentSession {
         let chapterIndex = identity.chapterIndex
         let segmentIndex = identity.segmentIndex
         log.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(!hasPlayer)")
+        PlaybackTrace.shared.record("segment delivered ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(!hasPlayer)")
         guard !data.isEmpty else {
             log.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")
             // Edge-TTS occasionally emits a zero-byte preamble as the

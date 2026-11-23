@@ -51,8 +51,11 @@ final class PlaybackStarvationWindow {
     static let systemBegin: Begin = { name, expired in
         #if os(iOS)
         let id = UIApplication.shared.beginBackgroundTask(withName: name) {
+            PlaybackTrace.shared.record("starvation window expired by iOS")
             Task { @MainActor in expired() }
         }
+        PlaybackTrace.shared.record("starvation window begin granted=\(id != .invalid) "
+            + "bgRemaining=\(PlaybackTrace.backgroundTimeRemaining())")
         return id == .invalid ? nil : id.rawValue
         #else
         return nil
@@ -61,6 +64,7 @@ final class PlaybackStarvationWindow {
 
     static let systemEnd: End = { token in
         #if os(iOS)
+        PlaybackTrace.shared.record("starvation window ended")
         UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: token))
         #endif
     }

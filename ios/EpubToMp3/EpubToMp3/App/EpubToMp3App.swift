@@ -45,6 +45,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         LegacyPreferenceCleanup.runIfNeeded(standard: .standard,
                                             appGroup: UserDefaults(suiteName: LibraryStore.appGroupID))
 #if os(iOS)
+        PlaybackTrace.shared.startIfRequested()
         library.installUITestFixtureIfRequested()
         DevelopmentSeedBook.install(into: library)
         UITestPlaybackFixture.installIfRequested(library: library, player: player)
@@ -173,6 +174,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         ConversionLiveActivitySession.dismissOrphans()
         _ = SpeechModelLibraryClient.shared
         Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
+        PlaybackTrace.shared.startIfRequested()
         library.installUITestFixtureIfRequested()
         if ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition") {
             ReaderProgressStore.clearAll()
