@@ -11,3 +11,4 @@ include!("android_jni/audio_chunk_publication.rs");
 include!("android_jni/conversion_entrypoints.rs");
 include!("android_jni/model_catalog_entrypoints.rs");
 include!("android_jni/model_installation_entrypoints.rs");
+include!("android_jni/background_pacing_entrypoints.rs");

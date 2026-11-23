@@ -31,6 +31,7 @@ class RootScreen extends ConsumerWidget {
     final chromeVisible = !reader || ref.watch(readerChromeVisibleProvider);
     ref.watch(playbackResumePersistenceProvider);
     ref.watch(playbackRecencyProvider);
+    ref.watch(backgroundPacingProvider);
     final selected = destinations.indexOf(destination);
     final labels = [t.libraryTitle, t.settingsTitle, t.convertTitle];
     const icons = [

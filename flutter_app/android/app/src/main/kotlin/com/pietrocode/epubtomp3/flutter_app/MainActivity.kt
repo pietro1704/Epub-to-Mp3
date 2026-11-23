@@ -168,6 +168,7 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeTtsCatalogLanguages(androidApi: Int): String?
     external fun nativeTtsResolveLanguageModel(requestJson: String): String?
     external fun nativeBookLanguage(path: String): String?
+    external fun nativeSetBackgroundCpuLimit(percent: Int)
 
     external fun nativeLastError(): String
 

@@ -34,6 +34,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
         StreamingChapterConverter,
         ListeningScheduleFactory,
         ManualTtsModelCatalog,
+        BackgroundPacingCapable,
         PositionedChapterConverter {
   DesktopEmbeddedConverter({ffi.DynamicLibrary? library, String? libraryPath})
     : _libraryPath = libraryPath ?? _resolveLibraryPath(),
@@ -89,6 +90,21 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
 
   @override
   Future<String> ttsModels() async => _models.modelsJson();
+
+  /// The limit is process-wide in Rust, so the UI isolate may set it while a
+  /// conversion isolate is synthesizing. A library without the symbol (older
+  /// build) simply has no pacing.
+  @override
+  Future<void> setBackgroundCpuLimit(int percent) async {
+    try {
+      _library
+          .lookupFunction<ffi.Void Function(ffi.Uint32), void Function(int)>(
+            'converter_set_background_cpu_limit_v1',
+          )(percent < 0 ? 0 : percent);
+    } on ArgumentError {
+      // Symbol missing in this library build.
+    }
+  }
 
   late final DesktopLanguageModelBindings _languageModels =
       DesktopLanguageModelBindings(library: _library);

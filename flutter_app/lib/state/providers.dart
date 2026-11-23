@@ -22,6 +22,7 @@ import '../services/storage/local_fulltext_cache.dart';
 import '../services/conversion/local_conversion_job.dart';
 import '../services/playback/playback_snapshot.dart';
 import '../services/playback/playback_resume_persistence.dart';
+import '../services/playback/background_pacing_controller.dart';
 import '../services/storage/resume_store.dart';
 import '../services/playback/sync_engine.dart';
 

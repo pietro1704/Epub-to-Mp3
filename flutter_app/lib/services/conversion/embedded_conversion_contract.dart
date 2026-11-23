@@ -135,6 +135,12 @@ abstract interface class ManualTtsModelCatalog {
   });
 }
 
+/// Process-wide limit on the CPU share local synthesis may use while the app is
+/// in the background (percent of one core); 0 lifts it. Rust owns the pacing.
+abstract interface class BackgroundPacingCapable {
+  Future<void> setBackgroundCpuLimit(int percent);
+}
+
 abstract interface class StreamingChapterConverter {
   Future<ConvertedChapterAudio> streamChapter({
     required String inputPath,
