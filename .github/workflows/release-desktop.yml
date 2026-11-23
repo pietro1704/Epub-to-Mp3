@@ -148,7 +148,7 @@ jobs:
           fi
 
       - name: Set up native build tools
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         env:
           MISE_ENABLE_TOOLS: ruby,ninja,flutter,java,android-sdk,rust
         with:
@@ -247,7 +247,7 @@ jobs:
         run: brew install xcodegen
 
       - name: Install mise
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
           cache: false
@@ -388,7 +388,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Setup desktop toolchains
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
           cache: false
@@ -500,7 +500,7 @@ jobs:
           VERSION_TAG: ${{ env.RELEASE_TAG }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --tag "$VERSION_TAG"
       - name: Set up Android signature verification tools
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         env:
           MISE_ENABLE_TOOLS: ruby,java,android-sdk
         with:

@@ -70,7 +70,7 @@ jobs:
       MISE_ENABLE_TOOLS: rust,ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
           cache: false
@@ -121,7 +121,7 @@ jobs:
             echo '::error::Hosted Android inference requires readable/writable /dev/kvm.'
             exit 1
           fi
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
           cache: false
@@ -334,14 +334,14 @@ jobs:
           test -d "$DEVELOPER_DIR"
           xcodebuild -version | tee "$RUNNER_TEMP/faber-xcode-version.txt"
           grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/faber-xcode-version.txt"
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
           cache: false
           install: false
       - name: Install official prebuilt Ruby for Intel
         if: matrix.arch == 'x86_64'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: '4.0.7'
           bundler-cache: false
