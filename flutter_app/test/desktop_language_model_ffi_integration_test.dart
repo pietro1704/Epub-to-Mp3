@@ -2,6 +2,7 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:flutter_app/models/language_model_resolution.dart';
+import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/services/conversion/desktop_embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -75,5 +76,73 @@ void main() {
       expect(analysis.samplesExamined, greaterThanOrEqualTo(0));
       expect(analysis.detector, isNotNull);
     }
+  }, skip: skip);
+
+  test('the real resolver reports the source Dart relies on for a book in another language', () async {
+    final c = converter();
+    // Compatible concrete primary: the primary is kept.
+    final primary = await c.resolveLanguageModel(
+      const LanguageModelRequest(
+        bookLanguage: 'pt-BR',
+        platform: 'Linux',
+        primary: TtsSelection.faber,
+        installedModelIds: ['pt_BR-faber-medium'],
+      ),
+    );
+    expect(primary.source, 'primary');
+
+    // English book, Portuguese primary: the best installed English model.
+    final automatic = await c.resolveLanguageModel(
+      const LanguageModelRequest(
+        bookLanguage: 'en-US',
+        platform: 'Linux',
+        primary: TtsSelection.faber,
+        installedModelIds: ['pt_BR-faber-medium', 'en_US-ljspeech-medium'],
+      ),
+    );
+    expect(automatic.status, LanguageModelStatus.selected);
+    expect(automatic.source, 'automatic');
+    expect(automatic.selection?.modelId, 'en_US-ljspeech-medium');
+
+    // No English model: the system voice, only when permitted and present.
+    const noModels = LanguageModelRequest(
+      bookLanguage: 'en-US',
+      platform: 'Linux',
+      primary: TtsSelection.faber,
+      installedModelIds: ['pt_BR-faber-medium'],
+      systemVoices: ['en-us'],
+    );
+    final system = await c.resolveLanguageModel(noModels);
+    expect(system.status, LanguageModelStatus.systemFallback);
+    expect(system.source, 'system');
+    expect(system.selection?.engine, 'system');
+
+    final off = await c.resolveLanguageModel(
+      const LanguageModelRequest(
+        bookLanguage: 'en-US',
+        platform: 'Linux',
+        primary: TtsSelection.faber,
+        installedModelIds: ['pt_BR-faber-medium'],
+        systemVoices: ['en-us'],
+        allowAutomaticSystemVoiceFallback: false,
+      ),
+    );
+    expect(off.status, LanguageModelStatus.missingModel);
+    expect(off.reasons, contains('system_fallback_disabled'));
+
+    final none = await c.resolveLanguageModel(
+      const LanguageModelRequest(
+        bookLanguage: 'en-US',
+        platform: 'Linux',
+        primary: TtsSelection.faber,
+        installedModelIds: ['pt_BR-faber-medium'],
+      ),
+    );
+    expect(none.status, LanguageModelStatus.missingModel);
+    expect(none.missing?.language, 'en');
+    expect(none.missing?.suggested, isNotEmpty);
+
+    // A Portuguese primary is incompatible with an English book.
+    expect(none.reasons, contains('primary:model_incompatible_with_language'));
   }, skip: skip);
 }

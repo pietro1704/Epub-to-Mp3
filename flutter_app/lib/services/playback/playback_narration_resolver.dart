@@ -99,11 +99,15 @@ class BookLanguageCache {
 
 /// Decides the narration of a NEW playback job from the book's language.
 ///
-/// It only acts when the user chose a narration for the language the book is
-/// confirmed to be in. Without a choice, or without a confirmed language, the
-/// result is [UnchangedNarration], i.e. exactly what a job did before. The
-/// resolution itself is Rust's (`converter_tts_resolve_language_model_json_v1`);
-/// nothing here downloads anything.
+/// The resolution is Rust's (`converter_tts_resolve_language_model_json_v1`) and
+/// runs for every new job except one whose narration the user selected
+/// explicitly ([explicitSelection]). The result is [UnchangedNarration], i.e.
+/// exactly what a job did before, whenever the configured primary already
+/// narrates this book language, and also when the language is not confirmed,
+/// the analysis fails or the status is unknown. For a book in another language
+/// Rust picks the best installed local model, then the system voice (when the
+/// user's policy permits it and the platform has one), else the job is refused
+/// with [MissingNarration]. Nothing here downloads anything.
 Future<PlaybackNarration> resolvePlaybackNarration({
   required EmbeddedConverter converter,
   required BookLanguageCache cache,
@@ -112,12 +116,12 @@ Future<PlaybackNarration> resolvePlaybackNarration({
   required TtsPreferences configured,
   required LanguageModelChoices choices,
   required Future<Set<String>> Function() installedModelIds,
+  required Future<List<String>> Function() systemVoices,
   required String platform,
   int? androidApi,
-  bool allowAutomaticSystemVoiceFallback = true,
-  List<String> systemVoices = const [],
+  bool explicitSelection = false,
 }) async {
-  if (choices.byLanguage.isEmpty) return const UnchangedNarration();
+  if (explicitSelection) return const UnchangedNarration();
   try {
     final analysis = await cache.analysis(
       converter: converter,
@@ -125,10 +129,9 @@ Future<PlaybackNarration> resolvePlaybackNarration({
       path: bookPath,
     );
     final language = analysis.confirmed;
-    if (language == null || choices.choiceFor(language) == null) {
-      return const UnchangedNarration();
-    }
+    if (language == null) return const UnchangedNarration();
     final primary = configured.primary;
+    final automaticPrimary = primary.representsSameRequest(TtsSelection.automaticPiper);
     final resolution = await converter.resolveLanguageModel(
       LanguageModelRequest(
         bookLanguage: language,
@@ -136,18 +139,27 @@ Future<PlaybackNarration> resolvePlaybackNarration({
         androidApi: androidApi,
         perLanguageChoices: choices.byLanguage,
         // The automatic Piper entry is not a model id: Rust ranks installed ones.
-        primary: primary.representsSameRequest(TtsSelection.automaticPiper)
-            ? null
-            : primary,
+        primary: automaticPrimary ? null : primary,
         allowOnlineFallback: configured.allowOnlineFallback,
-        allowAutomaticSystemVoiceFallback: allowAutomaticSystemVoiceFallback,
+        // Policy 2 is the one that lets the installed system voice stand in.
+        allowAutomaticSystemVoiceFallback: configured.policyVersion == 2,
         installedModelIds: (await installedModelIds()).toList()..sort(),
-        systemVoices: systemVoices,
+        systemVoices: await systemVoices(),
       ),
     );
     final selection = resolution.selection;
     switch (resolution.status) {
       case LanguageModelStatus.selected:
+        if (selection == null) return const UnchangedNarration();
+        // The configured primary (or the automatic Piper entry, which ranks
+        // installed models by language the same way) already narrates this
+        // book: the job is exactly what it was.
+        if (resolution.source == 'primary' ||
+            (automaticPrimary && resolution.source == 'automatic') ||
+            selection.representsSameRequest(primary)) {
+          return const UnchangedNarration();
+        }
+        return ResolvedNarration(configured.withPrimary(selection), resolution);
       case LanguageModelStatus.systemFallback:
         if (selection == null) return const UnchangedNarration();
         return ResolvedNarration(configured.withPrimary(selection), resolution);

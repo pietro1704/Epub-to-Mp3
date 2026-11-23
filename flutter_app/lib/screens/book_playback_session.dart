@@ -118,6 +118,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     await _startLocalConversion(
       readerPosition: position,
       playbackChapterIndex: position.chapterIndex,
+      // The user just picked this narration for this listening: the language
+      // resolver does not override it.
+      explicitNarration: true,
     );
   }
 
@@ -125,6 +128,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     required int playbackChapterIndex,
     ReaderListeningPosition? readerPosition,
     bool prepareOnly = false,
+    bool explicitNarration = false,
   }) async {
     if (!prepareOnly) _finishChapterPreparation(false);
     final existing = _localPlaybackConversion;
@@ -159,6 +163,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
           playbackChapterIndex: playbackChapterIndex,
           generation: generation,
           readerPosition: readerPosition,
+          explicitNarration: explicitNarration,
         ).whenComplete(() {
           if (generation == _localConversionGeneration) {
             _localPlaybackConversion = null;
@@ -410,5 +415,6 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     required int playbackChapterIndex,
     required int generation,
     ReaderListeningPosition? readerPosition,
+    bool explicitNarration = false,
   });
 }

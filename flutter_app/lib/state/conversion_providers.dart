@@ -51,6 +51,11 @@ class LanguageModelChoicesNotifier extends StateNotifier<LanguageModelChoices> {
   }
 }
 
+/// Languages the platform's own speech engine can read; enumerated once per run.
+final systemVoiceLanguagesProvider = FutureProvider<List<String>>(
+  (ref) => enumerateSystemVoiceLanguages(),
+);
+
 final bookLanguageCacheProvider = Provider<BookLanguageCache>((ref) {
   return BookLanguageCache(ref.watch(sharedPrefsProvider));
 });
