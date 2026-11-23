@@ -106,6 +106,19 @@ actor SpeechModelLibraryClient {
         return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: true)
     }
 
+    /// The catalog's base languages, for the Models screen.
+    func catalogLanguages() throws -> [CatalogLanguage] {
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        return try adapter.catalogLanguages(platform: LanguageModelResolutionRequest.currentPlatform.lowercased(),
+                                            androidAPI: target.androidAPI)
+    }
+
+    /// Which narration a book language plays with; Rust owns the decision.
+    func resolveLanguageModel(_ request: LanguageModelResolutionRequest) throws -> LanguageModelResolution {
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        return try adapter.resolveLanguageModel(request)
+    }
+
     func setStudyLanguage(_ language: String) throws -> SpeechModelSnapshot {
         let current = try snapshot(probeRuntime: false)
         guard SpeechModelLibraryViewState(snapshot: current).studyLanguages.contains(language) else {
