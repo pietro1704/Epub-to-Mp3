@@ -1,0 +1,44 @@
+name: Faber FFI JNI contracts
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Faber FFI JNI contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: rust,ruby
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: 2026.11.3
+          cache: false
+          install: false
+      - run: mise install
+      - name: Test Apple runtime packaging with owned process fixtures
+        run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
+      - name: Test Android inference runner shell and failure propagation
+        run: mise exec -- ruby scripts/test_verify_android_piper_inference.rb
+      - name: Test JNI-enabled preference and streaming contracts
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          for contract in typed_preferences controlled_typed_options queued_streaming_ opaque_tts_policy_state; do
+            mise exec -- cargo test --locked -p converter-ffi --lib --features android-jni "$contract" -- --test-threads=1 \
+              |& tee ".reports/tts-preferences/jni-$contract.log"
+          done
+      - name: Retain JNI test artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: faber-jni-contracts
+          path: .reports/tts-preferences
+          if-no-files-found: ignore
+          retention-days: 14

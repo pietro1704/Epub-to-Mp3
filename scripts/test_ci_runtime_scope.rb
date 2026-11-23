@@ -51,7 +51,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust flutter android apple rails lockfile native_host].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -59,7 +59,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust flutter android apple rails contracts].each do |name|
+    %w[rust flutter android apple rails lockfile native_host contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[rust flutter android-jvm apple-app rails-web]
+    runtimes = %w[rust flutter android-jvm apple-app rails-web jni-contracts rails-browser rust-audit]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -117,14 +117,14 @@ class CiRuntimeScopeTest < Minitest::Test
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
       'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
-      'Cargo.lock' => %w[rust apple flutter android rails],
-      'Cargo.toml' => %w[rust apple flutter android rails],
+      'Cargo.lock' => %w[rust apple flutter android rails lockfile],
+      'Cargo.toml' => %w[rust apple flutter android rails lockfile],
       'rust-toolchain.toml' => %w[rust apple flutter android rails],
-      'mise.toml' => %w[rust apple flutter android rails],
-      'mise.lock' => %w[rust apple flutter android rails],
-      '.github/workflows/ci.yml' => %w[rust apple flutter android rails],
-      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android rails],
-      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android rails],
+      'mise.toml' => %w[rust apple flutter android rails native_host],
+      'mise.lock' => %w[rust apple flutter android rails native_host],
+      '.github/workflows/ci.yml' => %w[rust apple flutter android rails native_host],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android rails native_host],
+      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android rails native_host],
       '.github/workflows/converter-ffi.yml' => %w[rust apple flutter android],
       '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android rails],
       # The root Dockerfile is the Rails image, so it selects the Rails job.
@@ -132,6 +132,22 @@ class CiRuntimeScopeTest < Minitest::Test
       'Cargo.lock.notes.md' => [],
       'crates/converter-core/src/lib.rs' => %w[rust apple flutter rails],
       'crates/converter-wasm/src/lib.rs' => %w[rust rails] }.each do |path, expected|
+      result, status, err = scope([path])
+      assert status.success?, err
+      assert_equal expected.sort, result.select { |_, value| value == 'true' }.keys.sort, path
+    end
+  end
+
+  def test_pr_checks_that_used_to_break_master_follow_their_areas
+    { 'scripts/native_job.rb' => %w[apple native_host], 'scripts/mac_build_budget.rb' => %w[apple native_host],
+      'config/mac-build-budget.json' => %w[apple native_host], 'tools/DeviceWorkflow/Package.swift' => %w[apple native_host],
+      'scripts/test_native_task_wiring.rb' => %w[apple native_host], '.github/workflows/native-hook-safety.yml' => %w[apple native_host],
+      'scripts/fetch_onnxruntime_macos.rb' => %w[apple], 'scripts/prepare_onnxruntime_macos.rb' => %w[apple],
+      'scripts/capture_native_test_metadata.rb' => %w[apple],
+      'crates/converter-core/Cargo.toml' => %w[rust apple flutter rails lockfile],
+      '.github/workflows/rust-dependency-audit.yml' => %w[lockfile],
+      'ruby_app/rails_gateway/test/system/real_browser_model_test.rb' => %w[rails],
+      'scripts/host_tool.rb' => [] }.each do |path, expected|
       result, status, err = scope([path])
       assert status.success?, err
       assert_equal expected.sort, result.select { |_, value| value == 'true' }.keys.sort, path
@@ -178,8 +194,9 @@ class CiRuntimeScopeTest < Minitest::Test
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
     { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android',
-      'apple-app' => 'apple', 'rails-web' => 'rails' }.each do |job, name|
-      selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
+      'apple-app' => 'apple', 'rails-web' => 'rails', 'jni-contracts' => 'rust', 'rails-browser' => 'rails',
+      'rust-audit' => 'lockfile' }.each do |job, name|
+      selected = scopes[name] == 'true' && !(%w[apple-app android-jvm jni-contracts rails-browser rust-audit].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
     end
     results.each { |job, result| needs.fetch(job)['result'] = result }
@@ -188,7 +205,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
-    scopes = %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    scopes = %w[rust flutter android apple rails lockfile native_host].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
     assert gate(scopes, {}, true).success?
@@ -197,7 +214,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }.merge('flutter' => 'true')
+    scopes = %w[rust flutter android apple rails lockfile native_host].to_h { |name| [name, 'false'] }.merge('flutter' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'flutter' => result).success? }
     rails = scopes.merge('rails' => 'true')
@@ -307,7 +324,7 @@ end
     assert_equal "needs.changes.outputs.apple == 'true' && !(#{integrated})", app.fetch('if')
     assert_equal "${{ #{integrated} }}", @workflow.fetch('jobs').fetch('pr-gate').fetch('steps').first.fetch('env').fetch('INTEGRATED_VALIDATION')
     assert_equal './.github/workflows/faber-integration.yml', app.fetch('uses')
-    assert_equal({ 'macos_only' => true }, app.fetch('with'))
+    assert_equal({ 'macos_only' => true, 'native_host_tests' => "${{ needs.changes.outputs.native_host == 'true' }}" }, app.fetch('with'))
     refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
     refute @workflow.fetch('jobs').key?('apple-foundation'), 'Foundation tests share the Apple app gate runner'
     refute_includes @workflow.fetch('jobs').fetch('pr-gate').fetch('needs'), 'apple-foundation'
