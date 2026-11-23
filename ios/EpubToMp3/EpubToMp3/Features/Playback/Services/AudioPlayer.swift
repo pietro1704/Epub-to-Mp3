@@ -17,7 +17,11 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var snapshot: JobSnapshot? {
         didSet {
             if oldValue?.jobId != snapshot?.jobId {
+                invalidatePlaybackGeneration()
+                if activeStreamingChapterIndex != nil { activeStreamingChapterIndex = nil }
+                if oldValue != nil, coverArtData != nil { coverArtData = nil }
                 playbackClock.audioOutput.snapshotChanged(to: snapshot?.jobId)
+                playbackClock.update(positionSeconds: 0, durationSeconds: 0)
             }
             services.bookProgress.update(snapshot)
         }
@@ -103,16 +107,25 @@ final class AudioPlayer: ObservableObject {
     var backendBaseURL: URL?
     // Segment-mode cumulative position tracking: AVQueuePlayer reports
     // per-item position, but SyncEngine needs chapter-relative time.
-    private var isSegmentMode = false
+    private var isSegmentMode = false { didSet { scheduleTransportPublication() } }
     /// Invalidates remote deliveries after stop or transport replacement, even
     /// when a newly opened session has the same backend job identifier.
-    private(set) var remotePlaybackGeneration = UUID()
+    private(set) var remotePlaybackGeneration = UUID() { didSet { scheduleTransportPublication() } }
     var remoteSegmentGeneration: UUID? {
         player == nil || isSegmentMode ? remotePlaybackGeneration : nil
     }
 
     typealias RouteChangeReason = PlaybackSystemSession.RouteChangeReason
+    private(set) var lastRouteChange: RouteChangeReason?
+    private var transportObservers: Set<AnyCancellable> = []
+    private(set) var transportPublication: PlaybackTransportPublication?
 
+    func transportPublisher() -> PlaybackTransportPublication {
+        if let transportPublication { return transportPublication }
+        let publication = PlaybackTransportPublication(captureTransportSample())
+        transportPublication = publication
+        return publication
+    }
 
     /// Shared only with transport surfaces, separate from structural publication.
     let playbackClock: PlaybackClock
@@ -148,6 +161,8 @@ final class AudioPlayer: ObservableObject {
         // Synchronous forwarding preserves old-value ordering and every assignment.
         readinessObservation = services.readiness.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         queueObservation = services.queue.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        objectWillChange.sink { [weak self] in self?.scheduleTransportPublication() }.store(in: &transportObservers)
+        clock.$snapshot.dropFirst().sink { [weak self] _ in self?.scheduleTransportPublication() }.store(in: &transportObservers)
     }
 
     // The composition graph can only publish through these narrow authority
@@ -163,6 +178,10 @@ final class AudioPlayer: ObservableObject {
     func playbackSeekingChanged(_ value: Bool) {
         if value { playbackClock.audioOutput.clear() }
         isSeeking = value
+    }
+    func playbackRouteChanged(_ reason: RouteChangeReason) {
+        lastRouteChange = reason
+        scheduleTransportPublication()
     }
     func playbackPauseOwnershipChanged(_ value: Bool) { hasPausedPlaybackToResume = value }
     func playbackSpeechChanged(_ value: Bool) { isUsingSpeechFallback = value }
@@ -197,6 +216,10 @@ final class AudioPlayer: ObservableObject {
     // MARK: Public API
 
     func setSnapshot(_ snapshot: JobSnapshot) {
+        if self.snapshot?.jobId != snapshot.jobId,
+           hasLoadedAudioQueue || isPlaying || isUsingSpeechFallback || isSeeking || hasPendingAutoplay {
+            stop()
+        }
         self.snapshot = snapshot
         updateNowPlayingInfo()
     }
@@ -225,9 +248,15 @@ final class AudioPlayer: ObservableObject {
 
     nonisolated static func restoredPlayableChapterOffset(snapshot: JobSnapshot, persistedEpubChapterIndex: Int) -> Int{ PlaybackChapterQueue.restoredPlayableChapterOffset(snapshot: snapshot, persistedEpubChapterIndex: persistedEpubChapterIndex) }
 
-    func updateSnapshot(_ snapshot: JobSnapshot) { services.chapter.updateSnapshot(snapshot) }
+    func updateSnapshot(_ snapshot: JobSnapshot) {
+        guard self.snapshot == nil || self.snapshot?.jobId == snapshot.jobId else { return }
+        services.chapter.updateSnapshot(snapshot)
+    }
 
-    func finishStreaming(snapshot: JobSnapshot) { services.chapter.finishStreaming(snapshot: snapshot) }
+    func finishStreaming(snapshot: JobSnapshot) {
+        guard self.snapshot?.jobId == snapshot.jobId else { return }
+        services.chapter.finishStreaming(snapshot: snapshot)
+    }
     func pause() {
         services.transport.pause()
     }
@@ -461,6 +490,6 @@ final class AudioPlayer: ObservableObject {
         services.lifecycle.prepareSegmentRestart(resumePosition: resumePosition)
     }
 
-    private var pendingAutoPlay: Bool = false
+    private var pendingAutoPlay: Bool = false { didSet { scheduleTransportPublication() } }
     private var pendingSegmentResumePosition: TimeInterval?
 }

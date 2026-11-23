@@ -58,7 +58,7 @@ final class FullPlayerContentsTests: XCTestCase {
         }
         let snapshot = makeSnapshot(jobID: "embedded-\(bookID)", indices: [0])
         player.setSnapshot(snapshot)
-        let expanded = FullPlayerScreenController(player: player, playbackClock: player.playbackClock,
+        let expanded = FullPlayerScreenController(player: player,
             library: library, playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults),
             onStartListening: { XCTFail("Unconverted chapter must keep a Download action") })

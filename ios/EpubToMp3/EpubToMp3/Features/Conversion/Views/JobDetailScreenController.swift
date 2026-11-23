@@ -14,14 +14,12 @@ final class JobDetailScreenController: UITableViewController {
     private let miniPlayerClearance = MiniPlayerScrollClearance()
     private let localSnapshot: JobSnapshot
     private let player: AudioPlayer
-    private let playbackClock: PlaybackClock
     private let viewModel = JobDetailViewModel()
     private var viewModelObserver: AnyCancellable?
 
-    init(localSnapshot: JobSnapshot, player: AudioPlayer, playbackClock: PlaybackClock) {
+    init(localSnapshot: JobSnapshot, player: AudioPlayer, playbackClock _: PlaybackClock) {
         self.localSnapshot = localSnapshot
         self.player = player
-        self.playbackClock = playbackClock
         super.init(style: .insetGrouped)
         title = L10n.string("jobDetail.title")
     }
@@ -186,8 +184,7 @@ final class JobDetailScreenController: UITableViewController {
             PlayerScreenController(
                 snapshot: snapshot,
                 backendBaseURL: nil,
-                player: player,
-                playbackClock: playbackClock
+                player: player
             ),
             animated: true
         )

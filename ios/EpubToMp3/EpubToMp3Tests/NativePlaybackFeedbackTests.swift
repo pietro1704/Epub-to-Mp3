@@ -22,7 +22,7 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         let defaults = try defaults()
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let library = LibraryStore(defaults: defaults)
-        let full = FullPlayerScreenController(player: player, playbackClock: player.playbackClock,
+        let full = FullPlayerScreenController(player: player,
             library: library, playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {})
         full.loadViewIfNeeded()
