@@ -102,11 +102,23 @@ final class ReaderAudioHighlightPresentation {
             alignment: position.alignment)
     }
 
+    /// Gated diagnostics (`-uiTestPlaybackTrace`): why the highlight shows what it shows, at most every 2 s.
+    private var lastTraceAt: TimeInterval = 0
+    private func trace(_ event: @autoclosure () -> String) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard PlaybackTrace.shared.isEnabled, now - lastTraceAt >= 2 else { return }
+        lastTraceAt = now
+        PlaybackTrace.shared.record(event())
+    }
+
     private func paintPosition(_ position: PlaybackAudioOutput.Position?) {
         guard trackingEnabled, let position, player.isPlaying, !player.isSeeking, player.isPlaybackForReaderBook(document.book.id),
               let textView,
               let chapter = currentChapter,
-              chapter.zeroBasedEpubIndex == position.chapterIndex else { clear(); return }
+              chapter.zeroBasedEpubIndex == position.chapterIndex else {
+            trace("highlight clear tracking=\(trackingEnabled) position=\(position != nil) playing=\(player.isPlaying) seeking=\(player.isSeeking) forBook=\(player.isPlaybackForReaderBook(document.book.id)) readerChapter=\(currentChapter?.zeroBasedEpubIndex ?? -1) audioChapter=\(position?.chapterIndex ?? -1)")
+            clear(); return
+        }
         if chapter != loadedChapter || position.duration != loadedDuration {
             sync.load(chapter: chapter, chapterDurationSeconds: position.duration)
             resolvedText = nil
@@ -127,9 +139,11 @@ final class ReaderAudioHighlightPresentation {
             }
             if let word = measuredWordRanges[measured.word.location] {
                 let sentence = resolvedSentences.values.first { NSIntersectionRange($0, word).length > 0 }
+                trace("highlight measured chapter=\(position.chapterIndex) t=\(position.itemSeconds) word=\(word.location)+\(word.length) '\((textView.text as NSString).substring(with: word))' spoken='\((measured.passage.text as NSString).substring(with: measured.word.range))' mapped=\(measuredWordRanges.count)/\(measured.passage.words.count) renderedLen=\((textView.text as NSString).length)")
                 paint(sentence: sentence, word: word)
                 return
             }
+            trace("highlight measured-unmapped chapter=\(position.chapterIndex) t=\(position.itemSeconds) passageWords=\(measured.passage.words.count) mapped=\(measuredWordRanges.count) renderedLen=\((textView.text as NSString).length) passage='\(String(measured.passage.text.prefix(60)))'")
         }
         let entry: SyncEngine.TimingEntry?
         if let id = position.sentenceID {
@@ -138,7 +152,11 @@ final class ReaderAudioHighlightPresentation {
             entry = sync.timing.first { position.seconds * 1000 >= Double($0.startMs) && position.seconds * 1000 < Double($0.endMs) }
         }
         guard let id = sync.readerSentenceID(forTimingID: entry?.id),
-              let range = resolvedSentences[id] else { clear(); return }
+              let range = resolvedSentences[id] else {
+            trace("highlight sentence-unresolved chapter=\(position.chapterIndex) t=\(position.seconds)/\(position.duration) item=\(position.itemSeconds)/\(position.itemDuration) sentenceID=\(position.sentenceID ?? "nil") timing=\(sync.timing.count) resolved=\(resolvedSentences.count)")
+            clear(); return
+        }
+        trace("highlight sentence chapter=\(position.chapterIndex) t=\(position.seconds)/\(position.duration) item=\(position.itemSeconds)/\(position.itemDuration) sentenceID=\(position.sentenceID ?? "nil") range=\(range.location)+\(range.length) alignment=\(position.alignment != nil)")
         // Without measured alignment, a sentence estimate must never pretend
         // to identify the word currently audible. Old audio remains playable.
         paint(sentence: range, word: nil)
