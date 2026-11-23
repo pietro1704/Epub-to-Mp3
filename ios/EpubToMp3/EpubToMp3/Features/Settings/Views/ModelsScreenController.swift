@@ -22,13 +22,13 @@ final class ModelsScreenController: UITableViewController {
     private var groups: [Group] = []
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
-    private var didFocus = false
 
     init(settings: AppSettings, source: ModelsByLanguageSource = SpeechModelsSource(),
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil) {
         self.settings = settings
         self.focusLanguage = focusLanguage
         self.model = ModelsByLanguageModel(source: source, settings: settings, terms: termsAcceptance)
+        self.model.priorityLanguage = focusLanguage
         super.init(style: .insetGrouped)
         title = L10n.string("models.title")
     }
@@ -62,11 +62,6 @@ final class ModelsScreenController: UITableViewController {
         tableView.reloadData()
         presentPendingTermsIfNeeded()
         presentNewFailures()
-        if !didFocus, let focus = focusLanguage.map(SpeechPreferences.languageKey),
-           let index = groups.firstIndex(where: { $0.language == focus }) {
-            didFocus = true
-            tableView.scrollToRow(at: IndexPath(row: 0, section: index + 1), at: .top, animated: false)
-        }
     }
 
     private func languageTitle(_ tag: String) -> String {

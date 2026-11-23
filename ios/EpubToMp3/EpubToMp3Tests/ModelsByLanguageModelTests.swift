@@ -249,4 +249,14 @@ final class ModelsByLanguageModelTests: XCTestCase {
         XCTAssertFalse(settings.allowAutomaticSystemVoiceFallback)
         XCTAssertEqual(model.title(for: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil)), "pt_BR-faber-medium")
     }
+
+    func testTheBooksLanguageComesFirstSoTheScreenOpensOnIt() async throws {
+        let (model, _, defaults, name) = try make(FakeSource())
+        defer { defaults.removePersistentDomain(forName: name) }
+        model.priorityLanguage = "en-US"
+        await model.load()
+        XCTAssertEqual(model.state.sections.map(\.language), ["en", "pt"], "English first although Portuguese has the installed model")
+        model.priorityLanguage = nil
+        XCTAssertEqual(model.state.sections.map(\.language), ["pt", "en"])
+    }
 }

@@ -6,12 +6,15 @@ enum ReaderVoicePickerPresentation {
     static func present(from reader: UIViewController, anchor: UIBarButtonItem?, request: ReaderVoicePickerRequest) {
         guard reader.presentedViewController == nil else { return }
         Task { [weak reader, weak anchor] in
-            let snapshot = try? await SpeechModelLibraryClient.shared.snapshot()
-            guard let reader, reader.viewIfLoaded?.window != nil, reader.presentedViewController == nil,
-                  let picker = request.picker() else { return }
-            let alert = makeAlert(picker: picker, catalog: SpeechModelLibraryViewState(snapshot: snapshot)) { [weak reader] in
+            guard let picker = request.picker() else { return }
+            // Only the book's language, only what is ready; the study-language catalog is the fallback.
+            let content = await ReaderModelSwitch.content(picker: picker, request: request)
+            let snapshot = content == nil ? try? await SpeechModelLibraryClient.shared.snapshot() : nil
+            guard let reader, reader.viewIfLoaded?.window != nil, reader.presentedViewController == nil else { return }
+            let alert = makeAlert(picker: picker, content: content, catalog: SpeechModelLibraryViewState(snapshot: snapshot),
+                                  settings: request.settings) { [weak reader] in
                 guard let reader, reader.viewIfLoaded?.window != nil, request.currentContext() != nil else { return }
-                presentDownloads(on: reader, request: request, picker: picker)
+                presentModels(on: reader, request: request, language: content?.language)
             }
             alert.popoverPresentationController?.barButtonItem = anchor
             alert.popoverPresentationController?.sourceView = reader.view
@@ -21,28 +24,34 @@ enum ReaderVoicePickerPresentation {
         }
     }
 
-    private static func presentDownloads(on reader: UIViewController,
-                                         request: ReaderVoicePickerRequest, picker: ReaderVoicePicker) {
-        let controller = SettingsScreenController(settings: request.settings, library: request.library,
-            player: request.player, playbackClock: request.player.playbackClock,
-            voiceModelsOnly: true, readerVoicePicker: picker)
+    /// The Models screen, on the book's language, above the reader.
+    private static func presentModels(on reader: UIViewController, request: ReaderVoicePickerRequest, language: String?) {
+        let controller = ModelsScreenController(settings: request.settings, focusLanguage: language)
         let navigation = UINavigationController(rootViewController: controller)
-        controller.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .cancel,
+        controller.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done,
             primaryAction: UIAction { [weak navigation] _ in navigation?.dismiss(animated: true) })
+        controller.navigationItem.rightBarButtonItem?.accessibilityIdentifier = "reader.models.done"
         reader.present(navigation, animated: true)
     }
 
-    private static func makeAlert(picker: ReaderVoicePicker, catalog: SpeechModelLibraryViewState,
-                          downloads: @escaping () -> Void) -> UIAlertController {
-        let alert = UIAlertController(title: L10n.string("settings.voiceModels"), message: nil, preferredStyle: .actionSheet)
+    private static func makeAlert(picker: ReaderVoicePicker, content: ReaderModelSwitch.Content?,
+                                  catalog: SpeechModelLibraryViewState, settings: AppSettings,
+                                  downloads: @escaping () -> Void) -> UIAlertController {
+        let message = content?.hasNoModel == true
+            ? L10n.string("models.missing.message", content?.language.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 } ?? "")
+            : nil
+        let alert = UIAlertController(title: L10n.string("models.title"), message: message, preferredStyle: .actionSheet)
         alert.view.accessibilityIdentifier = "reader.voicePicker"
-        for choice in picker.choices(from: catalog) {
+        for choice in content?.choices ?? picker.choices(from: catalog) {
             let title = choice.selected ? "✓ \(choice.title)" : choice.title
-            let action = UIAlertAction(title: title, style: .default) { _ in picker.choose(choice.selection) }
+            let action = UIAlertAction(title: title, style: .default) { _ in
+                if let content { content.choose(choice.selection, picker: picker, settings: settings) }
+                else { picker.choose(choice.selection) }
+            }
             action.isEnabled = choice.available
             alert.addAction(action)
         }
-        alert.addAction(UIAlertAction(title: L10n.string("settings.voiceModelDownloads"), style: .default) { [weak alert] _ in
+        alert.addAction(UIAlertAction(title: L10n.string("models.missing.open"), style: .default) { [weak alert] _ in
             alert?.dismiss(animated: true, completion: downloads)
         })
         alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
@@ -60,16 +69,18 @@ final class MacReaderVoicePickerPresenter {
         guard !isOpening, reader.presentedViewControllers?.isEmpty != false else { return }
         isOpening = true
         Task { [weak self, weak reader, weak anchor] in
-            let snapshot = try? await SpeechModelLibraryClient.shared.snapshot()
             guard let self else { return }
             defer { self.isOpening = false }
-            guard let reader, let anchor, anchor.window != nil, reader.presentedViewControllers?.isEmpty != false,
-                  let picker = request.picker() else { return }
-            let presentation = ReaderVoicePickerPresentation(picker: picker,
+            guard let picker = request.picker() else { return }
+            // Only the book's language, only what is ready; the study-language catalog is the fallback.
+            let content = await ReaderModelSwitch.content(picker: picker, request: request)
+            let snapshot = content == nil ? try? await SpeechModelLibraryClient.shared.snapshot() : nil
+            guard let reader, let anchor, anchor.window != nil, reader.presentedViewControllers?.isEmpty != false else { return }
+            let presentation = ReaderVoicePickerPresentation(picker: picker, content: content, settings: request.settings,
                 catalog: SpeechModelLibraryViewState(snapshot: snapshot)) { [weak reader] in
                 Task { @MainActor in
                     guard let reader, reader.view.window != nil, request.currentContext() != nil else { return }
-                    Self.presentDownloads(on: reader, request: request, picker: picker)
+                    Self.presentModels(on: reader, request: request, language: content?.language)
                 }
             }
             withExtendedLifetime(presentation) {
@@ -79,26 +90,36 @@ final class MacReaderVoicePickerPresenter {
         }
     }
 
-    private static func presentDownloads(on reader: NSViewController,
-                                         request: ReaderVoicePickerRequest, picker: ReaderVoicePicker) {
-        let controller = MacSettingsViewController(settings: request.settings, library: request.library,
-            voiceModelsOnly: true, readerVoicePicker: picker)
-        controller.preferredContentSize = NSSize(width: 640, height: 520)
-        reader.presentAsSheet(controller)
+    /// The Models screen, on the book's language, as a sheet over the reader.
+    private static func presentModels(on reader: NSViewController, request: ReaderVoicePickerRequest, language: String?) {
+        let models = MacModelsViewController(settings: request.settings, focusLanguage: language)
+        var sheet: NSViewController?
+        let container = MacSettingsDetailNavigation(detail: models) { [weak reader] in
+            if let sheet { reader?.dismiss(sheet) }
+        }
+        sheet = container
+        container.preferredContentSize = NSSize(width: 760, height: 620)
+        reader.presentAsSheet(container)
     }
 }
 
 /// Holds AppKit menu targets alive while tracking a reader voice choice.
 @MainActor
 private final class ReaderVoicePickerPresentation: NSObject {
-    let menu = NSMenu(title: L10n.string("settings.voiceModels"))
+    let menu = NSMenu(title: L10n.string("models.title"))
     private let choices: [ReaderVoicePicker.Choice]
     private let picker: ReaderVoicePicker
     private let downloads: () -> Void
 
-    init(picker: ReaderVoicePicker, catalog: SpeechModelLibraryViewState, downloads: @escaping () -> Void) {
+    private let content: ReaderModelSwitch.Content?
+    private let settings: AppSettings
+
+    init(picker: ReaderVoicePicker, content: ReaderModelSwitch.Content?, settings: AppSettings,
+         catalog: SpeechModelLibraryViewState, downloads: @escaping () -> Void) {
         self.picker = picker
-        self.choices = picker.choices(from: catalog)
+        self.content = content
+        self.settings = settings
+        self.choices = content?.choices ?? picker.choices(from: catalog)
         self.downloads = downloads
         super.init()
         menu.autoenablesItems = false
@@ -110,15 +131,21 @@ private final class ReaderVoicePickerPresentation: NSObject {
             item.isEnabled = choice.available
             menu.addItem(item)
         }
+        if content?.hasNoModel == true {
+            let note = NSMenuItem(title: L10n.string("models.missing.title"), action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
+        }
         menu.addItem(.separator())
-        let item = NSMenuItem(title: L10n.string("settings.voiceModelDownloads"), action: #selector(showDownloads), keyEquivalent: "")
+        let item = NSMenuItem(title: L10n.string("models.missing.open"), action: #selector(showDownloads), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
     }
 
     @objc private func choose(_ item: NSMenuItem) {
         guard choices.indices.contains(item.tag), choices[item.tag].available else { return }
-        picker.choose(choices[item.tag].selection)
+        if let content { content.choose(choices[item.tag].selection, picker: picker, settings: settings) }
+        else { picker.choose(choices[item.tag].selection) }
     }
 
     @objc private func showDownloads() { downloads() }
