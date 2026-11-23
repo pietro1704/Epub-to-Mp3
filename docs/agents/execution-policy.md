@@ -57,8 +57,9 @@ and Xcode 26.3, as explicitly selected by Pietro on 2026-11-05. Since 2026-11-23
 any SE1 run (boot, install or test) needs Pietro's explicit permission for that
 run and happens only while he is actively using the Mac, because it can crash
 the host. Without it, record the SE1 part as a question for Pietro and accept
-on macOS meanwhile. The Arch host and the Galaxy A8 stay powered with the Mac and
-are available for Android/Linux checks at any time. Keep only the
+on macOS meanwhile. The Arch host, the Galaxy A8 and the Galaxy tablet (SM_X620)
+stay powered with the Mac. Use them freely for Android, tablet, Linux and
+Windows checks; adb reaches them from the Arch host outside ai-jail. Keep only the
 iOS 15.2 and 26.2 runtimes. macOS builds may retain Xcode 16.4 through
 `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`; preserve that installed
 toolchain without changing the global selection.
@@ -204,6 +205,28 @@ validation ends and verify shutdown, except when the user requests its window re
 close it after that review ends. Audible checks show the app and identify any
 deliberate non-Edge fixture audio before playback. Model downloads, service
 changes and new benchmarks require their own task scope.
+
+Evidence captured in the real app uses isolated test data: settings, library,
+imported books, caches and reading state. It never imports into or changes the
+real installation. Several running copies of the app, or a copy left open after
+the check, count as a policy failure: check with `pgrep` after each use.
+
+Code that runs only on iOS (UIKit presentation, `#if os(iOS)` paths, alerts and
+action sheets) needs an iOS execution before its PR is opened ready. macOS tests
+plus an iOS compile do not cover it. On 2026-11-23, #1353 passed that evidence
+and crashed on the iPhone 16e at the first tap, because UIKit rejects two cancel
+actions. Until a CI simulator job exists, keep such changes on a branch and add
+them to the device plan.
+
+Attach the visual evidence for a visible change before opening its PR ready,
+because ready PRs merge automatically.
+
+Before each push, run the checks CI will run:
+- Rust: `cargo fmt --all -- --check`, `cargo test --workspace --locked`, and
+  `cargo check -p converter-core --target wasm32-unknown-unknown` when the core
+  changes.
+- Swift: add each new production or test file to the explicit lists in
+  `ios/EpubToMp3/Package.swift`, then run the package build.
 
 ## Git and publication
 
