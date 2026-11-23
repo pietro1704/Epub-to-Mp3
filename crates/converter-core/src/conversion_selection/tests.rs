@@ -30,6 +30,7 @@ fn captured_secondary_model_does_not_replace_primary_voice_or_preferences() {
         session: None,
     };
     preferences.secondary = Some(piper);
+    preferences.allow_online_fallback = true;
     let resolved = ConversionSelectionInput {
         preferences: Some(&preferences),
         engine: Some("system"),

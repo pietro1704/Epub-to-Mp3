@@ -110,7 +110,7 @@ async fn typed_http_edge_selection_is_persisted_for_conversion_and_resume() {
     std::fs::write(upload.join("source.epub"), b"invalid EPUB fixture").unwrap();
     let preferences = serde_json::json!({
         "primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},
-        "secondary":null,"allow_online_fallback":false
+        "secondary":null,"allow_online_fallback":true
     });
     let response = post_conversion(
         config.clone(),
@@ -219,7 +219,7 @@ async fn typed_http_legacy_engine_is_captured_once_as_typed_preferences() {
     let id = created_job_id(&response);
     let expected = serde_json::json!({
         "primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},
-        "secondary":null,"allow_online_fallback":false
+        "secondary":null,"allow_online_fallback":true
     });
     let snapshot: JobSnapshot =
         serde_json::from_slice(&std::fs::read(snapshot_path(&config, &id)).unwrap()).unwrap();

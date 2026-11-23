@@ -41,7 +41,10 @@ unsafe extern "C" fn platform_test_speech(
 
 #[test]
 fn typed_preferences_are_authoritative_and_online_fallback_is_explicit() {
-    let options = CString::new(r#"{"engine":"piper","tts_preferences":{"primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+    // Edge as the primary voice needs the online consent too: refused without it.
+    let unconsented = CString::new(r#"{"engine":"piper","tts_preferences":{"primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+    assert!(!unsafe { converter_conversion_options_validate_json_v1(unconsented.as_ptr()) });
+    let options = CString::new(r#"{"engine":"piper","tts_preferences":{"primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},"secondary":null,"allow_online_fallback":true}}"#).unwrap();
     assert!(unsafe { converter_conversion_options_validate_json_v1(options.as_ptr()) });
     let denied = CString::new(r#"{"tts_preferences":{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium","voice":null},"secondary":{"engine":"edge","model_id":null,"voice":null},"allow_online_fallback":false}}"#).unwrap();
     assert!(!unsafe { converter_conversion_options_validate_json_v1(denied.as_ptr()) });

@@ -204,7 +204,7 @@ fn typed_primary_success_persists_zero_before_resuming_after_another_failure() {
             model_id: None,
             voice: None,
         }),
-        allow_online_fallback: false,
+        allow_online_fallback: true,
     });
     let manifest = resumed.resume(next).unwrap();
     assert_eq!(attempts.load(Ordering::Relaxed), 1);
@@ -260,7 +260,7 @@ fn typed_failure_policy_survives_separate_single_chapter_requests() {
                 model_id: None,
                 voice: None,
             }),
-            allow_online_fallback: false,
+            allow_online_fallback: true,
         });
         let result = worker.run(request);
         if chapter == 2 {
