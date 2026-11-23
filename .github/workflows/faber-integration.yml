@@ -14,6 +14,10 @@ on:
         description: Run the real-model Rails browser conversion (post-merge runs it as its own job)
         type: boolean
         default: true
+      native_host_tests:
+        description: Also run the Mac host and native fixture regressions in the ARM64 job
+        type: boolean
+        default: false
       intel_prebuilt:
         description: Use the verified Intel macOS FFI artifact instead of compiling converter-ffi
         type: boolean
@@ -64,38 +68,9 @@ jobs:
   ffi-jni:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     name: Faber FFI JNI contracts
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      MISE_ENABLE_TOOLS: rust,ruby
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
-        with:
-          version: 2026.11.3
-          cache: false
-          install: false
-      - run: mise install
-      - name: Test Apple runtime packaging with owned process fixtures
-        run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
-      - name: Test Android inference runner shell and failure propagation
-        run: mise exec -- ruby scripts/test_verify_android_piper_inference.rb
-      - name: Test JNI-enabled preference and streaming contracts
-        run: |
-          set -o pipefail
-          mkdir -p .reports/tts-preferences
-          for contract in typed_preferences controlled_typed_options queued_streaming_ opaque_tts_policy_state; do
-            mise exec -- cargo test --locked -p converter-ffi --lib --features android-jni "$contract" -- --test-threads=1 \
-              |& tee ".reports/tts-preferences/jni-$contract.log"
-          done
-      - name: Retain JNI test artifacts
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: faber-jni-contracts
-          path: .reports/tts-preferences
-          if-no-files-found: ignore
-          retention-days: 14
+    uses: ./.github/workflows/faber-jni-contracts.yml
+    permissions:
+      contents: read
 
   android-package:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
@@ -387,6 +362,30 @@ jobs:
           abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
           abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
           puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
+      # The former native-hook-safety job; the PR gate runs it when the change touches
+      # the native scripts, storage budget or DeviceWorkflow package.
+      - name: Install the host test dependency
+        if: matrix.arch == 'arm64' && inputs.native_host_tests == true
+        run: mise exec -- gem install minitest --version 6.1.0 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
+      - name: Verify real Mac filesystem, storage and native fixture contracts
+        if: matrix.arch == 'arm64' && inputs.native_host_tests == true
+        run: |
+          mise exec -- ruby scripts/test_mac_build_budget.rb
+          mise exec -- ruby scripts/test_native_job.rb
+          mise exec -- ruby scripts/test_native_entrypoint_safety.rb
+          mise exec -- ruby scripts/test_native_faber_entrypoints.rb
+          mise exec -- ruby scripts/test_native_task_wiring.rb
+          mise exec -- ruby scripts/test_native_simulator_session.rb
+          mise exec -- ruby scripts/test_device_workflow_entrypoint.rb
+      - name: Type-check inherited-lease adapter without launching it
+        if: matrix.arch == 'arm64' && inputs.native_host_tests == true
+        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swiftc -typecheck scripts/ios_simulator_smoke.swift
+      - name: Test the actual DeviceWorkflow Swift package
+        if: matrix.arch == 'arm64' && inputs.native_host_tests == true
+        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swift test --package-path tools/DeviceWorkflow
+      - name: Build the actual eSpeak dependency
+        if: matrix.arch == 'arm64' && inputs.native_host_tests == true
+        run: mise exec -- ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys
       - name: Download and verify the pinned Intel converter-ffi artifact
         if: matrix.arch == 'x86_64' && inputs.intel_prebuilt
         env:

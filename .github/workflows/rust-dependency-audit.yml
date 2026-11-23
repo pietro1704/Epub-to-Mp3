@@ -39,16 +39,21 @@ jobs:
         run: mise exec -- cargo check --locked -p converter-core
       - name: Verify locked dependency resolution
         run: mise exec -- cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
-      - name: Cache pinned auditor
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-audit
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: cargo-audit-${{ runner.os }}-${{ runner.arch }}-0.22.2
-      - name: Install pinned auditor
-        run: mise exec -- cargo install cargo-audit --version 0.22.2 --locked
+      # The published static binary replaces a 5 minute source build of the auditor that was never
+      # cached while the audit job failed. The digest is the release asset's sha256,
+      # re-computed from the downloaded file.
+      - name: Install checksum-pinned auditor
+        run: |
+          set -euo pipefail
+          version=0.22.2
+          asset="cargo-audit-x86_64-unknown-linux-musl-v$version.tgz"
+          sha256=7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+          curl --fail --location --retry 5 --retry-delay 10 --retry-all-errors --max-time 120 \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv$version/$asset" -o "$RUNNER_TEMP/$asset"
+          printf '%s  %s\n' "$sha256" "$RUNNER_TEMP/$asset" | sha256sum --check --status
+          mkdir -p "$HOME/.cargo/bin"
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$HOME/.cargo/bin" --strip-components=1 "${asset%.tgz}/cargo-audit"
+          mise exec -- cargo audit --version
       - name: Audit exact checked-out lockfile
         id: audit
         run: |

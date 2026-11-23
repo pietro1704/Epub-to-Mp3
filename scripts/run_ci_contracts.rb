@@ -16,6 +16,7 @@ module CiContracts
     test_hf_snapshot_workflow.rb test_hf_snapshot.rb test_hf_container_inputs.rb test_rust_migration_gate.rb
     test_download_converter_ffi_macos.rb
     test_ubuntu_package_mirror.rb test_ci_hosted_parallelism.rb test_rust_build_cache.rb
+    test_ci_pr_coverage.rb
     test_runner_acquisition_retry.rb
     test_convert_entrypoint.rb test_version_source.rb test_espeak_runtime_assets.rb test_espeak_msvc_headers.rb
     test_no_python_tooling.rb test_codeql_workflow.rb test_sync_hf_workflow.rb test_auto_release_workflow.rb test_release_pr_workflow.rb test_next_release_version.rb test_mac_run_task.rb
