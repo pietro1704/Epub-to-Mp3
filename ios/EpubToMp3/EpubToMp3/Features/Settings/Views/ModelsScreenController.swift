@@ -193,7 +193,9 @@ final class ModelsScreenController: UITableViewController {
         }
     }
 
-    private func presentPrimaryChoices(source indexPath: IndexPath) {
+    /// The cancel action is added by `SettingsAlertPresentation.actionSheet`; adding a second one makes UIKit
+    /// throw (P0: tapping the default voice crashed the app).
+    func primaryChoicesAlert() -> UIAlertController {
         let alert = UIAlertController(title: L10n.string("settings.audioEngineChoice"),
                                       message: L10n.string("settings.audioEngineChoiceDescription"), preferredStyle: .actionSheet)
         for choice in model.narrationChoices {
@@ -201,11 +203,10 @@ final class ModelsScreenController: UITableViewController {
                 self?.model.selectPrimary(choice.selection)
             })
         }
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
-        SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: indexPath)
+        return alert
     }
 
-    private func presentSecondaryChoices(source indexPath: IndexPath) {
+    func secondaryChoicesAlert() -> UIAlertController {
         let alert = UIAlertController(title: L10n.string("settings.secondaryVoice"), message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: L10n.string("settings.noSecondary"), style: .default) { [weak self] _ in
             self?.model.selectSecondary(nil)
@@ -215,8 +216,15 @@ final class ModelsScreenController: UITableViewController {
                 self?.model.selectSecondary(choice.selection)
             })
         }
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
-        SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: indexPath)
+        return alert
+    }
+
+    private func presentPrimaryChoices(source indexPath: IndexPath) {
+        SettingsAlertPresentation.actionSheet(primaryChoicesAlert(), on: self, tableView: tableView, source: indexPath)
+    }
+
+    private func presentSecondaryChoices(source indexPath: IndexPath) {
+        SettingsAlertPresentation.actionSheet(secondaryChoicesAlert(), on: self, tableView: tableView, source: indexPath)
     }
 
     // MARK: actions
@@ -287,7 +295,6 @@ final class ModelsScreenController: UITableViewController {
                 self?.model.revokeTerms(for: entry)
             })
         }
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
         SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: source)
     }
 

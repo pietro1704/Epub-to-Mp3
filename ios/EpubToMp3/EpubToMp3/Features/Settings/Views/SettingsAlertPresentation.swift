@@ -33,7 +33,10 @@ enum SettingsAlertPresentation {
         tableView: UITableView,
         source: IndexPath
     ) {
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        // UIKit throws when an alert has two cancel actions: add ours only when the caller did not.
+        if !alert.actions.contains(where: { $0.style == .cancel }) {
+            alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        }
         alert.popoverPresentationController?.sourceView = tableView
         alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: source)
         controller.present(alert, animated: true)

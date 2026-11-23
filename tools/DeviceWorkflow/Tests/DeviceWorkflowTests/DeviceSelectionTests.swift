@@ -36,6 +36,13 @@ final class DeviceSelectionTests: XCTestCase {
             environment: ["IOS_TESTS": "EpubToMp3Tests/PDFReaderParityTests/testUnaudited"]))
     }
 
+    func testModelsScreenAlertRegressionIsAuditedWithItsTwoCases() throws {
+        let options = try Options(arguments: ["test"], root: root,
+            environment: ["IOS_TESTS": "EpubToMp3Tests/ModelsScreenAlertTests"])
+        XCTAssertEqual(options.testFilters, ["EpubToMp3Tests/ModelsScreenAlertTests"])
+        XCTAssertEqual(options.expectedTestCount, 2)
+    }
+
     func testExactMethodSelectorRemainsLiteral() throws {
         let selector = "EpubToMp3Tests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"
         let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
