@@ -8,7 +8,8 @@ struct LibraryGridLayoutMetrics: Equatable {
     var spacing: CGFloat = 20
     var sectionInset: CGFloat = 20
     var requestedColumns: Int = 2
-    var minimumTileWidth: CGFloat = 120
+    /// Smallest tile a requested density may shrink to. A phone (390 pt) honors 3 columns at ~103 pt and 4 at 72 pt.
+    var minimumTileWidth: CGFloat = 72
 
     func columnCount(forWidth availableWidth: CGFloat, accessibilityText: Bool = false) -> Int {
         guard !accessibilityText else { return 1 }
