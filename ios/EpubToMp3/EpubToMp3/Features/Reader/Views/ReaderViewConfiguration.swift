@@ -19,8 +19,10 @@ enum ReaderTapAction: Equatable {
         if middleColumn.contains(point) {
             return .toggleChrome
         }
-        guard isPaginated else { return .none }
-        return .turnPage(forward: point.x >= bounds.midX)
+        if isPaginated { return .turnPage(forward: point.x >= bounds.midX) }
+        // A paginated chapter that fell back to scrolling (a fragment taller than a page) still answers the edge
+        // columns: a screen of scrolling takes the place of the page turn instead of silently doing nothing.
+        return scrollsScreenOnEdgeTap ? .scrollScreen(forward: point.x >= bounds.midX) : .none
     }
 }
 
