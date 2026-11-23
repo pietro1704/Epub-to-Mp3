@@ -247,6 +247,21 @@ final class SpeechPreferenceMigrationTests: XCTestCase {
         return (primary, secondary, consent)
     }
 
+    /// A saved Edge primary without the online consent becomes the default Piper voice when the app loads its
+    /// settings (a reserve that would now repeat the primary is dropped). The foundation host variant reads the
+    /// defaults directly, so it keeps the legacy value.
+    private static func afterTheEdgePrimaryDecision(
+        _ effective: (TtsSelection, TtsSelection?, Bool)
+    ) -> (TtsSelection, TtsSelection?, Bool) {
+#if APP_FOUNDATION_HOST_TESTS
+        return effective
+#else
+        guard effective.0.isEdge, !effective.2 else { return effective }
+        let primary = TtsSelection.defaultPiper
+        return (primary, effective.1.flatMap { $0.representsSameRequest(as: primary) ? nil : $0 }, effective.2)
+#endif
+    }
+
     /// How the current settings resolve a migrated store.
     private func currentEffective(_ defaults: UserDefaults) -> (TtsSelection, TtsSelection?, Bool) {
 #if APP_FOUNDATION_HOST_TESTS
@@ -281,7 +296,7 @@ final class SpeechPreferenceMigrationTests: XCTestCase {
                 for case let (key, .value(value)) in seeds { defaults.set(value, forKey: key) }
                 let seeded = snapshot(defaults, suite: suite)
                 let label = "\(seeded)"
-                let expected = legacyEffective(defaults)
+                let expected = Self.afterTheEdgePrimaryDecision(legacyEffective(defaults))
 
                 let actual = currentEffective(defaults)
                 XCTAssertEqual(actual.0, expected.0, "primary for \(label)")
@@ -309,10 +324,22 @@ final class SpeechPreferenceMigrationTests: XCTestCase {
                     let primaryEngine = migrated[Key.primarySelection] == nil ? "piper"
                         : selection(defaults, Key.primarySelection)?.engine
                     if key == Key.legacyPrimaryEngine {
-                        XCTAssertEqual(primaryEngine, engine, "audioEngine removed without its choice for \(label)")
+                        // The owner's decision: a saved Edge primary without the consent became default Piper.
+                        let consented = (seeded[Key.onlineFallbackConsent] as? Bool) ?? false
+                        let edgeWithoutConsent = engine == "edge" && !consented
+#if APP_FOUNDATION_HOST_TESTS
+                        let expectedEngine = engine
+#else
+                        let expectedEngine = edgeWithoutConsent ? "piper" : engine
+#endif
+                        XCTAssertEqual(primaryEngine, expectedEngine, "audioEngine removed without its choice for \(label)")
                     } else {
-                        let legacyPrimary = (seeded[Key.legacyPrimaryEngine] as? String)
+                        var legacyPrimary = (seeded[Key.legacyPrimaryEngine] as? String)
                             .flatMap { TtsSelection.selectableEngines.contains($0) ? $0 : nil } ?? "piper"
+#if !APP_FOUNDATION_HOST_TESTS
+                        // An Edge primary without the consent is the default Piper now, so a reserve that is Piper repeats it.
+                        if legacyPrimary == "edge", !((seeded[Key.onlineFallbackConsent] as? Bool) ?? false) { legacyPrimary = "piper" }
+#endif
                         XCTAssertTrue(selection(defaults, Key.secondarySelection) == .engineDefault(engine)
                                       || engine == legacyPrimary,
                                       "secondaryAudioEngine removed without its choice for \(label)")

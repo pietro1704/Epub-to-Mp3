@@ -6,12 +6,14 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertTrue(TtsSelection.selectableEngines.contains("system"),
                       "Apple must expose installed system speech as an offline fallback.")
         let (settings, defaults) = make()
+        // An Edge primary is only kept with the online consent (without it the app moves to Piper on load).
+        settings.allowOnlineAudioFallback = true
         settings.selectPrimaryNarration(.edgeDefault)
         settings.selectSecondaryNarration(.systemDefault)
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.primaryTtsSelection, .edgeDefault)
         XCTAssertEqual(restored.ttsPreferences.secondary?.engine, "system")
-        XCTAssertFalse(restored.ttsPreferences.allowOnlineFallback)
+        XCTAssertTrue(restored.ttsPreferences.allowOnlineFallback)
         let captured = NarrationConversionOptions.current(for: restored.ttsPreferences)
         restored.selectSecondaryNarration(nil)
         XCTAssertNil(AppSettings(defaults: defaults).secondaryTtsSelection)
@@ -73,6 +75,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("edge", forKey: "audioEngine")
+        defaults.set(true, forKey: "allowOnlineAudioFallback")   // without the consent Edge now moves to Piper
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.primaryTtsSelection, .edgeDefault)
         XCTAssertNil(settings.secondaryTtsSelection)
@@ -355,6 +358,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertFalse(settings.ttsPreferences.allowOnlineFallback)
+        settings.allowOnlineAudioFallback = true
         settings.selectPrimaryNarration(.edgeDefault)
         settings.selectSecondaryNarration(.defaultPiper)
         let restored = AppSettings(defaults: defaults)
@@ -365,7 +369,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(captured.encodedJSON().utf8)) as? [String: Any])
         let policy = try XCTUnwrap(fields["tts_preferences"] as? [String: Any])
-        XCTAssertEqual(policy["allow_online_fallback"] as? Bool, false)
+        XCTAssertEqual(policy["allow_online_fallback"] as? Bool, true)
         XCTAssertEqual((policy["secondary"] as? [String: Any])?["model_id"] as? String, "pt_BR-faber-medium")
     }
 
