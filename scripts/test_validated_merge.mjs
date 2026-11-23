@@ -109,10 +109,8 @@ test('publisher boundaries keep releases behind the whole validation and seriali
   for (const name of ['auto-release', 'release-pr']) {
     const text = workflow(name);
     assert.match(text, /workflow_dispatch:/, name);
-    assert.match(text, /workflows: \["Post-merge validation"\]/, name);
-    assert.doesNotMatch(text, /^  push:/m, name);
-    assert.match(text, /github\.event\.workflow_run\.conclusion == 'success'/, name);
-    assert.match(text, /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/master'\)/, name);
+    assert.doesNotMatch(text, /^  workflow_run:|^  push:/m, name);
+    assert.match(text, /if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/master'\n/, name);
     assert.match(text, /validated_merge\.mjs" --repo "\$GITHUB_REPOSITORY" --ref "\$SOURCE_REF" --latest\n/, name);
     assert.doesNotMatch(text, /gh pr merge/, name);
   }
@@ -121,7 +119,7 @@ test('publisher boundaries keep releases behind the whole validation and seriali
   assert.equal(workflow('auto-release').match(/gh workflow run [^\n]*/g)?.join(),
     'gh workflow run release-desktop.yml --repo "$GITHUB_REPOSITORY" --ref master -f tag="$VERSION_TAG"');
   assert.doesNotMatch(workflow('release-pr'), /gh workflow run|release-desktop/);
-  assert.match(workflow('sync-hf'), /workflows: \["Post-merge validation"\]/);
+  assert.doesNotMatch(workflow('sync-hf'), /^  workflow_run:/m);
   for (const name of ['sync-hf', 'rollback-hf']) {
     assert.match(workflow(name), /group: sync-hf\n  cancel-in-progress: false/);
     // Both HF gates accept a run whose publication job succeeded; releases and TestFlight do not.

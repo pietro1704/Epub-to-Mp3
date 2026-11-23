@@ -176,15 +176,14 @@ jobs:
           'import { assertValidationResults, PUBLICATION_VALIDATIONS } from "./scripts/post_merge_validation.mjs";
           assertValidationResults(JSON.parse(process.env.NEEDS_JSON), PUBLICATION_VALIDATIONS);'
 
-  # The merge workflow merges with GITHUB_TOKEN, so it dispatches this validation itself
-  # (actor github-actions[bot]), and GitHub creates no workflow_run event when such a run
-  # completes. Start the follow-ups explicitly; each waits for this run to complete and
-  # then applies its own validated_merge.mjs gate. A push-event run (a person merged)
-  # keeps relying on workflow_run, so nothing starts twice.
+  # Every master run (a push or a dispatch) starts the publishers itself; they have no
+  # workflow_run trigger, so no skipped runs appear in the Actions tab. Each waits for
+  # this run to complete and then applies its own validated_merge.mjs gate. Nothing is
+  # started when master has already moved past this commit: the newer run owns it.
   release-followup:
     name: Start release follow-ups
     needs: validated
-    if: always() && needs.validated.result == 'success' && github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]' && github.ref == 'refs/heads/master'
+    if: always() && needs.validated.result == 'success' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -195,6 +194,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VALIDATION_RUN: ${{ github.run_id }}
         run: |
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "Master advanced to $current; the newer validation owns the release."
+            exit 0
+          fi
           gh workflow run auto-release.yml --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"
           gh workflow run release-pr.yml --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"
 
@@ -202,7 +206,7 @@ jobs:
     name: Start the Hugging Face sync
     # After validated too (any result), so every job has finished and the run completes now.
     needs: [publication, validated]
-    if: always() && needs.publication.result == 'success' && github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]' && github.ref == 'refs/heads/master'
+    if: always() && needs.publication.result == 'success' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -212,4 +216,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VALIDATION_RUN: ${{ github.run_id }}
-        run: gh workflow run sync-hf.yml --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"
+        run: |
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "Master advanced to $current; the newer validation owns the sync."
+            exit 0
+          fi
+          gh workflow run sync-hf.yml --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"

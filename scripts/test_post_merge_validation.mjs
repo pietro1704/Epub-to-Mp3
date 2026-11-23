@@ -6,8 +6,8 @@ import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQU
 import { SCOPED, ALWAYS } from './post_merge_scope.mjs';
 
 const repo = 'pietro1704/Epub-to-Mp3';
-// Follow-up workflows a merge-workflow-dispatched validation must start itself:
-// GitHub creates no workflow_run event when a run dispatched with GITHUB_TOKEN completes.
+// Follow-up workflows every master validation run (push or dispatch) starts itself; the
+// publishers have no workflow_run trigger.
 const FOLLOW_UPS = { 'release-followup': ['validated', ['validated'], ['auto-release.yml', 'release-pr.yml']],
   'publication-followup': ['publication', ['publication', 'validated'], ['sync-hf.yml']] };
 const sha = 'a'.repeat(40);
@@ -237,9 +237,9 @@ test('the publication aggregate requires exactly the surfaces the Space needs, w
     'A selected publication surface may not be skipped');
 });
 
-test('a validation dispatched by the merge workflow starts its follow-up workflows, which wait for it', () => {
+test('every master validation run starts its follow-up workflows, which wait for it', () => {
   const post = workflow('post-merge-validation.yml');
-  const dispatched = "github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]' && github.ref == 'refs/heads/master'";
+  const dispatched = "github.ref == 'refs/heads/master'";
   for (const [name, [gate, needs, files]] of Object.entries(FOLLOW_UPS)) {
     const job = post.jobs[name];
     assert.ok(job, name);
@@ -251,6 +251,9 @@ test('a validation dispatched by the merge workflow starts its follow-up workflo
     const step = job.steps.at(-1);
     assert.equal(step.env.VALIDATION_RUN, '${{ github.run_id }}');
     assert.equal(step.env.GH_TOKEN, '${{ github.token }}');
+    // A superseded commit starts nothing: the newer validation owns the publication.
+    assert.match(step.run, /current="\$\(gh api "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/master" --jq \.object\.sha\)"\n\s*if \[ "\$current" != "\$GITHUB_SHA" \]; then/, name);
+    assert.ok(step.run.indexOf('GITHUB_SHA') < step.run.indexOf('gh workflow run'), name);
     for (const file of files) {
       assert.ok(step.run.includes(`gh workflow run ${file} --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"`), file);
       const called = workflow(file);
@@ -264,6 +267,7 @@ test('a validation dispatched by the merge workflow starts its follow-up workflo
       assert.match(wait.run, /wait_for_validation\.mjs" --repo "\$GITHUB_REPOSITORY" --run "\$VALIDATION_RUN"$/, file);
     }
   }
-  // A push-event validation keeps relying on workflow_run, so nothing is started twice.
-  assert.ok(!JSON.stringify(post.jobs['release-followup'].if).includes("'push'"));
+  for (const file of ['auto-release.yml', 'release-pr.yml', 'sync-hf.yml']) {
+    assert.equal((workflow(file).on ?? workflow(file).true).workflow_run, undefined, `${file} must not also start from workflow_run`);
+  }
 });

@@ -17,9 +17,9 @@ class SyncHfWorkflowTest < Minitest::Test
     refute_includes @workflow, '--exclude "python_app"'
     assert_includes @workflow, "needs: gate"
     assert_includes @workflow, "if: needs.gate.outputs.sha != ''"
-    assert_includes @workflow, "SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}"
+    assert_includes @workflow, "SKIP_SUPERSEDED: ${{ inputs.validation_run != '' }}"
     assert_includes @workflow, "ref: ${{ needs.gate.outputs.sha }}"
-    assert_includes @workflow, 'workflows: ["Post-merge validation"]'
+    refute_includes @workflow, "workflow_run"
     assert_includes @workflow, "workflow_dispatch"
   end
 
@@ -36,14 +36,15 @@ class SyncHfWorkflowTest < Minitest::Test
     refute_includes @workflow, "issues: write"
   end
 
-  # A failed post-merge run reaches the gate; validated_merge.mjs then requires the
-  # publication job of that exact attempt, so cancelled or skipped runs never publish.
-  def test_hf_sync_gate_admits_only_completed_master_runs_for_the_publication_job_check
+  # Post-merge validation dispatches this workflow once its publication job succeeded, even
+  # when unrelated platform jobs failed; validated_merge.mjs then requires the publication job
+  # of that exact attempt, so cancelled or skipped runs never publish.
+  def test_hf_sync_is_started_only_by_dispatch_and_keeps_the_publication_job_gate
     require "yaml"
-    gate = YAML.load_file(WORKFLOW).fetch("jobs").fetch("gate").fetch("if")
-    assert_includes gate, %q{contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)}
-    refute_match(/cancelled|skipped|neutral|timed_out/, gate)
-    assert_includes gate, "github.event.workflow_run.head_branch == 'master'"
-    assert_includes gate, "github.event.workflow_run.head_repository.full_name == github.repository"
+    workflow = YAML.load_file(WORKFLOW)
+    gate = workflow.fetch("jobs").fetch("gate").fetch("if")
+    assert_equal "github.event_name == 'workflow_dispatch'", gate
+    refute((workflow["on"] || workflow[true]).key?("workflow_run"))
+    assert_includes @workflow, '--required-job "Publication surfaces validated"'
   end
 end

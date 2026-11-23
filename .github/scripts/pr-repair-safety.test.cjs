@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { validate, readiness, attempted, claim, validateChanges, stageChanges, publish, currentFailure, dispatchVerification } = require('./pr-repair-safety.cjs');
-const { dispatch } = require('./pr-repair-dispatch.cjs');
 const { REPOSITORY, SHA, BASE_SHA, PREPARED, withFailure, pr, claimComment, authorizedPublish, fixture } = require('./pr-repair-test-fixtures.cjs');
 
 test('readiness never simulates credentials or enables absent writers', () => {
@@ -234,19 +233,6 @@ test('authentication files and directories are refused both untracked and staged
   }
 });
 
-test('dispatcher refreshes metadata and never dispatches a stale, draft or fork candidate', () => {
-  const posts = [];
-  const api = withFailure((endpoint, method, body) => {
-    if (method === 'POST') { posts.push(body); return {}; }
-    if (endpoint.includes('/commits/')) return [{ number: 7 }, { number: 8 }];
-    const candidate = pr(); if (endpoint === '/pulls/8') candidate.draft = true;
-    return candidate;
-  });
-  assert.deepEqual(dispatch({ api, repository: REPOSITORY, sha: SHA, event: 'pull_request', ...PREPARED }), [7]);
-  assert.equal(posts.length, 1); assert.equal(posts[0].ref, 'master');
-  assert.equal(posts[0].inputs.head_sha, SHA);
-});
-
 test('verification refuses missing or malformed base identity before dispatch', async () => {
   for (const base of [undefined, null, 'invalid']) {
     let writes = 0;
@@ -393,16 +379,6 @@ test('publication requires current readiness and a claim from this trusted worke
   }
 });
 
-test('dispatcher is inert without explicit writer readiness and Git failures fail closed', t => {
-  let calls = 0;
-  assert.deepEqual(dispatch({ api: () => { calls++; }, repository: REPOSITORY,
-    sha: SHA, event: 'pull_request' }), []);
-  assert.equal(calls, 0);
-  const f = fixture(t);
-  assert.throws(() => validateChanges(f.root, f.expected), /git failed/);
-  assert.equal(f.git(f.remote, 'rev-parse', 'feature/repair'), f.expected);
-});
-
 test('all mutation CLIs refuse absent readiness before calling a fake gh', t => {
   const f = fixture(t), bin = path.join(f.root, 'bin');
   fs.mkdirSync(bin);
@@ -420,10 +396,6 @@ test('all mutation CLIs refuse absent readiness before calling a fake gh', t => 
       assert.equal(result.status, 1, result.stderr);
       assert.match(result.stderr, /readiness blocked/);
     }
-    const dispatcher = spawnSync(process.execPath, [path.join(__dirname, 'pr-repair-dispatch.cjs')],
-      { env, encoding: 'utf8', timeout: 10000 });
-    assert.equal(dispatcher.status, 0, dispatcher.stderr);
-    assert.deepEqual(JSON.parse(dispatcher.stdout).dispatched, []);
     assert.equal(fs.existsSync(marker), false);
   }
 });

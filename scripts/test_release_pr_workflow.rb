@@ -20,18 +20,14 @@ class ReleasePrWorkflowTest < Minitest::Test
   end
 
   def test_superseded_event_cannot_start_release_preparation
-    assert_equal "${{ github.event_name == 'workflow_run' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
+    assert_equal "${{ inputs.validation_run != '' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
     assert_equal "steps.validated.outputs.sha != ''", step("Checkout").fetch("if")
     assert_equal "steps.validated.outputs.sha != ''", step("Plan the next version").fetch("if")
   end
 
-  def test_runs_after_post_merge_validation_like_auto_release
-    assert_equal ["Post-merge validation"], @triggers.fetch("workflow_run").fetch("workflows")
-    condition = @job.fetch("if")
-    assert_includes condition, "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')"
-    assert_includes condition, "github.event.workflow_run.conclusion == 'success'"
-    assert_includes condition, "github.event.workflow_run.head_branch == 'master'"
-    assert_includes condition, "github.event.workflow_run.head_repository.full_name == github.repository"
+  def test_is_dispatched_by_post_merge_validation_like_auto_release
+    refute @triggers.key?("workflow_run"), "Post-merge validation dispatches the publisher directly"
+    assert_equal "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'", @job.fetch("if")
   end
 
   def test_works_from_the_validated_latest_master_commit_with_trusted_helpers

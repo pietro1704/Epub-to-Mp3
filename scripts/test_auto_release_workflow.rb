@@ -20,29 +20,26 @@ class AutoReleaseWorkflowTest < Minitest::Test
   end
 
   def test_superseded_event_cannot_start_release_preparation
-    assert_equal "${{ github.event_name == 'workflow_run' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
+    assert_equal "${{ inputs.validation_run != '' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
     assert_equal "steps.validated.outputs.sha != ''", step("Checkout").fetch("if")
     assert_equal "steps.validated.outputs.sha != ''", step("Validate shared app version").fetch("if")
     assert_equal "steps.validated.outputs.sha != ''", step("Determine next version").fetch("if")
   end
 
-  def test_runs_after_post_merge_validation_and_stays_dispatchable
-    assert_equal ["Post-merge validation"], @triggers.fetch("workflow_run").fetch("workflows")
-    assert_equal ["completed"], @triggers.fetch("workflow_run").fetch("types")
+  def test_is_dispatched_by_post_merge_validation_and_has_no_workflow_run_trigger
+    refute @triggers.key?("workflow_run"), "Post-merge validation dispatches the publisher directly"
     assert @triggers.key?("workflow_dispatch"), "a manual run must stay possible"
+    assert_equal false, @triggers.fetch("workflow_dispatch").fetch("inputs").fetch("validation_run").fetch("required")
   end
 
   def test_only_a_successful_validation_of_master_in_this_repository_releases
     condition = @workflow.fetch("jobs").fetch("auto-release").fetch("if")
-    assert_includes condition, "github.event.workflow_run.conclusion == 'success'"
-    assert_includes condition, "github.event.workflow_run.head_branch == 'master'"
-    assert_includes condition, "github.event.workflow_run.head_repository.full_name == github.repository"
-    assert_includes condition, "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')"
+    assert_equal "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'", condition
   end
 
   def test_the_released_commit_is_the_validated_latest_master_commit
     validated = step("Require validated current merge")
-    assert_includes validated.fetch("env").fetch("SOURCE_REF"), "github.event.workflow_run.head_sha"
+    assert_equal "${{ github.sha }}", validated.fetch("env").fetch("SOURCE_REF")
     assert_includes validated.fetch("run"), "--latest"
     assert_equal "${{ steps.validated.outputs.sha }}", step("Checkout").fetch("with").fetch("ref")
     revalidated = step("Revalidate immediately before creating a release tag")
