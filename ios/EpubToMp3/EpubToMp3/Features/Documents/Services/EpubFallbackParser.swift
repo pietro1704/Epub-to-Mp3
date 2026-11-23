@@ -55,7 +55,7 @@ enum EpubFallbackParser {
             }
             let text = EpubFallbackText.stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            let title = navigationTitles[chapterPath] ?? EpubFallbackText.firstHeading(in: html) ?? "Chapter \(index)"
+            let title = navigationTitles[chapterPath] ?? EpubFallbackText.firstHeading(in: html) ?? L10n.fallbackChapterName(index)
             let resources = EpubFallbackResources.images(in: html, chapterPath: chapterPath, archiveURL: url)
             let footnotes = EpubFallbackResources.footnotes(in: html, chapterPath: chapterPath, archiveURL: url)
             chapters.append(EbookFulltext.Chapter(

@@ -57,7 +57,7 @@ extension PdfTextExtractor {
             )
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
-            let name = entry.title.isEmpty ? "Chapter \(chapters.count + 1)" : entry.title
+            let name = entry.title.isEmpty ? L10n.fallbackChapterName(chapters.count + 1) : entry.title
             chapters.append(makeChapter(
                 index: chapters.count + 1,
                 name: name,
@@ -136,7 +136,7 @@ extension PdfTextExtractor {
                 .firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let resolvedName: String = {
                 if let n = name, !n.isEmpty, n.count <= 120 { return n }
-                return "Chapter \(chapters.count + 1)"
+                return L10n.fallbackChapterName(chapters.count + 1)
             }()
             chapters.append(makeChapter(
                 index: chapters.count + 1,

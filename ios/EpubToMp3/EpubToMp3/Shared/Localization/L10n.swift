@@ -3,7 +3,28 @@ import Foundation
 /// Thin namespace for localized string helpers backed by Localizable.strings.
 /// The key must match an entry in Localizable.strings for en / pt-BR / es.
 enum L10n {
+    /// Test seam: forces every lookup that does not pass its own bundle into one localization.
+    nonisolated(unsafe) static var bundleOverrideForTesting: Bundle?
+
+    /// The bundle of one shipped localization ("en", "pt-BR", "es"), for tests and explicit-language lookups.
+    static func localizationBundle(_ localization: String) -> Bundle? {
+        let base: Bundle = {
+            #if SWIFT_PACKAGE
+            return .module
+            #else
+            return .main
+            #endif
+        }()
+        return base.path(forResource: localization, ofType: "lproj").flatMap(Bundle.init(path:))
+    }
+
+    /// Name given to a chapter whose book supplies no title ("Chapter 3" / "Capítulo 3").
+    static func fallbackChapterName(_ number: Int) -> String {
+        string("reader.chapter", number)
+    }
+
     private static var defaultBundle: Bundle {
+        if let bundleOverrideForTesting { return bundleOverrideForTesting }
         #if SWIFT_PACKAGE
         return .module
         #else
