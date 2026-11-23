@@ -28,6 +28,16 @@ abstract class FulltextSegment with _$FulltextSegment {
       _$FulltextSegmentFromJson(json);
 }
 
+/// One footnote body of a chapter, as extracted by the shared Rust parser.
+@freezed
+abstract class FulltextFootnote with _$FulltextFootnote {
+  const factory FulltextFootnote({String? number, required String text}) =
+      _FulltextFootnote;
+
+  factory FulltextFootnote.fromJson(Map<String, dynamic> json) =>
+      _$FulltextFootnoteFromJson(json);
+}
+
 int _flexInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 
 @freezed
@@ -41,10 +51,14 @@ abstract class FulltextChapter with _$FulltextChapter {
     String? css,
     int? charCount,
     List<FulltextSegment>? segments,
+    List<FulltextFootnote>? footnotes,
   }) = _FulltextChapter;
 
   factory FulltextChapter.fromJson(Map<String, dynamic> json) =>
       _$FulltextChapterFromJson(json);
+
+  /// The reader shows its Footnotes action only for chapters with notes.
+  bool get hasFootnotes => footnotes?.isNotEmpty ?? false;
 
   String get displayTitle {
     final candidate = name?.trim();

@@ -751,6 +751,330 @@ class __$FulltextSegmentCopyWithImpl<$Res>
 }
 
 /// @nodoc
+mixin _$FulltextFootnote {
+  String? get number;
+  String get text;
+
+  /// Create a copy of FulltextFootnote
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  $FulltextFootnoteCopyWith<FulltextFootnote> get copyWith =>
+      _$FulltextFootnoteCopyWithImpl<FulltextFootnote>(
+        this as FulltextFootnote,
+        _$identity,
+      );
+
+  /// Serializes this FulltextFootnote to a JSON map.
+  Map<String, dynamic> toJson();
+
+  @override
+  bool operator ==(Object other) {
+    final _this = this as FulltextFootnote;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is FulltextFootnote &&
+            (identical(other.number, _this.number) ||
+                other.number == _this.number) &&
+            (identical(other.text, _this.text) || other.text == _this.text));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    final _this = this as FulltextFootnote;
+    return Object.hash(runtimeType, _this.number, _this.text);
+  }
+
+  @override
+  String toString() {
+    final _this = this as FulltextFootnote;
+    return 'FulltextFootnote(number: ${_this.number}, text: ${_this.text})';
+  }
+}
+
+/// @nodoc
+abstract mixin class $FulltextFootnoteCopyWith<$Res> {
+  factory $FulltextFootnoteCopyWith(
+    FulltextFootnote value,
+    $Res Function(FulltextFootnote) _then,
+  ) = _$FulltextFootnoteCopyWithImpl;
+  @useResult
+  $Res call({String? number, String text});
+}
+
+/// @nodoc
+class _$FulltextFootnoteCopyWithImpl<$Res>
+    implements $FulltextFootnoteCopyWith<$Res> {
+  _$FulltextFootnoteCopyWithImpl(this._self, this._then);
+
+  final FulltextFootnote _self;
+  final $Res Function(FulltextFootnote) _then;
+
+  /// Create a copy of FulltextFootnote
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? number = freezed, Object? text = null}) {
+    return _then(
+      FulltextFootnote(
+        number: freezed == number
+            ? _self.number
+            : number // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        text: null == text
+            ? _self.text
+            : text // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// Adds pattern-matching-related methods to [FulltextFootnote].
+extension FulltextFootnotePatterns on FulltextFootnote {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_FulltextFootnote value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_FulltextFootnote value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_FulltextFootnote value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(String? number, String text)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote() when $default != null:
+        return $default(_that.number, _that.text);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(String? number, String text) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote():
+        return $default(_that.number, _that.text);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(String? number, String text)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextFootnote() when $default != null:
+        return $default(_that.number, _that.text);
+      case _:
+        return null;
+    }
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _FulltextFootnote implements FulltextFootnote {
+  const _FulltextFootnote({this.number, required this.text});
+  factory _FulltextFootnote.fromJson(Map<String, dynamic> json) =>
+      _$FulltextFootnoteFromJson(json);
+
+  @override
+  final String? number;
+  @override
+  final String text;
+
+  /// Create a copy of FulltextFootnote
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$FulltextFootnoteCopyWith<_FulltextFootnote> get copyWith =>
+      __$FulltextFootnoteCopyWithImpl<_FulltextFootnote>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$FulltextFootnoteToJson(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _FulltextFootnote &&
+            (identical(other.number, number) || other.number == number) &&
+            (identical(other.text, text) || other.text == text));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    return Object.hash(runtimeType, number, text);
+  }
+
+  @override
+  String toString() {
+    return 'FulltextFootnote(number: $number, text: $text)';
+  }
+}
+
+/// @nodoc
+abstract mixin class _$FulltextFootnoteCopyWith<$Res>
+    implements $FulltextFootnoteCopyWith<$Res> {
+  factory _$FulltextFootnoteCopyWith(
+    _FulltextFootnote value,
+    $Res Function(_FulltextFootnote) _then,
+  ) = __$FulltextFootnoteCopyWithImpl;
+  @override
+  @useResult
+  $Res call({String? number, String text});
+}
+
+/// @nodoc
+class __$FulltextFootnoteCopyWithImpl<$Res>
+    implements _$FulltextFootnoteCopyWith<$Res> {
+  __$FulltextFootnoteCopyWithImpl(this._self, this._then);
+
+  final _FulltextFootnote _self;
+  final $Res Function(_FulltextFootnote) _then;
+
+  /// Create a copy of FulltextFootnote
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $Res call({Object? number = freezed, Object? text = null}) {
+    return _then(
+      _FulltextFootnote(
+        number: freezed == number
+            ? _self.number
+            : number // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        text: null == text
+            ? _self.text
+            : text // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
 mixin _$FulltextChapter {
   @JsonKey(fromJson: _flexInt)
   int get index;
@@ -760,6 +1084,7 @@ mixin _$FulltextChapter {
   String? get css;
   int? get charCount;
   List<FulltextSegment>? get segments;
+  List<FulltextFootnote>? get footnotes;
 
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
@@ -791,6 +1116,10 @@ mixin _$FulltextChapter {
             const DeepCollectionEquality().equals(
               other.segments,
               _this.segments,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other.footnotes,
+              _this.footnotes,
             ));
   }
 
@@ -807,13 +1136,14 @@ mixin _$FulltextChapter {
       _this.css,
       _this.charCount,
       const DeepCollectionEquality().hash(_this.segments),
+      const DeepCollectionEquality().hash(_this.footnotes),
     );
   }
 
   @override
   String toString() {
     final _this = this as FulltextChapter;
-    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments})';
+    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments}, footnotes: ${_this.footnotes})';
   }
 }
 
@@ -832,6 +1162,7 @@ abstract mixin class $FulltextChapterCopyWith<$Res> {
     String? css,
     int? charCount,
     List<FulltextSegment>? segments,
+    List<FulltextFootnote>? footnotes,
   });
 }
 
@@ -855,6 +1186,7 @@ class _$FulltextChapterCopyWithImpl<$Res>
     Object? css = freezed,
     Object? charCount = freezed,
     Object? segments = freezed,
+    Object? footnotes = freezed,
   }) {
     return _then(
       FulltextChapter(
@@ -886,6 +1218,10 @@ class _$FulltextChapterCopyWithImpl<$Res>
             ? _self.segments
             : segments // ignore: cast_nullable_to_non_nullable
                   as List<FulltextSegment>?,
+        footnotes: freezed == footnotes
+            ? _self.footnotes
+            : footnotes // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextFootnote>?,
       ),
     );
   }
@@ -992,6 +1328,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       String? css,
       int? charCount,
       List<FulltextSegment>? segments,
+      List<FulltextFootnote>? footnotes,
     )?
     $default, {
     required TResult orElse(),
@@ -1007,6 +1344,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.css,
           _that.charCount,
           _that.segments,
+          _that.footnotes,
         );
       case _:
         return orElse();
@@ -1036,6 +1374,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       String? css,
       int? charCount,
       List<FulltextSegment>? segments,
+      List<FulltextFootnote>? footnotes,
     )
     $default,
   ) {
@@ -1050,6 +1389,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.css,
           _that.charCount,
           _that.segments,
+          _that.footnotes,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -1078,6 +1418,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       String? css,
       int? charCount,
       List<FulltextSegment>? segments,
+      List<FulltextFootnote>? footnotes,
     )?
     $default,
   ) {
@@ -1092,6 +1433,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.css,
           _that.charCount,
           _that.segments,
+          _that.footnotes,
         );
       case _:
         return null;
@@ -1110,7 +1452,9 @@ class _FulltextChapter extends FulltextChapter {
     this.css,
     this.charCount,
     List<FulltextSegment>? segments,
+    List<FulltextFootnote>? footnotes,
   }) : _segments = segments,
+       _footnotes = footnotes,
        super._();
   factory _FulltextChapter.fromJson(Map<String, dynamic> json) =>
       _$FulltextChapterFromJson(json);
@@ -1134,6 +1478,16 @@ class _FulltextChapter extends FulltextChapter {
     final value = _segments;
     if (value == null) return null;
     if (_segments is EqualUnmodifiableListView) return _segments;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(value);
+  }
+
+  final List<FulltextFootnote>? _footnotes;
+  @override
+  List<FulltextFootnote>? get footnotes {
+    final value = _footnotes;
+    if (value == null) return null;
+    if (_footnotes is EqualUnmodifiableListView) return _footnotes;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(value);
   }
@@ -1163,7 +1517,8 @@ class _FulltextChapter extends FulltextChapter {
             (identical(other.css, css) || other.css == css) &&
             (identical(other.charCount, charCount) ||
                 other.charCount == charCount) &&
-            const DeepCollectionEquality().equals(other.segments, _segments));
+            const DeepCollectionEquality().equals(other.segments, _segments) &&
+            const DeepCollectionEquality().equals(other.footnotes, _footnotes));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1178,12 +1533,13 @@ class _FulltextChapter extends FulltextChapter {
       css,
       charCount,
       const DeepCollectionEquality().hash(_segments),
+      const DeepCollectionEquality().hash(_footnotes),
     );
   }
 
   @override
   String toString() {
-    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments)';
+    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments, footnotes: $footnotes)';
   }
 }
 
@@ -1204,6 +1560,7 @@ abstract mixin class _$FulltextChapterCopyWith<$Res>
     String? css,
     int? charCount,
     List<FulltextSegment>? segments,
+    List<FulltextFootnote>? footnotes,
   });
 }
 
@@ -1227,6 +1584,7 @@ class __$FulltextChapterCopyWithImpl<$Res>
     Object? css = freezed,
     Object? charCount = freezed,
     Object? segments = freezed,
+    Object? footnotes = freezed,
   }) {
     return _then(
       _FulltextChapter(
@@ -1258,6 +1616,10 @@ class __$FulltextChapterCopyWithImpl<$Res>
             ? _self._segments
             : segments // ignore: cast_nullable_to_non_nullable
                   as List<FulltextSegment>?,
+        footnotes: freezed == footnotes
+            ? _self._footnotes
+            : footnotes // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextFootnote>?,
       ),
     );
   }

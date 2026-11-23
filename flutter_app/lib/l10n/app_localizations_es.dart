@@ -474,4 +474,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get readerNarrationModel => 'Modelo de narración';
+
+  @override
+  String get readerFootnotes => 'Notas al pie';
 }

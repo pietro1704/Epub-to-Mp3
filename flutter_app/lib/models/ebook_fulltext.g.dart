@@ -22,6 +22,15 @@ Map<String, dynamic> _$FulltextSegmentToJson(_FulltextSegment instance) =>
       'endMs': instance.endMs,
     };
 
+_FulltextFootnote _$FulltextFootnoteFromJson(Map<String, dynamic> json) =>
+    _FulltextFootnote(
+      number: json['number'] as String?,
+      text: json['text'] as String,
+    );
+
+Map<String, dynamic> _$FulltextFootnoteToJson(_FulltextFootnote instance) =>
+    <String, dynamic>{'number': instance.number, 'text': instance.text};
+
 _FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) =>
     _FulltextChapter(
       index: _flexInt(json['index']),
@@ -32,6 +41,9 @@ _FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) =>
       charCount: (json['charCount'] as num?)?.toInt(),
       segments: (json['segments'] as List<dynamic>?)
           ?.map((e) => FulltextSegment.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      footnotes: (json['footnotes'] as List<dynamic>?)
+          ?.map((e) => FulltextFootnote.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
 
@@ -44,6 +56,7 @@ Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
       'css': instance.css,
       'charCount': instance.charCount,
       'segments': instance.segments,
+      'footnotes': instance.footnotes,
     };
 
 _EbookFulltext _$EbookFulltextFromJson(Map<String, dynamic> json) =>

@@ -107,6 +107,41 @@ extension _InstantReaderTools on _InstantReaderViewState {
     );
   }
 
+  void _showFootnotes(Chapter chapter) {
+    final t = AppLocalizations.of(context)!;
+    final notes = chapter.footnotes ?? const <FulltextFootnote>[];
+    _showPanel(
+      Material(
+        child: SafeArea(
+          child: Column(
+            children: [
+              ListTile(
+                title: Text(t.readerFootnotes),
+                trailing: IconButton(
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: notes.length,
+                  itemBuilder: (context, index) {
+                    final note = notes[index];
+                    return ListTile(
+                      leading: Text(note.number ?? '${index + 1}'),
+                      title: SelectableText(note.text),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showSearch() {
     _showPanel(
       ReaderSearchOverlay(
