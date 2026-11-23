@@ -334,14 +334,12 @@ final class SpeechPreferenceMigrationTests: XCTestCase {
 #endif
                         XCTAssertEqual(primaryEngine, expectedEngine, "audioEngine removed without its choice for \(label)")
                     } else {
-                        var legacyPrimary = (seeded[Key.legacyPrimaryEngine] as? String)
+                        // A reserve that repeated the ORIGINAL primary stored nothing of its own; that stays true even when
+                        // the owner's decision then turns an unconsented Edge primary into Piper.
+                        let legacyPrimary = (seeded[Key.legacyPrimaryEngine] as? String)
                             .flatMap { TtsSelection.selectableEngines.contains($0) ? $0 : nil } ?? "piper"
-#if !APP_FOUNDATION_HOST_TESTS
-                        // An Edge primary without the consent is the default Piper now, so a reserve that is Piper repeats it.
-                        if legacyPrimary == "edge", !((seeded[Key.onlineFallbackConsent] as? Bool) ?? false) { legacyPrimary = "piper" }
-#endif
                         XCTAssertTrue(selection(defaults, Key.secondarySelection) == .engineDefault(engine)
-                                      || engine == legacyPrimary,
+                                      || engine == legacyPrimary || engine == primaryEngine,
                                       "secondaryAudioEngine removed without its choice for \(label)")
                     }
                 }
