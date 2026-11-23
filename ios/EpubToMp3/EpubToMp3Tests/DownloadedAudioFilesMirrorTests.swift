@@ -173,6 +173,9 @@ final class DownloadedAudioFilesMirrorTests: XCTestCase {
     }
 
     func testTitlesCannotEscapeTheFolderOrHideTheFile() throws {
+        // The fallback name follows the app language; pin English so the expectation does not depend on the host.
+        L10n.bundleOverrideForTesting = try XCTUnwrap(L10n.localizationBundle("en"))
+        defer { L10n.bundleOverrideForTesting = nil }
         let source = try audio("converted.mp3", 1)
         try mirror.publish(source, bookID: "book", bookTitle: "../../Escape: a/b", chapterIndex: 0, chapterTitle: "..")
         try mirror.publish(source, bookID: "book", bookTitle: "ignored", chapterIndex: 1, chapterTitle: " .hidden/\u{0}name\n")

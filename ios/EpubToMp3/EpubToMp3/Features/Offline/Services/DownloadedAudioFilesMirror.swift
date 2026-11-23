@@ -68,7 +68,7 @@ struct DownloadedAudioFilesMirror: Sendable {
         if let expectedDigest, identity.digest != expectedDigest {
             throw LocalAudioImportFiles.Failure.sourceChanged
         }
-        let title = Self.component(chapterTitle, fallback: "Chapter \(chapterIndex + 1)")
+        let title = Self.component(chapterTitle, fallback: L10n.fallbackChapterName(chapterIndex + 1))
         let name = Self.freeName(
             String(format: "%02d - %@", chapterIndex + 1, title), fileExtension: "mp3",
             in: folder, reusing: previous?.lastPathComponent)
