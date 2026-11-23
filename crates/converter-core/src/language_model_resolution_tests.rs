@@ -233,3 +233,102 @@ fn a_book_compatible_with_the_primary_keeps_it_exactly_as_today() {
     assert_eq!(out.source, Some(Source::Primary));
     assert_eq!(out.selection, r.primary);
 }
+
+fn explicit_low(id: &str) -> TtsSelection {
+    let model = crate::model_catalog::model_by_id(id).unwrap();
+    let mut selection = piper(id);
+    let mut session = crate::tts_session::SessionSelection::from_legacy(&selection).unwrap();
+    session.model_revision = crate::model_catalog::model_revision(model);
+    selection.session = Some(session);
+    selection
+}
+
+#[test]
+fn an_installed_low_voice_is_never_picked_automatically_nor_suggested() {
+    for (language, low) in [
+        ("pt-BR", "pt_BR-edresson-low"),
+        ("en-US", "en_US-lessac-low"),
+    ] {
+        // Only the Low voice installed and nothing chosen: no automatic pick, a missing-model result.
+        let mut only_low = request(language, &[low]);
+        only_low.allow_automatic_system_voice_fallback = false;
+        let out = resolve(&only_low);
+        assert_eq!(
+            out.status,
+            Status::MissingModel,
+            "{low} must not be automatic"
+        );
+        assert!(out.selection.is_none());
+        assert!(out
+            .reasons
+            .contains(&"automatic:no_installed_model".to_owned()));
+        // The system voice (setting on) is the fallback, not the Low voice.
+        let mut with_system = request(language, &[low]);
+        with_system.system_voices = vec![language.into()];
+        assert_eq!(resolve(&with_system).status, Status::SystemFallback);
+        // Suggestions never offer a Low voice, installed or not.
+        let none = {
+            let mut r = request(language, &[]);
+            r.allow_automatic_system_voice_fallback = false;
+            resolve(&r)
+        };
+        let suggested = none.missing.unwrap().suggested;
+        assert!(!suggested.is_empty());
+        assert!(
+            suggested
+                .iter()
+                .all(|model| !model.model_id.ends_with("-low")),
+            "{suggested:?}"
+        );
+        // A better installed voice still wins over an installed Low one.
+        let better = if language == "pt-BR" {
+            "pt_BR-faber-medium"
+        } else {
+            "en_US-ljspeech-medium"
+        };
+        assert_eq!(
+            resolve(&request(language, &[low, better])).selection,
+            Some(piper(better))
+        );
+    }
+}
+
+#[test]
+fn an_explicit_low_choice_is_honored_but_only_with_its_revision_and_its_language() {
+    let low = "pt_BR-edresson-low";
+    let mut explicit = request("pt-BR", &[low, "pt_BR-faber-medium"]);
+    explicit
+        .per_language_choices
+        .insert("pt".into(), explicit_low(low));
+    let out = resolve(&explicit);
+    assert_eq!(out.source, Some(Source::PerLanguage));
+    assert_eq!(out.selection, Some(explicit_low(low)));
+    // The saved default may be an explicit Low voice too (validated by the preferences).
+    let mut primary = request("pt-BR", &[low]);
+    primary.primary = Some(explicit_low(low));
+    assert_eq!(resolve(&primary).source, Some(Source::Primary));
+    // The same voice without the revision is not an explicit opt-in: skipped, never silently used.
+    let mut bare = request("pt-BR", &[low, "pt_BR-faber-medium"]);
+    bare.per_language_choices.insert("pt".into(), piper(low));
+    let skipped = resolve(&bare);
+    assert_eq!(skipped.source, Some(Source::Automatic));
+    assert_eq!(skipped.selection, Some(piper("pt_BR-faber-medium")));
+    assert!(skipped
+        .reasons
+        .contains(&"per_language_choice:model_incompatible_with_language".to_owned()));
+    // A wrong revision is rejected too.
+    let mut stale = explicit_low(low);
+    stale.session.as_mut().unwrap().model_revision = Some("obsolete".into());
+    let mut wrong = request("pt-BR", &[low, "pt_BR-faber-medium"]);
+    wrong.per_language_choices.insert("pt".into(), stale);
+    assert_eq!(resolve(&wrong).selection, Some(piper("pt_BR-faber-medium")));
+    // An explicit Low voice of another language is never used for this book.
+    let mut other = request("en-US", &[low, "en_US-ljspeech-medium"]);
+    other
+        .per_language_choices
+        .insert("en".into(), explicit_low(low));
+    assert_eq!(
+        resolve(&other).selection,
+        Some(piper("en_US-ljspeech-medium"))
+    );
+}
