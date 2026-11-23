@@ -111,6 +111,29 @@ impl Context<'_> {
             .any(|installed| installed == id)
     }
 
+    /// A Piper Low voice named with its catalog revision (the explicit opt-in) that supports this language.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn explicit_low_supports_language(&self, selection: &TtsSelection) -> bool {
+        selection
+            .session
+            .as_ref()
+            .and_then(|session| session.explicit_low_piper_model())
+            .is_some_and(|model| {
+                selection.model_id.as_deref() == Some(model.id)
+                    && model.runtime_available
+                    && model.supports(
+                        &self.language,
+                        self.request.platform,
+                        self.request.android_api,
+                    )
+            })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn explicit_low_supports_language(&self, _selection: &TtsSelection) -> bool {
+        false
+    }
+
     fn has_system_voice(&self) -> bool {
         self.request
             .system_voices
@@ -118,8 +141,11 @@ impl Context<'_> {
             .any(|voice| base(voice) == self.language)
     }
 
-    /// `Ok` when the selection can narrate this book now, else the skip reason.
-    fn usable(&self, selection: &TtsSelection) -> Result<(), &'static str> {
+    /// `Ok` when the selection can narrate this book now, else the skip reason. `explicit_choice` is true only
+    /// for the listener's own choices (per-language or the saved default, which `TtsPreferences::validate` already
+    /// holds to the catalog revision): the only places a revision-pinned Piper Low voice may be used, never an
+    /// automatic pick, a suggestion or a fallback.
+    fn usable(&self, selection: &TtsSelection, explicit_choice: bool) -> Result<(), &'static str> {
         match selection.engine.as_str() {
             "edge" if self.request.allow_online_fallback => Ok(()),
             "edge" => Err("online_requires_consent"),
@@ -136,7 +162,8 @@ impl Context<'_> {
                     self.request.android_api,
                 )
                 .iter()
-                .any(|model| model.id == id);
+                .any(|model| model.id == id)
+                    || (explicit_choice && self.explicit_low_supports_language(selection));
                 if compatible {
                     Ok(())
                 } else {
@@ -156,14 +183,14 @@ pub fn resolve(request: &ResolutionRequest) -> Resolution {
     let mut reasons = Vec::new();
     let mut chosen = None;
     if let Some(choice) = request.per_language_choices.get(&context.language) {
-        match context.usable(choice) {
+        match context.usable(choice, true) {
             Ok(()) => chosen = Some((choice.clone(), Source::PerLanguage)),
             Err(reason) => reasons.push(format!("per_language_choice:{reason}")),
         }
     }
     if chosen.is_none() {
         if let Some(primary) = &request.primary {
-            match context.usable(primary) {
+            match context.usable(primary, true) {
                 Ok(()) => chosen = Some((primary.clone(), Source::Primary)),
                 Err(reason) => reasons.push(format!("primary:{reason}")),
             }
