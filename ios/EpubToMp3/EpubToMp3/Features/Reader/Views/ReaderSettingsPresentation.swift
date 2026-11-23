@@ -120,7 +120,7 @@ final class ReaderSettingsPresentation {
             : [:]
         composition.loadingContainer.backgroundColor = colors.background
         composition.loadingStatusLabel.textColor = colors.foreground.withAlphaComponent(0.75)
-        composition.pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
+        composition.pageIndicator.textColor = ReaderPageIndicatorStyle.appearance(background: colors.background, foreground: colors.foreground).text
         composition.pageOverflowGuard.backgroundColor = colors.background
         composition.pageUnderflowGuard.backgroundColor = colors.background
     }
