@@ -9,7 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../services/conversion/book_language_uncertain.dart';
+import '../services/conversion/conversion_failure_message.dart';
 import '../services/conversion/manual_conversion_output.dart';
 import '../services/playback/platform_voice_notice.dart';
 import '../services/conversion/embedded_converter.dart';
@@ -358,9 +358,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       setState(() {
-        _error = isBookLanguageUncertain(e)
-            ? '${l10n.conversionFailed}: ${l10n.bookLanguageUncertain}'
-            : e.toString();
+        _error = localizedConversionFailure(l10n, e);
         _submitting = false;
       });
     } finally {

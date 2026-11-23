@@ -485,4 +485,47 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerPlayFromHere => 'Play from here';
+
+  @override
+  String get errorNoReadableText =>
+      'No readable text could be extracted from this book.';
+
+  @override
+  String get errorEngineUnavailable =>
+      'The speech converter is unavailable. Please reinstall the app or try again.';
+
+  @override
+  String get errorModelMissing =>
+      'The selected narration model is not installed. Install it in Settings.';
+
+  @override
+  String get errorModelLanguage =>
+      'This model does not support the language of this book. Choose a compatible model.';
+
+  @override
+  String get errorUnsupportedEngine =>
+      'The selected speech engine is not supported.';
+
+  @override
+  String get errorSpeechTimeout =>
+      'The voice took too long to respond. Please try again.';
+
+  @override
+  String get errorNetwork =>
+      'Could not connect. Check your connection and try again.';
+
+  @override
+  String get errorRateLimited =>
+      'The voice service is busy. Please try again in a moment.';
+
+  @override
+  String get errorInputUnreadable =>
+      'This book could not be read. The file may be damaged.';
+
+  @override
+  String get errorUnsupportedInput => 'This kind of file is not supported.';
+
+  @override
+  String get errorConversionGeneric =>
+      'The book could not be converted to audio. Please try again. Technical details are available in the logs.';
 }
