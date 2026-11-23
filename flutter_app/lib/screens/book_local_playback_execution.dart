@@ -6,6 +6,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     required int playbackChapterIndex,
     required int generation,
     ReaderListeningPosition? readerPosition,
+    bool explicitNarration = false,
   }) async {
     final ft = _fulltext!;
     final conversionChapters = <FulltextChapter>[
@@ -57,7 +58,12 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
           final catalog = TtsCatalog.decode(await converter.ttsModels());
           if (!_isCurrentConversion(generation)) return;
           var base = configured ?? catalog.recommendedPreferences;
-          final narration = await _resolveNarration(converter, inputPath, base);
+          final narration = await _resolveNarration(
+            converter,
+            inputPath,
+            base,
+            explicit: explicitNarration,
+          );
           if (!_isCurrentConversion(generation)) return;
           if (narration is MissingNarration) {
             await _offerModelsFor(narration, generation);
@@ -80,6 +86,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             inputPath,
             ttsSnapshot,
             androidApi: catalog?.androidApi,
+            explicit: explicitNarration,
           );
           if (!_isCurrentConversion(generation)) return;
           if (narration is MissingNarration) {
@@ -312,7 +319,9 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     String inputPath,
     TtsPreferences base, {
     int? androidApi,
+    bool explicit = false,
   }) => resolvePlaybackNarration(
+    explicitSelection: explicit,
     converter: converter,
     cache: ref.read(bookLanguageCacheProvider),
     bookId: widget.bookId,
@@ -320,6 +329,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     configured: base,
     choices: ref.read(languageModelChoicesProvider),
     installedModelIds: () => ref.read(installedNarrationModelIdsProvider.future),
+    systemVoices: () => ref.read(systemVoiceLanguagesProvider.future),
     platform: switch (defaultTargetPlatform) {
       TargetPlatform.android => 'Android',
       TargetPlatform.windows => 'Windows',
