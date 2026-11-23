@@ -476,4 +476,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readerFootnotes => 'Notas de rodapé';
+
+  @override
+  String get openReaderAtPlayback => 'Abrir no leitor';
 }

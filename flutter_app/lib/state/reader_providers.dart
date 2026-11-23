@@ -33,6 +33,11 @@ final bookDerivedDataRemoverProvider = Provider<BookDerivedDataRemover>((ref) {
   );
 });
 
+/// A request to open the reader on the chapter that is playing, raised by the
+/// expanded player's cover and consumed by the reader showing that book.
+final readerPlaybackJumpProvider =
+    StateProvider<({String bookId, int chapterIndex})?>((ref) => null);
+
 /// Tab index controller for the root NavigationBar, so library can switch to
 /// the reader tab programmatically.
 final appDestinationProvider = StateProvider<AppDestination>(

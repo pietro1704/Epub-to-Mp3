@@ -174,5 +174,6 @@
   "ttsShowLowQuality": "Mostrar modelos de calidad baja",
   "ttsManualModelUnavailable": "No se pudo preparar este modelo de narración.",
   "readerNarrationModel": "Modelo de narración",
-  "readerFootnotes": "Notas al pie"
+  "readerFootnotes": "Notas al pie",
+  "openReaderAtPlayback": "Abrir en el lector"
 }
