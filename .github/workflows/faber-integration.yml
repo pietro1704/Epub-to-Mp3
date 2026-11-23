@@ -40,6 +40,10 @@ on:
         description: Run only the Intel macOS preferences and installation job
         type: boolean
         default: false
+      native_host_tests:
+        description: Also run the Mac host and native fixture regressions in the ARM64 job
+        type: boolean
+        default: true
       intel_prebuilt:
         description: Use the verified Intel macOS FFI artifact instead of compiling converter-ffi
         type: boolean
@@ -566,6 +570,46 @@ jobs:
         run: |
           mise run mac:validate -- package --derived-data ios/EpubToMp3/.build/faber-ci \
             > .reports/tts-preferences/real-packaging.json
+      # The former native-ffi-test-isolation job: the same bundled library and test
+      # target, run as its own xcodebuild process (isolated from the other suites)
+      # with no voice-weight location in the environment or build settings.
+      - name: Run only adapter isolation XCTest with the real bundled library
+        if: matrix.arch == 'arm64' && inputs.macos_only != true
+        working-directory: ios/EpubToMp3
+        run: |
+          set -euo pipefail
+          mkdir -p ../../.reports/ffi-test-isolation
+          env -u EPUB2MP3_PIPER_TEST_MODEL_ROOT mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild test-without-building \
+            -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
+            -derivedDataPath .build/faber-ci \
+            -resultBundlePath ../../.reports/ffi-test-isolation/adapter.xcresult \
+            -jobs 3 -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            -only-testing:EpubToMp3Tests/ConverterFFIAdapterTests \
+            2>&1 | tee ../../.reports/ffi-test-isolation/xctest.log
+          test -s .build/faber-ci/Build/Products/Debug/EpubToMp3.app/Contents/Frameworks/libconverter_ffi.dylib
+      - name: Require all five adapter cases without skips and retain summary metadata
+        if: matrix.arch == 'arm64' && inputs.macos_only != true
+        run: |
+          set -o pipefail
+          xcrun xcresulttool get test-results summary \
+            --path .reports/ffi-test-isolation/adapter.xcresult \
+            > .reports/ffi-test-isolation/summary.json
+          mise exec -- ruby -rjson -e '
+            summary = JSON.parse(File.read(ARGV.fetch(0)))
+            abort "Expected exactly five passing adapter cases" unless summary.fetch("passedTests") == 5 && summary.fetch("totalTestCount") == 5
+            abort "Adapter isolation cannot skip or fail" unless summary.fetch("skippedTests") == 0 && summary.fetch("failedTests") == 0
+          ' .reports/ffi-test-isolation/summary.json
+      - name: Retain focused adapter isolation evidence
+        if: always() && matrix.arch == 'arm64' && inputs.macos_only != true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-ffi-test-isolation
+          path: .reports/ffi-test-isolation
+          if-no-files-found: warn
+          retention-days: 14
       - name: Capture sanitized existing test build metadata without execution
         if: always()
         env:

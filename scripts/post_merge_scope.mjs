@@ -28,10 +28,10 @@ export function classifyPath(path, status = 'M') {
 }
 
 // Jobs that always run, then each scoped job and the confined areas that select it.
-export const ALWAYS = Object.freeze(['merge', 'scope', 'ci', 'codeql', 'native', 'audit', 'ruby']);
+export const ALWAYS = Object.freeze(['merge', 'scope', 'ci', 'codeql', 'audit', 'ruby']);
 export const SCOPED = Object.freeze({
+  // Also runs the Mac host tests (formerly `native`) and the adapter isolation XCTest.
   faber: ['apple', 'flutter'],
-  isolation: ['apple'],
   flutter: ['flutter'],
   linux: ['flutter'],
   'rails-image': [],

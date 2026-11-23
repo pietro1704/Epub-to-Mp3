@@ -77,6 +77,8 @@ jobs:
     with:
       # The browser conversion runs once, as the browser job below.
       browser_runtime: false
+      # Also the former native and isolation jobs: one ARM64 runner runs all three.
+      native_host_tests: true
 
   # Real-model browser conversion of the Rails Space, required for publication.
   browser:
@@ -93,10 +95,6 @@ jobs:
     needs: [merge, scope]
     if: fromJSON(needs.scope.outputs.selection)['fallback']
     uses: ./.github/workflows/native-fallback.yml
-
-  native:
-    needs: merge
-    uses: ./.github/workflows/native-hook-safety.yml
 
   rails-image:
     needs: [merge, scope]
@@ -118,11 +116,6 @@ jobs:
     if: fromJSON(needs.scope.outputs.selection)['linux']
     uses: ./.github/workflows/linux-gui-artifact.yml
 
-  isolation:
-    needs: [merge, scope]
-    if: fromJSON(needs.scope.outputs.selection)['isolation']
-    uses: ./.github/workflows/native-ffi-test-isolation.yml
-
   audit:
     needs: merge
     uses: ./.github/workflows/rust-dependency-audit.yml
@@ -134,7 +127,7 @@ jobs:
   validated:
     name: Validated merged source
     if: always()
-    needs: [merge, scope, ci, codeql, browser, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
+    needs: [merge, scope, ci, codeql, browser, ffi, faber, flutter, fallback, snapshot, rails-image, cli, linux, audit, ruby]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
