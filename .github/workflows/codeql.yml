@@ -185,13 +185,6 @@ jobs:
       - name: Test Swift build architecture and failure propagation
         run: mise exec -- ruby scripts/test_codeql_swift_build.rb
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
-        with:
-          languages: swift
-          build-mode: manual
-          matrix: ${{ toJson(matrix) }}
-
       - name: Install Rust iOS target
         if: matrix.platform != 'macOS'
         run: mise exec -- rustup target add aarch64-apple-ios
@@ -224,9 +217,10 @@ jobs:
             apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}-
             apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-
 
+      # The embedded Rust library and the Xcode project are built before the
+      # tracer starts: only the Swift target needs extraction, and an untraced
+      # Rust build can use the hosted-runner job limit from native_job.rb.
       - name: Build actual embedded Rust library
-        env:
-          CARGO_BUILD_JOBS: '1'
         run: |
           if [[ '${{ matrix.platform }}' != 'macOS' ]]; then
             mise run converter-ffi:ios-device
@@ -246,8 +240,19 @@ jobs:
           printf 'Production Swift files: '
           find EpubToMp3 EpubToMp3ShareExtension EpubToMp3Widget -type f -name '*.swift' | wc -l
 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: swift
+          build-mode: manual
+          matrix: ${{ toJson(matrix) }}
+
       - name: Build Swift target
         working-directory: ios/EpubToMp3
+        env:
+          # Hosted macOS runners have 3 cores; extraction stays bounded by the
+          # job timeout and this value is the only knob if it regresses.
+          CODEQL_SWIFT_BUILD_JOBS: '3'
         run: |
           bash ../../scripts/codeql_swift_build.sh \
             '${{ matrix.destination }}' '${{ matrix.scheme }}' \
