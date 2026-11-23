@@ -9,7 +9,8 @@ final class MainReaderScreenController: UIViewController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
-    private let sessionDefaults: UserDefaults
+    private let location: ReaderLocation
+    private var sessionDefaults: UserDefaults { location.defaults }
     private var pendingLaunchRestoreBookID: String?
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
     private let readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)?
@@ -54,8 +55,8 @@ final class MainReaderScreenController: UIViewController {
 
     func openAtPlayback(bookID: String) async -> Bool {
         guard library.books.contains(where: { $0.id == bookID }),
-              sessionDefaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID,
-              let location = ReaderPlaybackLocation(player: player) else { return false }
+              location.playingBookID == bookID,
+              let destination = ReaderPlaybackLocation(player: player) else { return false }
         let generation = player.remotePlaybackGeneration
         let snapshot = player.snapshot
         let isSpeech = player.isUsingSpeechFallback
@@ -71,10 +72,10 @@ final class MainReaderScreenController: UIViewController {
         guard !Task.isCancelled, playerPresentation.showingFullPlayer,
               generation == player.remotePlaybackGeneration, snapshot?.jobId == player.snapshot?.jobId,
               isSpeech == player.isUsingSpeechFallback, currentBook?.id == readingBookID,
-              sessionDefaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID,
+              location.playingBookID == bookID,
               library.books.contains(where: { $0.id == bookID }) else { return false }
-        playbackLocationRequest = (bookID, location, generation)
-        ReaderSessionState.setCurrentlyReading(bookID: bookID, defaults: sessionDefaults)
+        playbackLocationRequest = (bookID, destination, generation)
+        location.setReadingBook(bookID)
         render()
         applyPlaybackLocationIfReady()
         return true
@@ -92,7 +93,7 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private var currentBook: BookEntity? {
-        guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+        guard let id = location.readingBookID,
               !id.isEmpty else { return nil }
         return library.books.first(where: { $0.id == id })
     }
@@ -105,7 +106,7 @@ final class MainReaderScreenController: UIViewController {
         bookmarkStore: BookmarkStore,
         onBrowseLibrary: (() -> Void)?,
         conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor = RustConversionCoordinator.executeStreaming,
-        sessionDefaults: UserDefaults = .standard,
+        sessionDefaults: UserDefaults? = nil,
         readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)? = nil,
         openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil
     ) {
@@ -116,10 +117,9 @@ final class MainReaderScreenController: UIViewController {
         self.bookmarkStore = bookmarkStore
         self.onBrowseLibrary = onBrowseLibrary
         self.conversionExecutor = conversionExecutor
-        self.sessionDefaults = sessionDefaults
-        self.pendingLaunchRestoreBookID = sessionDefaults.string(
-            forKey: ReaderSessionState.currentlyReadingBookIDKey
-        )
+        let location = sessionDefaults.map { ReaderLocation(defaults: $0) } ?? player.location
+        self.location = location
+        self.pendingLaunchRestoreBookID = location.readingBookID
         self.readerControllerFactory = readerControllerFactory
         self.openStageObserver = openStageObserver
         super.init(nibName: nil, bundle: nil)
@@ -189,7 +189,7 @@ final class MainReaderScreenController: UIViewController {
         listeningSession.observePlayback()
         player.restartReaderListening = { [weak self] chapter, ratio in
             guard let self, let book = self.currentBook,
-                  self.sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id,
+                  self.location.readingBookID == book.id,
                   self.player.isPlaybackForReaderBook(book.id)
                     || self.player.snapshot?.jobId == book.lastJobId,
                   self.listeningSession.isListening(to: book.id)
@@ -279,6 +279,7 @@ final class MainReaderScreenController: UIViewController {
             bookmarkStore: bookmarkStore,
             player: player,
             openStageObserver: openStageObserver,
+            sessionDefaults: sessionDefaults,
             deferInitialReaderGestures: shouldDeferInitialGesture
         )
         reader.onLoadStateChanged = { [weak self] isLoading in
@@ -327,7 +328,8 @@ final class MainReaderScreenController: UIViewController {
         if playbackLocationRequest?.bookID != book.id {
             PlaybackBindingStore.setCurrentlyPlaying(
                 bookID: book.id,
-                chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+                chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0,
+                defaults: sessionDefaults
             )
         }
 
@@ -343,7 +345,7 @@ final class MainReaderScreenController: UIViewController {
     /// the persisted book pointer.
     private func replaceActivePlaybackIfNeeded(for book: BookEntity) {
         if let listeningBookID = listeningSession.listeningBookID, listeningBookID != book.id { listeningSession.cancel() }
-        let activeBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let activeBookID = location.playingBookID
         let hasActivePlayback = player.snapshot != nil || player.hasLoadedAudioQueue || player.isConverting
         guard Self.shouldReplaceActivePlayback(
             activeBookID: activeBookID,
@@ -410,14 +412,14 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func autoClearMissingBookIfNeeded() {
-        guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+        guard let id = location.readingBookID,
               !library.books.contains(where: { $0.id == id }) else { return }
-        ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: sessionDefaults)
+        location.setReadingBook(nil)
     }
 
     @objc
     private func closeReaderTapped() {
-        ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: sessionDefaults)
+        location.setReadingBook(nil)
         onBrowseLibrary?()
     }
 
@@ -503,9 +505,9 @@ final class MainReaderScreenController: UIViewController {
         guard readerController == nil || readerBookID == book.id else { return }
         MiniPlayerDismissal(defaults: sessionDefaults).allowPlayback(bookID: book.id)
         let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
-            ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
+            ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, location: location, progressDefaults: sessionDefaults)
         let pageRatio = ReaderListeningStartLocation.pageRatio(bookID: book.id, chapter: priority,
-            explicitRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor, defaults: sessionDefaults)
+            explicitRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor, location: location)
         // The book's language is resolved first (analysis off the main thread, cached per book), unless
         // the listener made an explicit per-job selection or this is the retry after a recovery. The Play
         // intent (chapter and page) is captured now, not after the asynchronous resolution.

@@ -46,7 +46,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
     private let preparedFulltextWriter: ReaderBookLoadSession.PreparedFulltextWriter?
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
-    private let sessionDefaults: UserDefaults
+    private let location: ReaderLocation
+    private var sessionDefaults: UserDefaults { location.defaults }
     private var reimportRequestID = UUID()
     private let deferInitialReaderGestures: Bool
 
@@ -179,7 +180,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
          },
          preparedFulltextWriter: ReaderBookLoadSession.PreparedFulltextWriter? = nil,
          openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil,
-         sessionDefaults: UserDefaults = .standard,
+         sessionDefaults: UserDefaults? = nil,
          deferInitialReaderGestures: Bool = true) {
         self.document = ReaderBookDocument(book: initialBook)
         document.openJourney.stageObserver = openStageObserver
@@ -192,7 +193,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         self.preparedFulltextReader = preparedFulltextReader
         self.preparedFulltextWriter = preparedFulltextWriter
         self.openStageObserver = openStageObserver
-        self.sessionDefaults = sessionDefaults
+        self.location = sessionDefaults.map { ReaderLocation(defaults: $0) } ?? player.location
         self.deferInitialReaderGestures = deferInitialReaderGestures
         super.init(nibName: nil, bundle: nil)
     }
@@ -279,7 +280,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
 
     private typealias ReadingAnchor = ReaderReadingPosition.ReadingAnchor
     private lazy var readingPosition: ReaderReadingPosition = ReaderReadingPosition(
-        document: document, composition: composition,
+        document: document, composition: composition, location: location,
         facts: { [unowned self] in .init(chromeHidden: textPresentation.chromeHidden,
             isPaginated: isPaginatedMode, isLoading: isLoadingContent, layoutResult: textPresentation.paginatedLayoutResult) },
         send: { [weak self] event in
@@ -438,7 +439,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         present: { [weak self] in self?.present($0, animated: true) },
         isCurrentBook: { [weak self] in
             guard let self else { return false }
-            return sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == document.book.id
+            return location.readingBookID == document.book.id
         }
     )
     @objc private func showFootnotes() { annotations.showFootnotes() }
@@ -475,21 +476,21 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         let request = UUID()
         reimportRequestID = request
         let originalBookID = document.book.id
-        let originalSelection = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let originalSelection = location.readingBookID
         Task { [weak self] in
             guard let self else { return }
             defer { if reimportRequestID == request { reimportRequestID = UUID() } }
             do {
                 let imported = try await library.importBookAsync(from: url)
                 guard !Task.isCancelled, reimportRequestID == request, document.book.id == originalBookID,
-                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                      location.readingBookID == originalSelection else { return }
                 document.book = imported
-                ReaderSessionState.setCurrentlyReading(bookID: imported.id, defaults: sessionDefaults)
+                location.setReadingBook(imported.id)
                 document.hasRestoredInitialPosition = false
                 loadBook()
             } catch {
                 guard !Task.isCancelled, reimportRequestID == request, document.book.id == originalBookID,
-                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                      location.readingBookID == originalSelection else { return }
                 let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                 present(alert, animated: true)

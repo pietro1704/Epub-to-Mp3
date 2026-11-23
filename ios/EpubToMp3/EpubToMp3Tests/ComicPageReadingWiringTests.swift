@@ -53,7 +53,7 @@ final class ComicPageReadingWiringTests: XCTestCase {
         let comic = BookEntity(id: "comic-capability", title: "Comic", bookmark: Data([1]), displayFilename: "comic.cbz", addedAt: .distantPast, fileType: .cbz)
         let text = BookEntity(id: "text-capability", title: "Text", bookmark: Data([1]), displayFilename: "book.epub", addedAt: .distantPast, fileType: .epub)
         defaults.set(try JSONEncoder().encode([comic, text]), forKey: "library")
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             player.stop()
             if let savedReading { UserDefaults.standard.set(savedReading, forKey: readingKey) }

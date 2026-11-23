@@ -19,6 +19,7 @@ let localizationResources = [
     "Resources/pt-BR.lproj/Localizable.strings",
 ]
 let production = [
+    "Features/Reader/Services/ReaderLocation.swift",
     "Features/Playback/Models/SpeechAudioAlignment.swift",
     "Features/Playback/Services/PlaybackSpeechAlignment.swift",
     "Features/Reader/Services/ReaderSpokenTextResolver.swift",
@@ -171,6 +172,7 @@ let tests = [
     "EpubFixture.swift",
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
+    "ReaderLocationTests.swift",
     "TtsCatalogFixture.swift",
     "ReaderBookSearchTests.swift",
     "ReaderInternalLinkTargetTests.swift",

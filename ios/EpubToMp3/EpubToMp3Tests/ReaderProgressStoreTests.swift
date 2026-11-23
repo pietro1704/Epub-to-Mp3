@@ -170,6 +170,26 @@ final class ReaderProgressStoreTests: XCTestCase {
         XCTAssertNil(entry?.characterOffset)
     }
 
+    @MainActor
+    func testMissingLiveChapterUsesSeparateSavedProgressDomain() throws {
+        let sessionName = "priority-reader-session-\(UUID().uuidString)"
+        let progressName = "priority-book-progress-\(UUID().uuidString)"
+        let session = try XCTUnwrap(UserDefaults(suiteName: sessionName))
+        let progress = try XCTUnwrap(UserDefaults(suiteName: progressName))
+        defer {
+            session.removePersistentDomain(forName: sessionName)
+            progress.removePersistentDomain(forName: progressName)
+        }
+        let location = ReaderLocation(defaults: session)
+        location.setReadingBook("book")
+        ReaderProgressStore.save(bookId: "book", chapterIndex: 4, offsetFraction: 0.5, defaults: progress)
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "book", chapters: [], location: location, progressDefaults: progress), 4)
+        location.readerChapter = 0
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "book", chapters: [], location: location, progressDefaults: progress), 0)
+        location.setReadingBook("other")
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "book", chapters: [], location: location, progressDefaults: progress), 4)
+    }
+
     func testCharacterOffsetRoundTrips() {
         let defaults = makeDefaults()
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.25,

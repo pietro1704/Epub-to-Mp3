@@ -8,6 +8,7 @@ final class ReaderTextPresentation {
     private let document: ReaderBookDocument
     private let composition: ReaderViewComposition
     private let settings: AppSettings
+    private let location: ReaderLocation
     private let player: AudioPlayer
     private let preparedRenderer: PreparedChapterRenderer
     private let preparedPresentation: ReaderPreparedPresentation
@@ -56,6 +57,7 @@ final class ReaderTextPresentation {
         self.document = document
         self.composition = composition
         self.settings = settings
+        self.location = readingPosition.playback.location
         self.player = player
         preparedRenderer = renderer
         self.preparedPresentation = preparedPresentation
@@ -178,9 +180,7 @@ final class ReaderTextPresentation {
             forReaderPosition: index,
             in: document.fulltext?.chapters ?? []
         ) ?? chapter.zeroBasedEpubIndex
-        UserDefaults.standard.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        UserDefaults.standard.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        location.setReaderAnchor(chapter: epubIndex, pageRatio: 0)
         readingPosition.playback.resetForChapter()
         player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
         synchronizeChromeVisibility()

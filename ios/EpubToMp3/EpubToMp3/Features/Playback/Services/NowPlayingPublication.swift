@@ -10,6 +10,12 @@ import AppKit
 /// reload identity belongs here, separate from the playback coordinator.
 @MainActor
 final class NowPlayingPublication {
+    private let location: ReaderLocation
+
+    init(location: ReaderLocation = .standard) {
+        self.location = location
+    }
+
     struct State {
         let snapshot: JobSnapshot?
         let effectiveChapterTitle: String
@@ -86,7 +92,7 @@ final class NowPlayingPublication {
     private func syncWidgetNowPlaying(_ state: State) {
         let appGroupDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
         guard let bookId = appGroupDefaults?.string(forKey: "currentlyPlayingBookId")
-                ?? UserDefaults.standard.string(forKey: PlaybackResumeStore.currentBookIDDefaultsKey),
+                ?? location.playingBookID,
               !bookId.isEmpty else { return }
         let progress = state.durationSeconds > 0
             ? min(1, max(0, state.positionSeconds / state.durationSeconds))

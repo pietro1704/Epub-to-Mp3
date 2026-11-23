@@ -16,39 +16,62 @@ final class PlaybackResumeSourceIdentityTests: XCTestCase {
             queueOffset: 0, segmentMode: true, segmentChapterIndex: -1))
     }
 
+    func testResumeLocationAndMarkersRemainInTheirInjectedSuitesAcrossReopen() throws {
+        let a = "LocationA.\(UUID().uuidString)", b = "LocationB.\(UUID().uuidString)"
+        let defaultsA = try XCTUnwrap(UserDefaults(suiteName: a))
+        let defaultsB = try XCTUnwrap(UserDefaults(suiteName: b))
+        defer {
+            defaultsA.removePersistentDomain(forName: a)
+            defaultsB.removePersistentDomain(forName: b)
+        }
+        let key = "currentlyPlayingChapterIndex"
+        let standardChapter = UserDefaults.standard.object(forKey: key) as? Int
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(
+            #"{"jobId":"shared-job","state":"running","chapterProgress":[]}"#.utf8))
+        func store(_ defaults: UserDefaults) -> PlaybackResumeStore {
+            AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))).services.resume
+        }
+        defaultsB.set(0, forKey: key)
+        XCTAssertNil(defaultsA.object(forKey: key))
+        store(defaultsA).persist(snapshot: snapshot, chapterIndex: 2, sourceChapterIndex: 18,
+                                 positionSeconds: 42, isPlaying: false, force: true)
+        XCTAssertEqual(store(defaultsA).marker(jobId: snapshot.jobId, chapterIndex: 2)?.positionSeconds, 42)
+        XCTAssertEqual(defaultsA.object(forKey: key) as? Int, 18)
+        XCTAssertNil(store(defaultsB).marker(jobId: snapshot.jobId, chapterIndex: 2))
+        XCTAssertEqual(defaultsB.object(forKey: key) as? Int, 0)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Int, standardChapter)
+    }
+
     func testUnresolvedOrCancelledPendingSnapshotCannotOverwriteSavedChapter() throws {
         let suite = "ResumeSource.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let key = PlaybackResumeStore.currentChapterIndexDefaultsKey
-        let previous = UserDefaults.standard.object(forKey: key)
-        defer { UserDefaults.standard.set(previous, forKey: key) }
-        UserDefaults.standard.set(16, forKey: key)
-        let store = PlaybackResumeStore(store: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defaults.set(16, forKey: key)
+        let store = PlaybackResumeStore(store: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+                                        location: ReaderLocation(defaults: defaults))
         let pending = try JSONDecoder().decode(JobSnapshot.self, from: Data(
             #"{"jobId":"replacement","state":"running","chapterProgress":[]}"#.utf8))
         XCTAssertNil(PlaybackResumeStore.sourceChapterIndex(snapshot: pending, playbackChapters: [],
             queueOffset: 0, segmentMode: false, segmentChapterIndex: -1))
         store.persist(snapshot: pending, chapterIndex: 0, sourceChapterIndex: nil,
             positionSeconds: 0, isPlaying: false, force: true)
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: key), 16)
+        XCTAssertEqual(defaults.integer(forKey: key), 16)
         store.persist(snapshot: pending, chapterIndex: 2, sourceChapterIndex: 18,
             positionSeconds: 42, isPlaying: false, force: true)
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: key), 18)
+        XCTAssertEqual(defaults.integer(forKey: key), 18)
         XCTAssertEqual(store.marker(jobId: "replacement", chapterIndex: 2)?.positionSeconds, 42)
         store.persist(snapshot: nil, chapterIndex: 0, sourceChapterIndex: 0,
             positionSeconds: 0, isPlaying: false, force: true)
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: key), 18)
+        XCTAssertEqual(defaults.integer(forKey: key), 18)
     }
 
     func testUnforcedResumeWritesAreThrottledAndForcedWritesAreNot() throws {
         let suite = "ResumeThrottle.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let key = PlaybackResumeStore.currentChapterIndexDefaultsKey
-        let previous = UserDefaults.standard.object(forKey: key)
-        defer { UserDefaults.standard.set(previous, forKey: key) }
-        let store = PlaybackResumeStore(store: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let store = PlaybackResumeStore(store: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+                                        location: ReaderLocation(defaults: defaults))
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(
             #"{"jobId":"throttle","state":"running","chapterProgress":[]}"#.utf8))
         store.persist(snapshot: snapshot, chapterIndex: 0, sourceChapterIndex: 3,

@@ -42,7 +42,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
                              charCount: body.count, segments: nil)])
         let settings = AppSettings(defaults: defaults)
         settings.readerLayout = .paginated
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let restoredPosition = expectation(description: "Saved reader position has committed")
         let reader = MacReaderViewController(library: library, settings: settings, player: player,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
@@ -112,7 +112,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: root)
         let source = try EpubFixture.createWithChapter(body: String(repeating: "Reader playback page test. ", count: 50), includeCover: false)
         let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 800),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

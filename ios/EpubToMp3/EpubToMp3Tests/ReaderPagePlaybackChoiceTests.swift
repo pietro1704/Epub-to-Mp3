@@ -40,7 +40,7 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
         let savedWidget = widgetKeys.map { widget?.object(forKey: $0) }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let presenter = UIViewController()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
         let previousKeyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

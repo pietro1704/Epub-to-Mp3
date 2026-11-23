@@ -10,6 +10,7 @@ final class MacReaderBookLoad {
         case warmHeader(BookEntity, Int), clearForLoad(BookEntity), showLoading(BookEntity)
         case chapterCount(Int), selectRow(Int), failure(Error)
     }
+    private let location: ReaderLocation
     private let document: MacReaderDocument
     private let library: LibraryStore
     private let settings: AppSettings
@@ -65,12 +66,13 @@ final class MacReaderBookLoad {
         set { document.pendingAppearanceRefresh = newValue }
     }
 
-    init(document: MacReaderDocument, library: LibraryStore, settings: AppSettings,
+    init(document: MacReaderDocument, library: LibraryStore, settings: AppSettings, location: ReaderLocation,
          renderer: PreparedChapterRenderer, store: PreparedReaderChapterStore,
          readFulltext: @escaping @Sendable (String) async -> EbookFulltext?,
          writeFulltext: @escaping @Sendable (EbookFulltext, String) -> Void,
          textPresentation: MacReaderTextPresentation, observation: ReaderOpenJourney,
          stageObserver: (@Sendable (String, UInt64) -> Void)?, send: @escaping (Event) -> Void) {
+        self.location = location
         self.document = document
         self.library = library
         self.settings = settings
@@ -103,7 +105,7 @@ final class MacReaderBookLoad {
         lastPreparedChapterOrdinal = nil
         document.registeredFontURLs = []
         send(.resetTextSurface)
-        let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let id = location.readingBookID
         guard let book = library.books.first(where: { $0.id == id }) else {
             fulltext = nil
             currentBookId = nil

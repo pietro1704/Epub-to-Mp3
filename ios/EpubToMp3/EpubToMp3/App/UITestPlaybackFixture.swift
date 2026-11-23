@@ -36,7 +36,7 @@ enum UITestPlaybackFixture {
         if testReaderLocation {
             ReaderProgressStore.save(bookId: fixtureBookID, chapterIndex: 0, offsetFraction: 0, characterOffset: 0)
         }
-        PlaybackBindingStore.setCurrentlyPlaying(bookID: fixtureBookID, chapterIndex: chapterIndex)
+        PlaybackBindingStore.setCurrentlyPlaying(bookID: fixtureBookID, chapterIndex: chapterIndex, defaults: player.location.defaults)
         player.play(snapshot: snapshot, restoreAutoplay: !testReaderLocation)
     }
 

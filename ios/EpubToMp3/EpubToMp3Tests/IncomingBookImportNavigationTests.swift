@@ -329,7 +329,7 @@ final class IncomingBookImportNavigationTests: XCTestCase {
                         AudioPlayer.readerCurrentPageRatioDefaultsKey,
                         AudioPlayer.readerCurrentSentenceIdDefaultsKey]
             let previous = keys.map { standard.object(forKey: $0) }
-            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
             let root = MacAppKitRootController(settings: AppSettings(defaults: defaults), library: library,
                 player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
                 playerPresentation: PlayerPresentation(defaults: defaults))
