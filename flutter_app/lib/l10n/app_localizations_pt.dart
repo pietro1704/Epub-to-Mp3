@@ -120,7 +120,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get libraryTitle => 'Biblioteca';
 
   @override
-  String get libraryEmpty => 'Sua biblioteca esta vazia';
+  String get libraryEmpty => 'Sua biblioteca está vazia';
 
   @override
   String get addBook => 'Adicionar livro';
@@ -265,7 +265,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get drmFootnote =>
-      'Livros com DRM (ex: Google Play ou Kindle) nao podem ser abertos.';
+      'Livros com DRM (ex: Google Play ou Kindle) não podem ser abertos.';
 
   @override
   String get saveForOffline => 'Salvar';

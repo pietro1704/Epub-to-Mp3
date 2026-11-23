@@ -33,7 +33,7 @@
   "next": "Próximo",
   "previous": "Anterior",
   "libraryTitle": "Biblioteca",
-  "libraryEmpty": "Sua biblioteca esta vazia",
+  "libraryEmpty": "Sua biblioteca está vazia",
   "addBook": "Adicionar livro",
   "importBookFile": "Importar arquivo EPUB ou PDF",
   "searchPublicBooks": "Buscar livros clássicos",
@@ -97,7 +97,7 @@
       "total": { "type": "int" }
     }
   },
-  "drmFootnote": "Livros com DRM (ex: Google Play ou Kindle) nao podem ser abertos.",
+  "drmFootnote": "Livros com DRM (ex: Google Play ou Kindle) não podem ser abertos.",
   "saveForOffline": "Salvar",
 
   "searchInBook": "Buscar no livro",
