@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/rendering.dart';
@@ -96,7 +97,11 @@ class ReaderDocumentGeometry {
   List<double> pageOffsets(double viewport) {
     if (viewport <= 0) return const [0];
     final offsets = <double>[0];
-    while (offsets.last + viewport < height - 0.5) {
+    // The document padding is not content: a page that would hold only it stays out.
+    final contentEnd = fragments.isEmpty
+        ? height
+        : fragments.map((fragment) => fragment.bottom).reduce(math.max);
+    while (offsets.last + viewport < contentEnd - 0.5) {
       final start = offsets.last;
       var end = start + viewport;
       for (final fragment in fragments) {
