@@ -257,14 +257,17 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         _signature = signature;
         _measure();
       }
-      // Whole device-independent pixels: a half-pixel viewport edge lets the top of
-      // the next line leak under the guard as a faint sliver.
+      // Whole device pixels: a half-pixel viewport edge lets the top of the next line
+      // leak under the guard as a faint sliver.
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
       _height =
-          (constraints.maxHeight -
-                  (widget.settings.readerShowPageNumbers && _paginated
-                      ? 28
-                      : 0))
-              .floorToDouble();
+          ((constraints.maxHeight -
+                      (widget.settings.readerShowPageNumbers && _paginated
+                          ? 28
+                          : 0)) *
+                  pixelRatio)
+              .floorToDouble() /
+          pixelRatio;
       final pages = _pages;
       final guarded = _paginated && pages.isNotEmpty;
       final (top, bottom) = guarded
