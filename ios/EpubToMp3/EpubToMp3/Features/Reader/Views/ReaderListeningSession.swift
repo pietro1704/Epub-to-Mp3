@@ -270,11 +270,9 @@ final class ReaderListeningSession {
                 }
                 playbackControl.trackPlayback(player)
                 listeningPlaybackControl = playbackControl
-                let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
-                    bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
-                    voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
-                    chaptersCompleted: 0, chapterProgress: self.listeningChapters, outputs: nil, logUrl: nil,
-                    error: nil, lastActivityAt: Date().timeIntervalSince1970, chapterIndexBase: 0)
+                let pending = JobSnapshot.listeningPending(
+                    jobID: jobID, bookTitle: book.resolvedTitle, bookAuthor: book.author, chapters: self.listeningChapters
+                )
                 pendingRestartJobID = nil
                 if player.positionSeconds > 1 {
                     player.pause()
@@ -392,14 +390,7 @@ final class ReaderListeningSession {
     private func concludeFailedListening(_ error: Error, jobID: String) {
         guard let current = player.snapshot, current.jobId == jobID else { return }
         if !hasDeliveredListeningChapter { player.pause() }
-        let failed = JobSnapshot(jobId: current.jobId, state: "failed", bookTitle: current.bookTitle,
-            bookAuthor: current.bookAuthor, coverUrl: current.coverUrl, coverMimeType: current.coverMimeType,
-            engine: current.engine, voice: current.voice, language: current.language,
-            progressPercent: current.progressPercent, chaptersTotal: current.chaptersTotal,
-            chaptersCompleted: current.chaptersCompleted, chapterProgress: current.chapterProgress,
-            outputs: current.outputs, logUrl: current.logUrl, error: error.localizedDescription,
-            lastActivityAt: Date().timeIntervalSince1970)
-        player.finishStreaming(snapshot: failed)
+        player.finishStreaming(snapshot: current.failed(error: error.localizedDescription))
     }
 }
 #endif
