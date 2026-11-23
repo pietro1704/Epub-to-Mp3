@@ -192,6 +192,8 @@ mod ffi_memory_boundary;
 pub use ffi_memory_boundary::*;
 mod model_catalog_boundary;
 pub use model_catalog_boundary::*;
+mod language_model_boundary;
+pub use language_model_boundary::*;
 mod model_installation_boundary;
 pub use model_installation_boundary::*;
 mod model_install_operation_boundary;

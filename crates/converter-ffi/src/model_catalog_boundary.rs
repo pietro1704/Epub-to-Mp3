@@ -1,6 +1,8 @@
 use super::*;
 
-fn model_platform(value: &str) -> Result<converter_core::model_catalog::ModelPlatform, String> {
+pub(crate) fn model_platform(
+    value: &str,
+) -> Result<converter_core::model_catalog::ModelPlatform, String> {
     match value.to_ascii_lowercase().as_str() {
         "android" => Ok(converter_core::model_catalog::ModelPlatform::Android),
         "ios" => Ok(converter_core::model_catalog::ModelPlatform::Ios),

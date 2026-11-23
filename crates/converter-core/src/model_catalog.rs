@@ -335,6 +335,36 @@ pub(crate) fn automatic_piper_models(language: &str) -> Vec<&'static TtsModelDes
     voices
 }
 
+/// A base language with at least one catalog model for a platform.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CatalogLanguage {
+    pub tag: String,
+    pub model_count: usize,
+}
+
+/// Distinct base languages that have at least one usable catalog model on the
+/// platform (any provider), sorted by tag. Display names are the client's.
+pub fn catalog_languages(
+    platform: ModelPlatform,
+    android_api: Option<u32>,
+) -> Vec<CatalogLanguage> {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for model in MODELS.iter().filter(|model| {
+        model.runtime_available
+            && (model.engine != "piper" || validate_piper_quality(model.id).is_ok())
+    }) {
+        for language in model.languages {
+            if model.supports(language, platform, android_api) {
+                *counts.entry((*language).to_owned()).or_default() += 1;
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(tag, model_count)| CatalogLanguage { tag, model_count })
+        .collect()
+}
+
 pub fn default_engine(
     language: &str,
     platform: ModelPlatform,
