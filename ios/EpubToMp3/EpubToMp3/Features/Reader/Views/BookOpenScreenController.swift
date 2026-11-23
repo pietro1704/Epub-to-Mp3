@@ -86,7 +86,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         case .completeLoading: loadingSession.completeLoadingAfterStableTextLayoutIfNeeded()
         case let .finishLoading(id): finishLoadingAfterStableTextLayout(id)
         case let .publishTitles(payload): publishReaderChapterTitles(payload)
-        case .catalogReadyForNavigation: readingPosition.revealPendingPlaybackLocation()
+        case .catalogReadyForNavigation: readingPosition.revealPendingNavigation()
         case let .error(message): showLoadingError(message)
         }
     }
@@ -236,7 +236,6 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
 
     func update(book incomingBook: BookEntity) {
         reimportRequestID = UUID()
-        readingPosition.cancelPendingPlaybackLocation()
         document.book = incomingBook
         document.hasRestoredInitialPosition = false
         loadBook()
@@ -325,6 +324,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
     private func loadBook() {
         guard isViewLoaded else { return }
         toolBar.hasFootnotes = false
+        readingPosition.cancelPendingNavigation()
         loadingSession.cancelFixture()
         bookLoadSession.loadBook()
     }
@@ -388,7 +388,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
 
     private(set) lazy var contentsPresentation: ReaderContentsPresentation = ReaderContentsPresentation(
         document: document, composition: composition, library: library, settings: settings, player: player,
-        readingPosition: readingPosition, textPresentation: textPresentation,
+        readingPosition: readingPosition,
         present: { [weak self] in self?.present($0, animated: true) }
     )
     @objc private func presentTOC() { contentsPresentation.presentTOC() }
