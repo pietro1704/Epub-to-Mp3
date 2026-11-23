@@ -393,6 +393,85 @@ final class ReaderVoiceChangeTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.3, "The menu must not wait for the catalogue when it was already listed for this book")
         XCTAssertEqual(again?.choices.map(\.title), warmed?.choices.map(\.title))
     }
+
+    // MARK: VOICE-SWITCH-RESUME-EXACT — a voice change continues from the same text, whatever the voices' speeds
+
+    private struct SwitchFixture {
+        let player: AudioPlayer
+        let book: BookEntity
+        let text: String
+        let jobID: String
+        let tearDown: () -> Void
+    }
+
+    /// A listening job of `engine` playing chapter 19 of `book` with the player's clock at `seconds` of `duration`.
+    /// Audio position carries a sentence id only when `sentenceID` is given: engines without timing publish none.
+    private func playingFixture(engine: String, voice: String, seconds: Double, duration: Double,
+                                sentenceID: (String) -> String?) throws -> SwitchFixture {
+        let suite = "voice-switch-resume-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let book = BookEntity(id: "resume-\(suite)", title: "Book", bookmark: Data([1]),
+            displayFilename: "book.epub", addedAt: Date())
+        let text = (0..<400).map { "Sentence number \($0) of the chapter." }.joined(separator: " ")
+        let chapter = NativeReaderTestHarness.chapter(text, index: 20)
+        LocalFulltextCache.save(EbookFulltext(jobId: "fixture", bookTitle: "Book", bookAuthor: nil, chapters: [chapter]),
+                                bookId: book.id)
+        let snapshot = JobSnapshot(jobId: "job-\(engine)", state: "running", bookTitle: "Book", bookAuthor: nil,
+            coverUrl: nil, coverMimeType: nil, engine: engine, voice: voice, language: "pt-BR", progressPercent: 0,
+            chaptersTotal: nil, chaptersCompleted: 0, chapterProgress: [], outputs: nil, logUrl: nil, error: nil,
+            lastActivityAt: nil, chapterIndexBase: 0)
+        player.play(snapshot: snapshot, restoreAutoplay: false)
+        player.isConverting = true
+        player.playbackStreamingChapterChanged(19)
+        let item = NSObject()
+        let sentence = sentenceID(chapter.splitSentences().count > 150 ? chapter.splitSentences()[150].id : "")
+        for step in 0..<2 {
+            player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds + Double(step) * 0.1,
+                isOutputting: true, position: .init(chapterIndex: 19, seconds: seconds + Double(step) * 0.1,
+                    duration: duration, sentenceID: sentence, itemSeconds: 3 + Double(step) * 0.1, itemDuration: 8))
+        }
+        return SwitchFixture(player: player, book: book, text: text, jobID: snapshot.jobId) {
+            player.stop(); LocalFulltextCache.evictInMemoryPayload(bookId: book.id)
+            defaults.removePersistentDomain(forName: suite)
+            _ = item
+        }
+    }
+
+    /// The trace of the failing Piper → System switch: the audio position carried no sentence id and no alignment, so
+    /// the change fell back to the OLD voice's chapter seconds. A new voice with another speed generates the chapter
+    /// from its start and the player waited forever for second 2026 of audio that did not exist yet. The change must
+    /// carry the TEXT position (the slider's time-to-text map), from any engine, so the new job starts there.
+    func testEveryEngineCarriesATextPositionWhenTheAudioHasNoSentenceTiming() throws {
+        for (engine, voice) in [("piper", "pt_BR-faber-medium"), ("system", "Luciana (installed.luciana)"),
+                                ("edge", "pt-BR-AntonioNeural")] {
+            let fixture = try playingFixture(engine: engine, voice: voice, seconds: 2_026.8, duration: 2_725) { _ in nil }
+            defer { fixture.tearDown() }
+            let change = try XCTUnwrap(ReaderVoiceChange.capture(player: fixture.player, book: fixture.book,
+                starting: nil, ownedJobID: fixture.jobID), "\(engine): a playing job can be switched")
+            XCTAssertNil(change.seek, "\(engine): the old voice's seconds must not be replayed on the new voice's clock")
+            let ratio = try XCTUnwrap(change.pageRatio, "\(engine): the change must carry a text position")
+            XCTAssertEqual(ratio, 2_026.8 / 2_725, accuracy: 0.01, "\(engine): resumes where the clock was in the chapter")
+            XCTAssertEqual(change.chapter, 19, engine)
+        }
+    }
+
+    /// With sentence timing the exact sentence is kept — for every engine, unchanged by the fix above.
+    func testEveryEngineResumesAtTheSpokenSentenceWhenTheAudioHasItsId() throws {
+        for (engine, voice) in [("piper", "pt_BR-faber-medium"), ("system", "Luciana (installed.luciana)"),
+                                ("edge", "pt-BR-AntonioNeural")] {
+            let fixture = try playingFixture(engine: engine, voice: voice, seconds: 100, duration: 2_725) { $0 }
+            defer { fixture.tearDown() }
+            let chapter = NativeReaderTestHarness.chapter(fixture.text, index: 20)
+            let sentence = chapter.splitSentences()[150]
+            let before = (fixture.text as NSString).substring(to: (fixture.text as NSString).range(of: sentence.text).location)
+            let expected = Double(before.unicodeScalars.count) / Double(fixture.text.unicodeScalars.count)
+            let change = try XCTUnwrap(ReaderVoiceChange.capture(player: fixture.player, book: fixture.book,
+                starting: nil, ownedJobID: fixture.jobID), engine)
+            XCTAssertNil(change.seek, engine)
+            XCTAssertEqual(try XCTUnwrap(change.pageRatio, engine), expected, accuracy: 0.002, "\(engine): the spoken sentence")
+        }
+    }
 }
 
 private final class LockedBool: @unchecked Sendable {
