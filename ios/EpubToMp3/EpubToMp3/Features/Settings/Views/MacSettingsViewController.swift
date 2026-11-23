@@ -172,12 +172,12 @@ final class MacSettingsViewController: NSViewController {
         let sizeControl = NSStackView(views: [fontSizeSlider, fontSizeLabel])
         sizeControl.spacing = 8
         sizeControl.alignment = .centerY
-        let modelsButton = NSButton(title: L10n.string("settings.voiceModels"), target: self,
+        let modelsButton = NSButton(title: L10n.string("models.title"), target: self,
                                    action: #selector(showVoiceModels))
         modelsButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
         let rows = voiceModelsOnly ? (readerVoicePicker == nil ? audioEngineRows : Array(audioEngineRows.prefix(2))) : [
             row(L10n.string("settings.embeddedServer"), statusLabel),
-            row(L10n.string("settings.voiceModels"), modelsButton),
+            row(L10n.string("models.title"), modelsButton),
             row(L10n.string("settings.fontSize"), sizeControl),
             row(L10n.string("settings.font"), fontPopup),
             row(L10n.string("settings.theme"), themePopup),
@@ -210,8 +210,10 @@ final class MacSettingsViewController: NSViewController {
     @objc private func showVoiceModels() {
         guard voiceModelDestination == nil else { return }
         let previousViews = view.subviews.map { ($0, $0.isHidden) }
-        let detail = MacSettingsViewController(settings: settings, library: library,
-            termsAcceptance: termsAcceptance, speechModels: speechModels, voiceModelsOnly: true)
+        // The single Models entry: models by language, one choice per language, with
+        // install, remove, preview and licence actions inside the screen.
+        let detail = MacModelsViewController(settings: settings, source: SpeechModelsSource(client: speechModels),
+                                             termsAcceptance: termsAcceptance)
         let destination = MacSettingsDetailNavigation(detail: detail) { [weak self] in
             guard let self, let destination = self.voiceModelDestination else { return }
             destination.view.removeFromSuperview()
