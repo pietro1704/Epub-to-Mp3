@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<ProviderContainer> _pumpMenu(
   WidgetTester tester, {
   Map<String, Object> seed = const {},
+  Set<String> installed = const {'pt_BR-faber-medium'},
   required List<TtsSelection> changes,
 }) async {
   SharedPreferences.setMockInitialValues(seed);
@@ -20,6 +21,9 @@ Future<ProviderContainer> _pumpMenu(
       sharedPrefsProvider.overrideWithValue(prefs),
       ttsCatalogProvider.overrideWith(
         (ref) => Future<TtsCatalog>.error(StateError('catalog unavailable')),
+      ),
+      installedNarrationModelIdsProvider.overrideWith(
+        (ref) async => installed,
       ),
     ],
   );
@@ -109,6 +113,14 @@ void main() {
     expect(container.read(settingsProvider).configuredTtsPreferences, isNull);
   });
 
+  testWidgets('hides Piper models that are not installed', (tester) async {
+    await _pumpMenu(tester, installed: const {}, changes: <TtsSelection>[]);
+    await _openMenu(tester);
+    final labels = _checked(tester).keys;
+    expect(labels, isNot(contains('Faber medium · Offline')));
+    expect(labels, containsAll(['Piper · Book language', 'System voice · Offline fallback']));
+  });
+
   test('choices keep the active manual model and hide Edge without consent', () {
     const manual = TtsSelection(
       engine: 'piper',
@@ -119,6 +131,7 @@ void main() {
       preferences: const TtsPreferences(primary: manual),
       recommended: const TtsPreferences.appDefaults(),
       catalog: null,
+      installedModelIds: const {},
     );
     expect(choices.first.modelId, 'pt_BR-edresson-low');
     expect(choices.any((choice) => choice.engine == 'edge'), isFalse);

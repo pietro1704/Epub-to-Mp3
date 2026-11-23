@@ -8,6 +8,24 @@ import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 import '../state/providers.dart';
 
+/// Catalog models already on disk. The reader never downloads anything: model
+/// installation stays an explicit action in Settings.
+final installedNarrationModelIdsProvider =
+    FutureProvider.autoDispose<Set<String>>((ref) async {
+      final converter = ref.watch(embeddedConverterProvider);
+      final catalog = await ref.watch(ttsCatalogProvider.future);
+      final root = await ref.watch(ttsModelRootProvider.future);
+      final installed = <String>{};
+      for (final model in catalog.models) {
+        final id = model['id'];
+        if (id is! String || id.isEmpty) continue;
+        if (await converter.ttsModelMetadata(modelId: id, root: root) != null) {
+          installed.add(id);
+        }
+      }
+      return installed;
+    });
+
 /// Localized name of a narration choice, shared by Settings and the reader.
 String ttsSelectionLabel(AppLocalizations t, TtsSelection selection) {
   if (selection.representsSameRequest(TtsSelection.automaticPiper)) {
@@ -25,16 +43,27 @@ String ttsSelectionLabel(AppLocalizations t, TtsSelection selection) {
 
 /// Narration models the reader can switch to without installing anything.
 ///
-/// The active primary comes first so it is always listed and marked. Manual
-/// low-quality models stay in Settings, and online Edge speech is offered only
-/// after the user has consented to online fallback.
+/// The active primary comes first so it is always listed and marked. Piper
+/// models appear only when installed, manual low-quality models stay in
+/// Settings, and online Edge speech is offered only after the user has
+/// consented to online fallback.
 List<TtsSelection> readerNarrationChoices({
   required TtsPreferences preferences,
   required TtsPreferences recommended,
   required TtsCatalog? catalog,
+  required Set<String> installedModelIds,
 }) {
   final result = <TtsSelection>[];
   void add(TtsSelection candidate) {
+    final isPrimary = candidate.representsSameRequest(preferences.primary);
+    final modelId = candidate.modelId;
+    if (!isPrimary &&
+        candidate.engine == 'piper' &&
+        modelId != null &&
+        modelId != TtsSelection.automaticPiper.modelId &&
+        !installedModelIds.contains(modelId)) {
+      return;
+    }
     if (candidate.manualModel && !candidate.representsSameRequest(preferences.primary)) {
       return;
     }
@@ -72,6 +101,9 @@ class ReaderNarrationMenu extends ConsumerWidget {
     final t = AppLocalizations.of(context)!;
     final settings = ref.watch(settingsProvider);
     final catalog = ref.watch(ttsCatalogProvider).asData?.value;
+    final installed =
+        ref.watch(installedNarrationModelIdsProvider).asData?.value ??
+        const <String>{};
     final recommended =
         catalog?.recommendedPreferences ?? const TtsPreferences.appDefaults();
     final preferences = settings.configuredTtsPreferences ?? recommended;
@@ -79,6 +111,7 @@ class ReaderNarrationMenu extends ConsumerWidget {
       preferences: preferences,
       recommended: recommended,
       catalog: catalog,
+      installedModelIds: installed,
     );
 
     return PopupMenuButton<int>(
