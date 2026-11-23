@@ -179,6 +179,7 @@ let tests = [
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
     "ReaderLocationTests.swift",
+    "ListeningJobSnapshotTests.swift",
     "TtsCatalogFixture.swift",
     "ReaderBookSearchTests.swift",
     "ReaderInternalLinkTargetTests.swift",

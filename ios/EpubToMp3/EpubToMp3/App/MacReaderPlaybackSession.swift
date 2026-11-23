@@ -116,25 +116,8 @@ final class MacReaderPlaybackSession {
                     playbackControl.startFromPage(ratio: pageRatio)
                 }
                 localPlaybackControl = playbackControl
-                let pending = JobSnapshot(
-                    jobId: jobID,
-                    state: "running",
-                    bookTitle: book.resolvedTitle,
-                    bookAuthor: book.author,
-                    coverUrl: nil,
-                    coverMimeType: nil,
-                    engine: nil,
-                    voice: nil,
-                    language: nil,
-                    progressPercent: 0,
-                    chaptersTotal: nil,
-                    chaptersCompleted: 0,
-                    chapterProgress: [],
-                    outputs: nil,
-                    logUrl: nil,
-                    error: nil,
-                    lastActivityAt: Date().timeIntervalSince1970,
-                    chapterIndexBase: 0
+                let pending = JobSnapshot.listeningPending(
+                    jobID: jobID, bookTitle: book.resolvedTitle, bookAuthor: book.author, chapters: []
                 )
                 // The normal empty-snapshot handoff can preserve a live segment queue.
                 // A different voice needs an entirely new queue.
@@ -210,26 +193,7 @@ final class MacReaderPlaybackSession {
                    location.readingBookID != bookID { return }
                 localPlaybackControl?.cancel()
                 if let current = player.snapshot, current.jobId == jobID {
-                    player.finishStreaming(snapshot: JobSnapshot(
-                        jobId: current.jobId,
-                        state: "failed",
-                        bookTitle: current.bookTitle,
-                        bookAuthor: current.bookAuthor,
-                        coverUrl: current.coverUrl,
-                        coverMimeType: current.coverMimeType,
-                        engine: current.engine,
-                        voice: current.voice,
-                        language: current.language,
-                        progressPercent: current.progressPercent,
-                        chaptersTotal: current.chaptersTotal,
-                        chaptersCompleted: current.chaptersCompleted,
-                        chapterProgress: current.chapterProgress,
-                        outputs: current.outputs,
-                        logUrl: current.logUrl,
-                        error: error.localizedDescription,
-                        lastActivityAt: Date().timeIntervalSince1970,
-                    chapterIndexBase: 0
-                    ))
+                    player.finishStreaming(snapshot: current.failed(error: error.localizedDescription))
                 }
                 if BookLanguageUncertain.decode(error) != nil {
                     let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
