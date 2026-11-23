@@ -112,19 +112,8 @@ class _VoiceSelectionSettingsState
         (selection) => !selection.representsSameRequest(preferences.primary),
       ),
     );
-    String selectionLabel(TtsSelection selection) {
-      if (selection.representsSameRequest(TtsSelection.automaticPiper)) {
-        return t.ttsAutomaticPiper;
-      }
-      if (selection.representsSameRequest(TtsSelection.faber)) {
-        return t.ttsFaberOffline;
-      }
-      if (selection.representsSameRequest(TtsSelection.edge)) {
-        return t.ttsEdgeOnline;
-      }
-      if (selection.engine == 'system') return t.ttsSystemOffline;
-      return selection.displayName;
-    }
+    String selectionLabel(TtsSelection selection) =>
+        ttsSelectionLabel(t, selection);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
