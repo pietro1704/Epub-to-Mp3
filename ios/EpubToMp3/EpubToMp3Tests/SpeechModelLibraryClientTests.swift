@@ -332,34 +332,6 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 0))
         XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 0), collapsedCount)
         XCTAssertEqual(settings.ttsPreferences, selection)
-        #else
-        // Since #1145 the narration popup and the model panel live in the
-        // pushed Voice models detail, whose panel opens expanded
-        // (MacVoiceModelSettingsNavigationTests covers the push itself).
-        let selection = settings.ttsPreferences
-        let controller = MacSettingsViewController(
-            settings: settings,
-            library: LibraryStore(defaults: defaults),
-            speechModels: client,
-            voiceModelsOnly: true
-        )
-        controller.loadViewIfNeeded()
-        let controls = descendants(controller.view)
-        let primary = try XCTUnwrap(controls.compactMap { $0 as? NSPopUpButton }
-            .first { $0.accessibilityIdentifier() == "settings.tts.primary" })
-        XCTAssertEqual(primary.titleOfSelectedItem, expected)
-        XCTAssertTrue(controls.compactMap { $0 as? NSTextField }.contains {
-            $0.stringValue.components(separatedBy: "\n").first == expected
-        })
-        XCTAssertFalse(expected.contains("pt_BR-faber-medium"))
-        let disclosure = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first {
-            $0.accessibilityIdentifier() == "settings.speechModels.disclosure"
-        })
-        // The dedicated detail always shows the expanded model list, so its
-        // inline disclosure stays hidden; opening it must not change voices.
-        XCTAssertTrue(disclosure.isHidden)
-        XCTAssertEqual(disclosure.title, L10n.string("settings.models.hide"))
-        XCTAssertEqual(settings.ttsPreferences, selection)
         #endif
     }
     #endif

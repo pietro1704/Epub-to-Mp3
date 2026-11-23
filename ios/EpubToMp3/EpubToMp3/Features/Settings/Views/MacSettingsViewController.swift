@@ -9,26 +9,13 @@ final class MacSettingsViewController: NSViewController {
     private let clearDownloadsOperation: () async throws -> Void
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
-    private let voiceModelsOnly: Bool
-    private let readerVoicePicker: ReaderVoicePicker?
     private var voiceModelDestination: MacSettingsDetailNavigation?
-    private var speechModelState: SpeechModelLibraryViewState
-    private lazy var speechModelPanel = MacSpeechModelLibraryPanel(
-        settings: settings,
-        speechModels: speechModels,
-        termsAcceptance: termsAcceptance,
-        expandedOnOpen: voiceModelsOnly
-    )
     private var isClearingDownloads = false
     private let fontSizeSlider = NSSlider()
     private let fontSizeLabel = NSTextField(labelWithString: "")
     private let fontPopup = NSPopUpButton()
     private let themePopup = NSPopUpButton()
     private let layoutPopup = NSPopUpButton()
-    private let audioEnginePopup = NSPopUpButton()
-    private var narrationSelections: [TtsSelection] = []
-    private let secondaryEnginePopup = NSPopUpButton()
-    private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
     private let diagnosticsButton = NSButton()
@@ -42,22 +29,18 @@ final class MacSettingsViewController: NSViewController {
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          clearDownloadsOperation: (() async throws -> Void)? = nil,
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(),
-         speechModels: SpeechModelLibraryClient = .shared,
-         voiceModelsOnly: Bool = false, readerVoicePicker: ReaderVoicePicker? = nil) {
+         speechModels: SpeechModelLibraryClient = .shared) {
         self.settings = settings
         self.library = library
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
-        self.voiceModelsOnly = voiceModelsOnly
-        self.readerVoicePicker = readerVoicePicker
-        self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.clearDownloadsOperation = clearDownloadsOperation ?? {
             try await AudioStorageMaintenance().clearAllDownloads()
         }
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(nibName: nil, bundle: nil)
-        title = L10n.string(voiceModelsOnly ? "settings.voiceModels" : "settings.title")
+        title = L10n.string("settings.title")
     }
 
     @available(*, unavailable)
@@ -75,7 +58,6 @@ final class MacSettingsViewController: NSViewController {
         configureControls()
         refresh()
         refreshStreamingDiagnostics()
-        speechModelPanel.reload()
     }
 
     override func viewWillAppear() {
@@ -110,19 +92,6 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
-        audioEnginePopup.target = self
-        audioEnginePopup.action = #selector(audioEngineChanged(_:))
-        audioEnginePopup.menu?.autoenablesItems = false
-        secondaryEnginePopup.menu?.autoenablesItems = false
-        secondaryEnginePopup.target = self
-        secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
-        onlineFallbackButton.title = L10n.string("settings.onlineFallback")
-        onlineFallbackButton.target = self
-        onlineFallbackButton.action = #selector(onlineFallbackChanged(_:))
-        secondaryEnginePopup.setAccessibilityLabel(L10n.string("settings.secondaryVoice"))
-        audioEnginePopup.setAccessibilityIdentifier("settings.tts.primary")
-        secondaryEnginePopup.setAccessibilityIdentifier("settings.tts.secondary")
-        onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
         statusLabel.textColor = .secondaryLabelColor
         storageLabel.textColor = .secondaryLabelColor
 
@@ -145,7 +114,6 @@ final class MacSettingsViewController: NSViewController {
         fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
         layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
-        audioEnginePopup.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
         refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
         exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
@@ -154,28 +122,13 @@ final class MacSettingsViewController: NSViewController {
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             return [title, control]
         }
-        if readerVoicePicker != nil {
-            speechModelPanel.onSelectVoice = { [weak self] in self?.choosePrimary($0) }
-        }
-        speechModelPanel.onSnapshot = { [weak self] state in
-            guard let self else { return }
-            speechModelState = state
-            rebuildNarrationChoices()
-            refresh()
-        }
-        let audioEngineRows = [
-            row(L10n.string("settings.audioEngineChoice"), audioEnginePopup),
-            row(L10n.string("settings.voiceModels"), speechModelPanel),
-            row(L10n.string("settings.secondaryVoice"), secondaryEnginePopup),
-            row(L10n.string("settings.onlineFallbackDescription"), onlineFallbackButton),
-        ]
         let sizeControl = NSStackView(views: [fontSizeSlider, fontSizeLabel])
         sizeControl.spacing = 8
         sizeControl.alignment = .centerY
         let modelsButton = NSButton(title: L10n.string("models.title"), target: self,
                                    action: #selector(showVoiceModels))
         modelsButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
-        let rows = voiceModelsOnly ? (readerVoicePicker == nil ? audioEngineRows : Array(audioEngineRows.prefix(2))) : [
+        let rows = [
             row(L10n.string("settings.embeddedServer"), statusLabel),
             row(L10n.string("models.title"), modelsButton),
             row(L10n.string("settings.fontSize"), sizeControl),
@@ -191,20 +144,15 @@ final class MacSettingsViewController: NSViewController {
         grid.column(at: 0).width = 180
         grid.column(at: 0).xPlacement = .trailing
         grid.column(at: 1).xPlacement = .leading
-        let form = NSStackView(views: voiceModelsOnly ? [grid] : [grid, refreshButton, exportDiagnosticsButton,
+        let form = NSStackView(views: [grid, refreshButton, exportDiagnosticsButton,
                                       diagnosticsButton, diagnosticsLabel, clearButton])
-        if readerVoicePicker != nil {
-            form.addArrangedSubview(NSButton(title: L10n.string("common.cancel"), target: self,
-                                             action: #selector(closeVoicePicker)))
-        }
         form.orientation = .vertical
         form.alignment = .leading
         form.spacing = 16
         form.translatesAutoresizingMaskIntoConstraints = false
         grid.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
-        if !voiceModelsOnly { diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true }
+        diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
         MacScrollableStack.install(form, in: view)
-        rebuildNarrationChoices()
     }
 
     @objc private func showVoiceModels() {
@@ -243,24 +191,6 @@ final class MacSettingsViewController: NSViewController {
                    in: themePopup)
         selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
                    in: layoutPopup)
-        selectItem(at: narrationSelections.firstIndex {
-            readerVoicePicker?.marks($0) ?? SpeechModelLibraryViewState.sameChoice($0, settings.ttsPreferences.primary)
-        } ?? 0,
-                   in: audioEnginePopup)
-        selectItem(at: settings.ttsPreferences.secondary
-            .flatMap { selected in narrationSelections.firstIndex {
-                SpeechModelLibraryViewState.sameChoice($0, selected)
-            } }.map { $0 + 1 } ?? 0,
-            in: secondaryEnginePopup)
-        for (index, selection) in narrationSelections.enumerated() {
-            let ready = speechModelState.canSelect(selection)
-            audioEnginePopup.item(at: index)?.isEnabled = ready
-            secondaryEnginePopup.item(at: index + 1)?.isEnabled = ready
-                && selection.canBeSecondary(to: settings.ttsPreferences.primary,
-                                            allowOnlineFallback: settings.allowOnlineAudioFallback)
-        }
-        onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
-        speechModelPanel.render()
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current())
     }
@@ -289,72 +219,6 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
-    }
-
-    @objc private func audioEngineChanged(_ sender: NSPopUpButton) {
-        guard narrationSelections.indices.contains(sender.indexOfSelectedItem) else { return }
-        guard speechModelState.canSelect(narrationSelections[sender.indexOfSelectedItem]) else {
-            refresh()
-            return
-        }
-        choosePrimary(narrationSelections[sender.indexOfSelectedItem])
-    }
-
-    @objc private func closeVoicePicker() { dismiss(nil) }
-
-    private func choosePrimary(_ selection: TtsSelection) {
-        if let readerVoicePicker {
-            dismiss(nil)
-            readerVoicePicker.choose(selection)
-            return
-        }
-        settings.selectPrimaryNarration(selection)
-        speechModelPanel.render()
-        refresh()
-    }
-
-    @objc private func secondaryEngineChanged(_ sender: NSPopUpButton) {
-        let index = sender.indexOfSelectedItem - 1
-        guard narrationSelections.indices.contains(index) else {
-            settings.selectSecondaryNarration(nil)
-            speechModelPanel.render()
-            return
-        }
-        let selection = narrationSelections[index]
-        guard speechModelState.canSelect(selection),
-              selection.canBeSecondary(to: settings.ttsPreferences.primary,
-                                       allowOnlineFallback: settings.allowOnlineAudioFallback) else {
-            refresh()
-            return
-        }
-        settings.selectSecondaryNarration(selection)
-        speechModelPanel.render()
-    }
-    @objc private func onlineFallbackChanged(_ sender: NSButton) {
-        settings.allowOnlineAudioFallback = sender.state == .on
-        speechModelPanel.render()
-        refresh()
-    }
-
-    private func rebuildNarrationChoices() {
-        let catalogChoices = speechModelState.selectableChoices.map(\.selection)
-        narrationSelections = TtsSelection.selectableEngines.flatMap { engine -> [TtsSelection] in
-            let matching = catalogChoices.filter { $0.engine == engine }
-            if !matching.isEmpty { return matching }
-            return engine == TtsSelection.piperEngine ? [] : [.engineDefault(engine)]
-        }
-        for selection in settings.configuredNarrationSelections
-            where !narrationSelections.contains(where: { SpeechModelLibraryViewState.sameChoice($0, selection) }) {
-            narrationSelections.append(selection)
-        }
-        if let readerVoicePicker, !narrationSelections.contains(where: readerVoicePicker.marks) {
-            narrationSelections.append(readerVoicePicker.selection)
-        }
-        let titles = narrationSelections.map(speechModelState.displayName(for:))
-        audioEnginePopup.removeAllItems()
-        audioEnginePopup.addItems(withTitles: titles)
-        secondaryEnginePopup.removeAllItems()
-        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + titles)
     }
 
     private func selectItem(at index: Int, in popup: NSPopUpButton) {

@@ -54,64 +54,7 @@ extension NativeResponsiveScreenTests {
     }
 #endif
 
-#if os(iOS)
-#else
-    func testMacSecondaryVoiceMenuValidationKeepsPrimaryDisabled() throws {
-        let settings = AppSettings(defaults: defaults)
-        settings.allowOnlineAudioFallback = true
-        settings.selectSecondaryNarration(nil)
-        // Since #1145 the narration popups live in the pushed Voice models
-        // detail; MacVoiceModelSettingsNavigationTests covers the push itself.
-        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults),
-                                                   voiceModelsOnly: true)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentViewController = controller
-        window.makeKeyAndOrderFront(nil)
-        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
-        let controls = descendants(controller.view).compactMap { $0 as? NSPopUpButton }
-        let primary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.primary" })
-        let secondary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
-        let menu = try XCTUnwrap(secondary.menu)
-        menu.update()
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Piper")).isEnabled,
-                       "AppKit menu validation must preserve the primary-voice exclusion.")
-        XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
 
-        secondary.selectItem(withTitle: "Piper")
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertNil(settings.ttsPreferences.secondary, "A stale or programmatic action must not persist a duplicate voice.")
-        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
-        secondary.selectItem(withTitle: "Edge")
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
-
-        let captured = NarrationConversionOptions.current(for: settings.ttsPreferences)
-        secondary.selectItem(withTitle: "Piper")
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.secondary?.engine, "edge")
-        XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
-        // The captured job keeps its own (catalog-captured) preferences.
-        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences, captured.ttsPreferences)
-        secondary.selectItem(withTitle: L10n.string("settings.noSecondary"))
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertNil(AppSettings(defaults: defaults).ttsPreferences.secondary)
-        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
-        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "edge")
-        secondary.selectItem(withTitle: "Edge")
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-
-        primary.selectItem(withTitle: "Edge")
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
-        menu.update()
-        XCTAssertNil(settings.ttsPreferences.secondary, "The new primary voice cannot remain the secondary voice.")
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Piper")).isEnabled,
-                       "Changing the primary cannot make an uninstalled model selectable.")
-        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
-    }
-#endif
 
 #if os(iOS)
 #else
