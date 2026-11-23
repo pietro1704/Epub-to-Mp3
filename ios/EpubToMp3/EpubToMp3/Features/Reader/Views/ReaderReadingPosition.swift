@@ -21,7 +21,18 @@ final class ReaderReadingPosition {
     private let facts: () -> Facts
     private let send: (Event) -> Void
     let playback: ReaderPlaybackPosition
-    private var pendingPlaybackLocation: ReaderPlaybackLocation?
+    private enum Destination {
+        case chapterStart(Int)
+        case playback(ReaderPlaybackLocation)
+
+        var sourceChapterIndex: Int {
+            switch self {
+            case let .chapterStart(index): return index
+            case let .playback(location): return location.chapterIndex
+            }
+        }
+    }
+    private var pendingDestination: Destination?
     private var scheduledInitialRestore: UUID?
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition,
@@ -68,14 +79,23 @@ final class ReaderReadingPosition {
     func forgetViewportOffsets() { rememberedViewportOffsets.removeAll() }
 
     func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
-        pendingPlaybackLocation = nil
         if let pdf = composition.contentSurface.pdfPresentation {
+            pendingDestination = nil
             pdf.revealPlaybackLocation(location)
-            return
+        } else {
+            reveal(.playback(location))
         }
+    }
+
+    func revealChapterStart(_ sourceChapterIndex: Int) {
+        reveal(.chapterStart(sourceChapterIndex))
+    }
+
+    private func reveal(_ destination: Destination) {
+        pendingDestination = nil
         let chapter: EbookFulltext.Chapter
         if let chapters = document.fulltext?.chapters {
-            guard let index = chapters.firstIndex(where: { $0.zeroBasedEpubIndex == location.chapterIndex }) else { return }
+            guard let index = chapters.firstIndex(where: { $0.zeroBasedEpubIndex == destination.sourceChapterIndex }) else { return }
             scheduledInitialRestore = nil
             chapter = chapters[index]
             if document.selectedChapter != index {
@@ -84,25 +104,32 @@ final class ReaderReadingPosition {
                 send(.showChapter(index))
             }
         } else if let prepared = document.activePreparedChapter?.chapter,
-                  prepared.zeroBasedEpubIndex == location.chapterIndex {
+                  prepared.zeroBasedEpubIndex == destination.sourceChapterIndex {
             chapter = prepared
         } else {
-            pendingPlaybackLocation = location
+            pendingDestination = destination
             return
         }
         composition.view.layoutIfNeeded()
-        let offset = location.characterOffset(chapterText: chapter.text, renderedText: composition.textView.text)
-        restoreReadingAnchor(.init(offsetFraction: 0, characterOffset: offset))
+        switch destination {
+        case .chapterStart:
+            scheduledInitialRestore = nil
+            document.pendingProjectionAnchor = nil
+            document.hasRestoredInitialPosition = true
+            composition.scrollView.setContentOffset(.zero, animated: false)
+        case let .playback(location):
+            let offset = location.characterOffset(chapterText: chapter.text, renderedText: composition.textView.text)
+            restoreReadingAnchor(.init(offsetFraction: 0, characterOffset: offset))
+        }
         send(.updatePageIndicator)
         persistReadingProgress()
     }
 
-    func cancelPendingPlaybackLocation() { pendingPlaybackLocation = nil }
+    func cancelPendingNavigation() { pendingDestination = nil }
 
-    func revealPendingPlaybackLocation() {
-        guard let location = pendingPlaybackLocation, document.fulltext != nil else { return }
-        pendingPlaybackLocation = nil
-        revealPlaybackLocation(location)
+    func revealPendingNavigation() {
+        guard let destination = pendingDestination, document.fulltext != nil else { return }
+        reveal(destination)
     }
 
     func persistReadingProgress() {

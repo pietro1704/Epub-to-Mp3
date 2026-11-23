@@ -9,11 +9,10 @@ final class ReaderContentsPresentation {
     private let settings: AppSettings
     private let player: AudioPlayer
     private let readingPosition: ReaderReadingPosition
-    private let textPresentation: ReaderTextPresentation
     private let present: (UIViewController) -> Void
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition, library: LibraryStore, settings: AppSettings,
-         player: AudioPlayer, readingPosition: ReaderReadingPosition, textPresentation: ReaderTextPresentation,
+         player: AudioPlayer, readingPosition: ReaderReadingPosition,
          present: @escaping (UIViewController) -> Void) {
         self.document = document
         self.composition = composition
@@ -21,7 +20,6 @@ final class ReaderContentsPresentation {
         self.settings = settings
         self.player = player
         self.readingPosition = readingPosition
-        self.textPresentation = textPresentation
         self.present = present
     }
 
@@ -43,10 +41,11 @@ final class ReaderContentsPresentation {
                                  level: 0, chapterIndex: chapter.index > 0 ? chapter.index - 1 : nil)
                 }
             }
-            select = onSelect ?? { [weak self] index in
-                guard let self, let chapters = self.document.fulltext?.chapters,
-                      let position = chapters.firstIndex(where: { $0.zeroBasedEpubIndex == index }) else { return }
-                self.jumpToChapter(position)
+            let generation = document.loadGenerationID
+            let bookID = document.book.id
+            select = onSelect ?? { [weak self] sourceChapterIndex in
+                guard let self, self.document.book.id == bookID, self.document.loadGenerationID == generation else { return }
+                self.readingPosition.revealChapterStart(sourceChapterIndex)
             }
         }
         let current = composition.contentSurface.pdfPresentation?.currentAnchor?.chapterIndex
@@ -98,18 +97,6 @@ final class ReaderContentsPresentation {
         }
         return navigationController
     }
-
-    private func jumpToChapter(_ chapterIndex: Int) {
-        guard document.fulltext?.chapters.indices.contains(chapterIndex) == true else { return }
-        readingPosition.persistReadingProgress()
-        document.selectedChapter = chapterIndex
-        textPresentation.showChapter(chapterIndex)
-        composition.view.layoutIfNeeded()
-        composition.scrollView.setContentOffset(.zero, animated: false)
-        textPresentation.updatePageIndicator()
-        readingPosition.persistReadingProgress()
-    }
-
 }
 
 /// Keeps explicit chapter downloads separate from listening transport.

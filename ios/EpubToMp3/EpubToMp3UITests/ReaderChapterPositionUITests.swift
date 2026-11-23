@@ -37,7 +37,78 @@ final class ReaderChapterPositionUITests: XCTestCase {
         harness.assertNoClippedLines(scenario: "After opening a chapter from the shared contents")
     }
 
-    func testExistingLOTRTOCPageDirectionsReaderReopenAndProcessRelaunch() throws {
+    func testExistingLOTRTOCPageDirectionsAndReaderReopen() throws {
+        let app = launchExistingBook()
+        defer { app.terminate() }
+        let harness = ReaderModesHarness(app: app)
+        try openBook(app)
+        try selectChapter(containing: "long-expected", app: app)
+        let destination = try XCTUnwrap(chapter(app))
+        XCTAssertEqual(harness.paginationMetrics?.page, 1)
+        let pageTwo = try turn(forward: true, app: app, harness: harness)
+        XCTAssertEqual(chapter(app), destination, "The first page turn after TOC must keep its destination.")
+        try turn(forward: true, app: app, harness: harness)
+        let returned = try turn(forward: false, app: app, harness: harness)
+        XCTAssertEqual(returned.values["first"], pageTwo.values["first"])
+        XCTAssertEqual(chapter(app), destination)
+
+        app.buttons["reader.close"].firstMatch.tap()
+        try openBook(app)
+        XCTAssertEqual(chapter(app), destination)
+        assertPosition(pageTwo.values, harness: harness)
+    }
+
+    func testExistingLOTRTOCRestoresTurnedPageAfterProcessRelaunch() throws {
+        let app = launchExistingBook()
+        defer { app.terminate() }
+        let harness = ReaderModesHarness(app: app)
+        try openBook(app)
+        try selectChapter(containing: "long-expected", app: app)
+        let destination = try XCTUnwrap(chapter(app))
+        XCTAssertEqual(harness.paginationMetrics?.page, 1)
+        let pageTwo = try turn(forward: true, app: app, harness: harness)
+
+        try relaunchBook(app)
+        XCTAssertEqual(chapter(app), destination)
+        assertPosition(pageTwo.values, harness: harness)
+        try turn(forward: true, app: app, harness: harness)
+        try turn(forward: false, app: app, harness: harness)
+        assertPosition(pageTwo.values, harness: harness)
+    }
+
+    func testExistingLOTRTOCRestoresChapterStartAfterProcessRelaunchWithoutPageTurn() throws {
+        let app = launchExistingBook()
+        defer { app.terminate() }
+        let harness = ReaderModesHarness(app: app)
+        try openBook(app)
+        let previousChapter = try XCTUnwrap(chapter(app))
+        let content = app.textViews["reader.content"].firstMatch
+        let shadow = "shadow of the past"
+        let title = (content.value as? String)?.localizedCaseInsensitiveContains(shadow) == true
+            ? "long-expected" : shadow
+        try selectChapter(containing: title, app: app)
+        let destination = try XCTUnwrap(chapter(app))
+        XCTAssertNotEqual(destination, previousChapter)
+        XCTAssertTrue(wait {
+            (content.value as? String)?.localizedCaseInsensitiveContains(title) == true
+        }, "The displayed text must belong to the chapter selected from the TOC.")
+        XCTAssertEqual(harness.paginationMetrics?.page, 1)
+
+        // No page turn before exiting: the TOC selection itself must be durable.
+        try relaunchBook(app)
+        XCTAssertEqual(chapter(app), destination)
+        XCTAssertEqual(harness.paginationMetrics?.page, 1)
+        try turn(forward: true, app: app, harness: harness)
+        XCTAssertEqual(chapter(app), destination)
+        let returned = try turn(forward: false, app: app, harness: harness)
+        XCTAssertEqual(returned.page, 1)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "LOTR-TOC-chapter-start-after-process-relaunch"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    private func launchExistingBook() -> XCUIApplication {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
@@ -46,75 +117,37 @@ final class ReaderChapterPositionUITests: XCTestCase {
             "-uiTestPaginationProbe", "-uiTestFlickerProbe", "-uiTestNoPageTurnOverlay",
             "-uiTestPageTurnStyle", "none", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        defer { app.terminate() }
-        let harness = ReaderModesHarness(app: app)
-        try openBook(app)
-        try selectChapter(containing: "long-expected", app: app)
-        let firstChapter = chapter(app)
-        XCTAssertNotNil(firstChapter)
-        XCTAssertEqual(harness.paginationMetrics?.page, 1)
-        try turn(forward: true, app: app, harness: harness)
-        let pageTwo = try XCTUnwrap(harness.paginationMetrics)
-        XCTAssertEqual(chapter(app), firstChapter, "The first page turn after TOC must keep its destination.")
-        try turn(forward: true, app: app, harness: harness)
-        try turn(forward: false, app: app, harness: harness)
-        XCTAssertEqual(harness.paginationMetrics?.values["first"], pageTwo.values["first"])
-        XCTAssertEqual(chapter(app), firstChapter)
-        app.buttons["reader.close"].firstMatch.tap()
-        try openBook(app)
-        XCTAssertEqual(chapter(app), firstChapter)
-        assertPosition(pageTwo.values, harness: harness)
-        // Warm reopen and a fresh process exercise separate restoration paths.
-        app.terminate()
-        app.launchArguments.removeAll { $0 == "-uiTestResetActiveReader" }
-        app.launch()
-        try openBookIfNeeded(app)
-        XCTAssertEqual(chapter(app), firstChapter)
-        assertPosition(pageTwo.values, harness: harness)
-        try turn(forward: true, app: app, harness: harness)
-        try turn(forward: false, app: app, harness: harness)
-        assertPosition(pageTwo.values, harness: harness)
-        try selectChapter(containing: "shadow of the past", app: app)
-        let secondChapter = chapter(app)
-        XCTAssertNotEqual(secondChapter, firstChapter)
-        XCTAssertEqual(harness.paginationMetrics?.page, 1)
-        // No page turn before exiting: the TOC selection itself must be durable.
-        app.terminate()
-        app.launch()
-        try openBookIfNeeded(app)
-        XCTAssertEqual(chapter(app), secondChapter)
-        XCTAssertEqual(harness.paginationMetrics?.page, 1)
-        try turn(forward: true, app: app, harness: harness)
-        XCTAssertEqual(chapter(app), secondChapter)
-        try turn(forward: false, app: app, harness: harness)
-        XCTAssertEqual(harness.paginationMetrics?.page, 1)
-        let capture = XCTAttachment(screenshot: app.screenshot())
-        capture.name = "LOTR-TOC-position-after-two-process-relaunches"
-        capture.lifetime = .keepAlways
-        add(capture)
+        return app
     }
 
     private func openBook(_ app: XCUIApplication) throws {
         let expanded = app.buttons["fullPlayer.close"].firstMatch
-        if expanded.waitForExistence(timeout: 1) { expanded.tap() }
+        if expanded.exists { expanded.tap() }
         let tile = app.descendants(matching: .any)["library.bookTile.3e1c676b270dfa3fe555eba4d0cb9934"].firstMatch
-        if !tile.waitForExistence(timeout: 1) {
+        if !tile.exists && !tile.waitForExistence(timeout: 1) {
             let search = app.searchFields["library.searchField"].firstMatch
             XCTAssertTrue(search.waitForExistence(timeout: 5))
             search.tap()
             search.typeText("lord")
         }
-        guard tile.waitForExistence(timeout: 20) else {
+        guard tile.exists || tile.waitForExistence(timeout: 20) else {
             throw XCTSkip("Requires the retained local LOTR EPUB; the user's library is never replaced.")
         }
         tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         try waitForReader(app)
     }
 
-    private func openBookIfNeeded(_ app: XCUIApplication) throws {
-        if !app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 5) {
+    private func relaunchBook(_ app: XCUIApplication) throws {
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-uiTestResetActiveReader" }
+        app.launch()
+        let reader = app.buttons["reader.more"].firstMatch
+        if reader.exists || app.images["reader.loadingCover"].firstMatch.exists
+            || reader.waitForExistence(timeout: 5) {
+            try waitForReader(app)
+        } else {
             try openBook(app)
-        } else { try waitForReader(app) }
+        }
     }
 
     private func waitForReader(_ app: XCUIApplication) throws {
@@ -138,15 +171,15 @@ final class ReaderChapterPositionUITests: XCTestCase {
 
     private func selectChapter(containing title: String, app: XCUIApplication) throws {
         ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
-        let table = app.tables.firstMatch
+        let table = app.tables["reader.toc"]
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         let target = table.cells.containing(NSPredicate(format: "label CONTAINS[c] %@", title)).firstMatch
         for _ in 0..<15 {
-            if target.exists && target.isHittable { break }
+            if target.isHittable { break }
             table.swipeDown()
         }
         for _ in 0..<20 {
-            if target.exists && target.isHittable { break }
+            if target.isHittable { break }
             table.swipeUp()
         }
         XCTAssertTrue(target.exists && target.isHittable, "LOTR TOC must contain \(title).")
@@ -155,28 +188,38 @@ final class ReaderChapterPositionUITests: XCTestCase {
         XCTAssertTrue(wait { ReaderModesHarness(app: app).paginationMetrics?.page == 1 })
     }
 
-    private func turn(forward: Bool, app: XCUIApplication, harness: ReaderModesHarness) throws {
+    @discardableResult
+    private func turn(
+        forward: Bool, app: XCUIApplication, harness: ReaderModesHarness
+    ) throws -> ReaderModesHarness.PaginationMetrics {
         let previous = try XCTUnwrap(harness.paginationMetrics?.page)
         let currentChapter = chapter(app)
         let viewport = app.scrollViews["reader.viewport"].firstMatch
         viewport.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.95 : 0.05, dy: 0.5)).tap()
-        XCTAssertTrue(wait { harness.paginationMetrics?.page == previous + (forward ? 1 : -1) })
+        var settled: ReaderModesHarness.PaginationMetrics?
+        XCTAssertTrue(wait {
+            guard let metrics = harness.paginationMetrics, metrics.page == previous + (forward ? 1 : -1) else {
+                return false
+            }
+            settled = metrics
+            return true
+        })
         XCTAssertEqual(chapter(app), currentChapter)
         harness.assertNoClippedLines(scenario: "TOC and restored page navigation")
+        return try XCTUnwrap(settled)
     }
 
     private func assertPosition(_ expected: [String: Int], harness: ReaderModesHarness) {
-        let evidence = XCTAttachment(string: "expected=\(expected); actual=\(harness.paginationMetrics?.values ?? [:])")
+        var actual: [String: Int] = [:]
+        let restored = wait {
+            actual = harness.paginationMetrics?.values ?? [:]
+            return actual["page"] == expected["page"] && actual["offset"] == expected["offset"]
+        }
+        let evidence = XCTAttachment(string: "expected=\(expected); actual=\(actual)")
         evidence.name = "reopened-reader-position"
         evidence.lifetime = .keepAlways
         add(evidence)
-        XCTAssertTrue(wait {
-            harness.paginationMetrics?.page == expected["page"]
-                && harness.paginationMetrics?.values["offset"] == expected["offset"]
-        }, "The saved page and raw offset must both be restored: \(harness.paginationMetrics?.values ?? [:])")
-        XCTAssertEqual(harness.paginationMetrics?.page, expected["page"],
-                       "expected=\(expected); actual=\(harness.paginationMetrics?.values ?? [:])")
-        XCTAssertEqual(harness.paginationMetrics?.values["offset"], expected["offset"])
+        XCTAssertTrue(restored, "The saved page and raw offset must both be restored: expected=\(expected); actual=\(actual)")
     }
 
     private func wait(_ condition: @escaping () -> Bool) -> Bool {
