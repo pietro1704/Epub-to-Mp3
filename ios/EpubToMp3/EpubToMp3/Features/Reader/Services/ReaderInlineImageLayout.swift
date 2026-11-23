@@ -14,7 +14,8 @@ import AppKit
 enum ReaderInlineImageLayout {
     static func fitting(
         _ source: NSAttributedString,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        maximumHeight: CGFloat? = nil
     ) -> NSAttributedString? {
         guard source.length > 0, maximumWidth > 0 else { return nil }
 

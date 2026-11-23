@@ -4,9 +4,11 @@ import UIKit
 enum ReaderTapAction: Equatable {
     case toggleChrome
     case turnPage(forward: Bool)
+    case scrollScreen(forward: Bool)
     case none
 
-    static func resolve(point: CGPoint, in bounds: CGRect, isPaginated: Bool) -> ReaderTapAction {
+    static func resolve(point: CGPoint, in bounds: CGRect, isPaginated: Bool,
+                        scrollsScreenOnEdgeTap: Bool = false) -> ReaderTapAction {
         guard bounds.contains(point) else { return .none }
         // Reader controls use the familiar three vertical zones: a middle
         // column toggles chrome anywhere along the readable page, while the
