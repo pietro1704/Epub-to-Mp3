@@ -109,7 +109,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   @override
   void initState() {
     super.initState();
-    ref.read(readerChromeVisibleProvider.notifier).state = true;
+    // Opening a book shows the chrome. A provider cannot change while the tree builds.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(readerChromeVisibleProvider.notifier).state = true;
+    });
     final settings = ref.read(settingsProvider);
     final bookId = widget.bookId;
     if (bookId != null && widget.initialChapterIndex == 0) {
