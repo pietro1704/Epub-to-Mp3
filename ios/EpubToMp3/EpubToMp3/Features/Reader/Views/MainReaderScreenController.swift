@@ -212,6 +212,8 @@ final class MainReaderScreenController: UIViewController {
             .store(in: &cancellables)
     }
 
+    private var warmedModelMenuBookID: String?
+
     private func render() {
         if let book = currentBook {
             showBook(book)
@@ -235,7 +237,19 @@ final class MainReaderScreenController: UIViewController {
         readerNavigation.readerNavigationBackground.isHidden = true
     }
 
+    private func warmModelMenu(for book: BookEntity) {
+        guard warmedModelMenuBookID != book.id else { return }
+        warmedModelMenuBookID = book.id
+        let bookID = book.id
+        ReaderModelSwitch.warm(request: ReaderVoicePickerRequest(settings: settings, library: library, player: player,
+            currentContext: { [weak self] in
+                guard let self, let book = currentBook, book.id == bookID else { return nil }
+                return listeningSession.voicePickerContext(for: book)
+            }, restart: { _, _ in }))
+    }
+
     private func showBook(_ book: BookEntity) {
+        warmModelMenu(for: book)
         emptyPresentation.isHidden = true
         readerNavigation.readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {

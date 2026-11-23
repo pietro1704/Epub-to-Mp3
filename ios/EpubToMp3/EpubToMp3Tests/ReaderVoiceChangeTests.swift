@@ -334,4 +334,69 @@ final class ReaderVoiceChangeTests: XCTestCase {
         content.choose(.systemDefault, picker: picker, settings: settings)
         XCTAssertEqual(changes, [cadu], "Choosing the active voice changes nothing")
     }
+
+    // MARK: READER-MODEL-MENU-INSTANT — the model button must open the menu at once
+
+    private func menuRequest(_ suite: String) throws -> (ReaderVoicePickerRequest, ReaderVoicePicker, UserDefaults) {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let settings = AppSettings(defaults: defaults)
+        let book = BookEntity(id: "menu-book-\(suite)", title: "Book", bookmark: Data([1]),
+            displayFilename: "book.epub", addedAt: Date())
+        let request = ReaderVoicePickerRequest(settings: settings, library: LibraryStore(defaults: defaults),
+            player: AudioPlayer(), currentContext: { .init(book: book) }, restart: { _, _ in })
+        let picker = try XCTUnwrap(request.picker())
+        return (request, picker, defaults)
+    }
+
+    /// Neither the system-voice scan nor the catalogue listing may run on the main thread: both blocked the
+    /// reader (and so the tap that opens the menu) for a noticeable time.
+    func testOpeningTheModelMenuNeverBlocksTheMainThreadWithTheVoiceScanOrTheCatalogue() async throws {
+        ReaderModelSwitch.resetCachesForTesting()
+        let suite = "menu-main-\(UUID().uuidString)"
+        let (request, picker, defaults) = try menuRequest(suite)
+        defer { defaults.removePersistentDomain(forName: suite); ReaderModelSwitch.resetCachesForTesting() }
+        final class Probe: ModelsByLanguageModelTests.FakeSource, @unchecked Sendable {
+            let lock2 = NSLock(); var snapshotOnMain: [Bool] = []
+            override func snapshot(language: String) async throws -> SpeechModelSnapshot {
+                lock2.lock(); snapshotOnMain.append(Thread.isMainThread); lock2.unlock()
+                return try await super.snapshot(language: language)
+            }
+        }
+        let source = Probe()
+        let voicesOnMain = LockedBool()
+        let content = await ReaderModelSwitch.content(picker: picker, request: request, source: source,
+            systemVoiceLanguages: { voicesOnMain.record(Thread.isMainThread); return ["pt"] },
+            languageOf: { _ in "pt-BR" })
+        XCTAssertNotNil(content)
+        XCTAssertEqual(voicesOnMain.values, [false], "The installed-voice scan must run off the main thread")
+        XCTAssertEqual(source.snapshotOnMain, [false], "The catalogue listing must run off the main thread")
+    }
+
+    /// Once warmed for the book, the menu content comes straight from the cache even when the catalogue is slow.
+    func testTheModelMenuOpensInstantlyFromTheCacheWhenTheCatalogueIsSlow() async throws {
+        ReaderModelSwitch.resetCachesForTesting()
+        let suite = "menu-cache-\(UUID().uuidString)"
+        let (request, picker, defaults) = try menuRequest(suite)
+        defer { defaults.removePersistentDomain(forName: suite); ReaderModelSwitch.resetCachesForTesting() }
+        let fast = ModelsByLanguageModelTests.FakeSource()
+        let warmed = await ReaderModelSwitch.content(picker: picker, request: request, source: fast,
+            systemVoiceLanguages: { ["pt"] }, languageOf: { _ in "pt-BR" })
+        XCTAssertNotNil(warmed)
+
+        let slow = ModelsByLanguageModelTests.FakeSource()
+        slow.snapshotDelayNanoseconds = 3_000_000_000
+        let started = Date()
+        let again = await ReaderModelSwitch.content(picker: picker, request: request, source: slow,
+            systemVoiceLanguages: { ["pt"] }, languageOf: { _ in "pt-BR" })
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertNotNil(again)
+        XCTAssertLessThan(elapsed, 0.3, "The menu must not wait for the catalogue when it was already listed for this book")
+        XCTAssertEqual(again?.choices.map(\.title), warmed?.choices.map(\.title))
+    }
+}
+
+private final class LockedBool: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var values: [Bool] = []
+    func record(_ value: Bool) { lock.lock(); values.append(value); lock.unlock() }
 }
