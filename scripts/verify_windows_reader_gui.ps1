@@ -147,10 +147,10 @@ public static class ReaderTestDesktop
             if (!IsNodeFailure(error)) throw;
             string extra = "";
             // Probe what the node still answers, to tell a dead node from a variant problem.
-            try { extra += " childCount=" + accessible.accChildCount; } catch (Exception e1) { extra += " childCount=err"; }
-            try { extra += " value=" + ReadValue(accessible, childId); } catch (Exception e2) { extra += " value=err"; }
-            try { extra += " desc=" + ReadDescription(accessible, childId); } catch (Exception e3) { extra += " desc=err"; }
-            try { extra += " role=" + ReadRole(accessible, childId); } catch (Exception e4) { extra += " role=err"; }
+            try { extra += " childCount=" + accessible.accChildCount; } catch (Exception) { extra += " childCount=err"; }
+            try { extra += " value=" + ReadValue(accessible, childId); } catch (Exception) { extra += " value=err"; }
+            try { extra += " desc=" + ReadDescription(accessible, childId); } catch (Exception) { extra += " desc=err"; }
+            try { extra += " role=" + ReadRole(accessible, childId); } catch (Exception) { extra += " role=err"; }
             element.Name = "[name unavailable depth=" + depth + " childId=" + childId + extra + ": " + error.Message + "]";
         }
         try { element.Role = ReadRole(accessible, childId); }
