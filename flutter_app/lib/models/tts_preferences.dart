@@ -105,6 +105,17 @@ class TtsPreferences {
     allowOnlineFallback: allowOnlineFallback,
     policyVersion: policyVersion,
   );
+  /// Policy 2 continues with an installed system voice when the chosen voices
+  /// fail; policy 3 continues natively but only with the chosen voices.
+  bool get allowAutomaticSystemFallback => policyVersion == 2;
+
+  TtsPreferences withAutomaticSystemFallback(bool allowed) => TtsPreferences(
+    primary: primary,
+    secondary: secondary,
+    allowOnlineFallback: allowOnlineFallback,
+    policyVersion: allowed ? 2 : 3,
+  );
+
   const TtsPreferences({
     this.primary = TtsSelection.faber,
     this.secondary,

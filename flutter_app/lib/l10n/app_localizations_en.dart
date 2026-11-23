@@ -423,6 +423,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Send failed segments to Edge only when enabled.';
 
   @override
+  String get ttsAutomaticSystemFallback => 'Automatic system voice fallback';
+
+  @override
+  String get ttsAutomaticSystemFallbackDescription =>
+      'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.';
+
+  @override
   String get ttsUsePreferences => 'Use audio preferences';
 
   @override
