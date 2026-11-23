@@ -482,4 +482,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerAppearance => 'Text appearance';
+
+  @override
+  String get readerPlayFromHere => 'Play from here';
 }

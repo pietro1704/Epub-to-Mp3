@@ -5,20 +5,37 @@ import 'package:flutter/rendering.dart';
 /// Geometry measured from the actual rich text, including inline resources.
 /// Source positions are UTF-16 offsets into the unmodified chapter text.
 class ReaderDocumentGeometry {
-  ReaderDocumentGeometry(this.height, this.fragments, this.paragraphs);
+  ReaderDocumentGeometry(
+    this.height,
+    this.fragments,
+    this.paragraphs, [
+    this.segments = const [],
+  ]);
 
   final double height;
   final List<Rect> fragments;
   final List<MappedReaderParagraph> paragraphs;
 
+  /// Every rendered paragraph in reading order with where its text starts in
+  /// the document's selectable content (the axis of a selection range).
+  final List<ReaderContentSegment> segments;
+
   static ReaderDocumentGeometry measure(RenderBox content, String source) {
     final fragments = <Rect>[];
     final paragraphs = <MappedReaderParagraph>[];
+    final segments = <ReaderContentSegment>[];
     final normalized = NormalizedReaderText(source);
     var cursor = 0;
+    var contentCursor = 0;
     void visit(RenderObject object) {
       if (object is RenderParagraph && object.hasSize) {
         final text = object.text.toPlainText(includeSemanticsLabels: false);
+        // A selection range counts the text of the document, not the widget
+        // placeholders of wrapper paragraphs that hold nothing else.
+        if (text.replaceAll('\uFFFC', '').isNotEmpty) {
+          segments.add(ReaderContentSegment(object, contentCursor, text.length));
+          contentCursor += text.length;
+        }
         final origin = object.localToGlobal(Offset.zero, ancestor: content);
         var textOffset = 0;
         void protect(InlineSpan span) {
@@ -67,7 +84,12 @@ class ReaderDocumentGeometry {
 
     visit(content);
     fragments.sort((a, b) => a.top.compareTo(b.top));
-    return ReaderDocumentGeometry(content.size.height, fragments, paragraphs);
+    return ReaderDocumentGeometry(
+      content.size.height,
+      fragments,
+      paragraphs,
+      segments,
+    );
   }
 
   /// Boundaries for page turns and source anchor restoration.
@@ -87,6 +109,26 @@ class ReaderDocumentGeometry {
       offsets.add(end);
     }
     return offsets;
+  }
+
+  /// Source UTF-16 offset of a selection offset counted over the selectable
+  /// content of the whole document. A position inside a paragraph that cannot
+  /// be mapped (it holds inline images) moves to the next one that can.
+  int? sourceOffsetForContentOffset(int contentOffset) {
+    var offset = contentOffset;
+    for (final segment in segments) {
+      if (offset >= segment.start + segment.length) continue;
+      final mapped = paragraphs
+          .where((paragraph) => identical(paragraph.render, segment.render))
+          .firstOrNull;
+      if (mapped != null) {
+        return mapped.sourceOffsetForLocal(
+          (offset - segment.start).clamp(0, segment.length),
+        );
+      }
+      offset = segment.start + segment.length;
+    }
+    return null;
   }
 
   int? sourceOffsetAt(double top) {
@@ -123,6 +165,14 @@ class ReaderDocumentGeometry {
     }
     return (top, bottom);
   }
+}
+
+/// One rendered paragraph's slice of the document's selectable content.
+class ReaderContentSegment {
+  const ReaderContentSegment(this.render, this.start, this.length);
+  final RenderParagraph render;
+  final int start;
+  final int length;
 }
 
 /// Whitespace normalization retains a reversible mapping to source UTF-16.
@@ -166,8 +216,11 @@ class MappedReaderParagraph {
   final NormalizedReaderText source;
   final int start;
 
-  int sourceOffsetAt(Offset position) {
-    final local = render.getPositionForOffset(position).offset;
+  int sourceOffsetAt(Offset position) =>
+      sourceOffsetForLocal(render.getPositionForOffset(position).offset);
+
+  /// [local] is an index into this paragraph's own plain text.
+  int sourceOffsetForLocal(int local) {
     var normalized = rendered.offsets.indexWhere((offset) => offset >= local);
     if (normalized < 0) normalized = rendered.text.length;
     return source.offsets[(start + normalized).clamp(0, source.text.length)];

@@ -131,6 +131,23 @@ extension _InstantReaderTools on _InstantReaderViewState {
         );
   }
 
+  /// "Play from here": the selection start becomes the listening start. The
+  /// reader's offsets are UTF-16 into the chapter text; listening starts count
+  /// Unicode scalars, so the position is converted exactly.
+  void _playFromHere(Chapter chapter, int utf16Offset) {
+    final position = widget.fulltext.chapters.indexOf(chapter);
+    if (position < 0) return;
+    try {
+      unawaited(
+        widget.onListenFrom!(
+          ReaderListeningPosition.fromUtf16(position, chapter.text, utf16Offset),
+        ),
+      );
+    } on FormatException {
+      // A selection outside the chapter text starts nothing.
+    }
+  }
+
   /// Moves to the playing chapter named by a pending player request for this
   /// book. The request carries the chapter's place in the book, the axis of
   /// the audio queue, which is also the reader's own chapter axis.

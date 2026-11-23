@@ -86,6 +86,13 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     if (mounted) setState(() => _isConverting = false);
   }
 
+  /// "Play from here": listening restarts at the chosen position, replacing a
+  /// job that is already running, exactly like a Play press from the reader.
+  Future<void> _listenFrom(ReaderListeningPosition position) async {
+    _readerListeningPosition = position;
+    await _startConversion();
+  }
+
   /// A new narration model applies immediately while listening: a fresh job
   /// starts at the reader's current position and captures the saved model.
   /// Idle readers only persist the choice; the next listen uses it.

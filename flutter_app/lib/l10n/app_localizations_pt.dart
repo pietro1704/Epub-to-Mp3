@@ -482,4 +482,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readerAppearance => 'Aparência do texto';
+
+  @override
+  String get readerPlayFromHere => 'Tocar daqui';
 }

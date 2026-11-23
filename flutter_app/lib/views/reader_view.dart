@@ -29,6 +29,9 @@ class ReaderView extends ConsumerStatefulWidget {
   final int initialSourceOffset;
   final TextRange? measuredHighlight;
   final ValueChanged<int?>? onVisibleTextOffset;
+
+  /// Source UTF-16 offset chosen with "Play from here" on selected text.
+  final ValueChanged<int>? onPlayFromHere;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
@@ -51,6 +54,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.initialSourceOffset = 0,
     this.measuredHighlight,
     this.onVisibleTextOffset,
+    this.onPlayFromHere,
     required this.spans,
     this.currentSentenceId,
     this.onJumpToSentence,
@@ -225,6 +229,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               bodyStyle: bodyStyle,
               headingStyle: headingStyle,
               onVisibleTextOffset: widget.onVisibleTextOffset,
+              onPlayFromHere: widget.onPlayFromHere,
               onCenterTap: widget.onCenterTap,
               onAutoHideChrome: widget.onAutoHideChrome,
               onNextChapter: widget.onAdvanceChapter,

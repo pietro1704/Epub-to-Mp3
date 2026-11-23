@@ -969,6 +969,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Text appearance'**
   String get readerAppearance;
+
+  /// No description provided for @readerPlayFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Play from here'**
+  String get readerPlayFromHere;
 }
 
 class _AppLocalizationsDelegate

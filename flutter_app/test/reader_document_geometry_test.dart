@@ -46,4 +46,37 @@ void main() {
       expect(text.offsets[text.text.lastIndexOf('Again.')], 19);
     },
   );
+
+  testWidgets('a selection offset maps to the source offset of its paragraph', (tester) async {
+    final key = GlobalKey();
+    const source = 'Alpha one.\nBeta two here.\nGamma three.';
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 300,
+            child: Column(
+              key: key,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [Text('Alpha one.'), Text('Beta two here.'), Text('Gamma three.')],
+            ),
+          ),
+        ),
+      ),
+    );
+    final geometry = ReaderDocumentGeometry.measure(
+      key.currentContext!.findRenderObject()! as RenderBox,
+      source,
+    );
+    expect(geometry.segments.map((s) => s.length), [10, 14, 12]);
+    // Content offsets run across paragraphs without separators.
+    expect(geometry.sourceOffsetForContentOffset(0), 0);
+    expect(geometry.sourceOffsetForContentOffset(3), 3);
+    expect(geometry.sourceOffsetForContentOffset(10 + 5), source.indexOf('Beta') + 5);
+    expect(geometry.sourceOffsetForContentOffset(10 + 14 + 6), source.indexOf('Gamma') + 6);
+    expect(geometry.sourceOffsetForContentOffset(36), isNull, reason: 'past the last paragraph');
+  });
+
 }

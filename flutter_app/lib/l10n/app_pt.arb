@@ -176,5 +176,6 @@
   "readerNarrationModel": "Modelo de narração",
   "readerFootnotes": "Notas de rodapé",
   "openReaderAtPlayback": "Abrir no leitor",
-  "readerAppearance": "Aparência do texto"
+  "readerAppearance": "Aparência do texto",
+  "readerPlayFromHere": "Tocar daqui"
 }

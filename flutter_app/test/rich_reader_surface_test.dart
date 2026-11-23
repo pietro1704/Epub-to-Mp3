@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -146,4 +148,83 @@ void main() {
       expect(settings.readerOverrideFontSize, true);
     },
   );
+
+  testWidgets('selected text offers Play from here at the selection start', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    const html = '<p>First paragraph is here.</p><p>Second paragraph follows now.</p>';
+    final offsets = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: text, html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onPlayFromHere: offsets.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Double-click a word of the second paragraph (it selects the word), then
+    // open the desktop context menu on it with a secondary click.
+    final second = tester.getRect(find.textContaining('Second', findRichText: true));
+    final word = second.centerLeft + const Offset(20, 0);
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      word,
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Play from here'), findsOneWidget);
+    await tester.tap(find.text('Play from here'));
+    await tester.pump();
+    expect(offsets, hasLength(1));
+    expect(offsets.single, greaterThanOrEqualTo(text.indexOf('Second')));
+    expect(offsets.single, lessThan(text.indexOf('Second') + 8),
+        reason: 'the start of the second paragraph, not the first');
+  });
+
+  testWidgets('without a play callback the text is not selectable', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: 'One.', html: '<p>One.</p>'),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectableRegion), findsNothing);
+  });
+
 }

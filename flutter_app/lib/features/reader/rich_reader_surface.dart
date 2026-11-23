@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectionStatus;
 import 'package:flutter/services.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/app_settings.dart';
 import '../../models/ebook_fulltext.dart';
 import '../../views/reader_chapter_content.dart';
@@ -22,6 +24,7 @@ class RichReaderSurface extends StatefulWidget {
     this.onNextChapter,
     this.onPreviousChapter,
     this.onVisibleTextOffset,
+    this.onPlayFromHere,
     this.highlight,
     this.initialSourceOffset = 0,
   });
@@ -33,6 +36,10 @@ class RichReaderSurface extends StatefulWidget {
   final VoidCallback? onCenterTap, onAutoHideChrome;
   final bool Function()? onNextChapter, onPreviousChapter;
   final ValueChanged<int?>? onVisibleTextOffset;
+
+  /// Offered as "Play from here" on selected text, with the source UTF-16
+  /// offset of the selection start. Selection is enabled only when set.
+  final ValueChanged<int>? onPlayFromHere;
   final TextRange? highlight;
 
   @override
@@ -43,6 +50,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   final _content = GlobalKey();
   final _scroll = ScrollController();
   final _focus = FocusNode();
+  final _selection = SelectionListenerNotifier();
   ReaderDocumentGeometry? _geometry;
   Object? _signature;
   Object? _documentSignature;
@@ -51,6 +59,49 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   int? _restoreSource;
   double _height = 0;
   bool _measurementPending = false;
+
+  /// The chapter text made selectable, with "Play from here" on a selection.
+  Widget? _selectableDocument() {
+    final document = _document;
+    if (document == null || widget.onPlayFromHere == null) return document;
+    return SelectionArea(
+      contextMenuBuilder: _contextMenu,
+      child: SelectionListener(selectionNotifier: _selection, child: document),
+    );
+  }
+
+  Widget _contextMenu(BuildContext context, SelectableRegionState region) {
+    final items = [...region.contextMenuButtonItems];
+    final selected =
+        _selection.registered &&
+        _selection.selection.status == SelectionStatus.uncollapsed;
+    if (selected) {
+      items.insert(
+        0,
+        ContextMenuButtonItem(
+          label: AppLocalizations.of(context)!.readerPlayFromHere,
+          onPressed: () {
+            region.hideToolbar();
+            _playFromSelection();
+          },
+        ),
+      );
+    }
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: region.contextMenuAnchors,
+      buttonItems: items,
+    );
+  }
+
+  void _playFromSelection() {
+    final range = _selection.registered ? _selection.selection.range : null;
+    if (range == null) return;
+    final start = range.startOffset < range.endOffset
+        ? range.startOffset
+        : range.endOffset;
+    final offset = _geometry?.sourceOffsetForContentOffset(start);
+    if (offset != null) widget.onPlayFromHere?.call(offset);
+  }
 
   bool get _paginated => widget.settings.readerLayout == ReaderLayout.paginated;
   List<double> get _pages => _geometry?.pageOffsets(_height) ?? const [0];
@@ -287,7 +338,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                                     horizontal: widget.settings.readerMargin,
                                     vertical: 16,
                                   ),
-                                  child: _document,
+                                  child: _selectableDocument(),
                                 ),
                               ),
                             ),
@@ -374,6 +425,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
 
   @override
   void dispose() {
+    _selection.dispose();
     _scroll.dispose();
     _focus.dispose();
     super.dispose();

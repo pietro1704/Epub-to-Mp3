@@ -483,4 +483,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get readerAppearance => 'Apariencia del texto';
+
+  @override
+  String get readerPlayFromHere => 'Reproducir desde aquí';
 }
