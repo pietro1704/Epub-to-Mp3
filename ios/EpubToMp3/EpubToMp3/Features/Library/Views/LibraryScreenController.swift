@@ -98,9 +98,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(
                 image: UIImage(systemName: "plus.circle.fill"),
-                style: .plain,
-                target: self,
-                action: #selector(addTapped)
+                menu: makeAddMenu()
             ),
             UIBarButtonItem(
                 image: UIImage(systemName: "ellipsis.circle"),
@@ -188,7 +186,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         config.image = UIImage(systemName: "plus")
         config.imagePadding = 8
         addButton.configuration = config
-        addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+        addButton.menu = makeAddMenu()
+        addButton.showsMenuAsPrimaryAction = true
         addButton.accessibilityLabel = L10n.string("library.addBook")
         addButton.accessibilityHint = L10n.string("library.addBookHint")
         addButton.translatesAutoresizingMaskIntoConstraints = false
@@ -271,8 +270,29 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         ])
     }
 
-    @objc
-    private func addTapped() {
+    private func makeAddMenu() -> UIMenu {
+        UIMenu(children: [
+            UIAction(title: L10n.string("discovery.chooseFiles"), image: UIImage(systemName: "folder")) {
+                [weak self] _ in self?.chooseFiles()
+            },
+            UIAction(title: L10n.string("discovery.title"), image: UIImage(systemName: "books.vertical")) {
+                [weak self] _ in self?.showPublicDomainDiscovery()
+            },
+        ])
+    }
+
+    private func showPublicDomainDiscovery() {
+        let discovery = PublicDomainDiscovery { [library] in try await library.importBookAsync(from: $0) }
+        let controller = PublicDomainViewController(discovery: discovery) { [weak self] book in
+            self?.library.update(Self.touchLastOpened(book))
+            ReaderSessionState.setCurrentlyReading(bookID: book.id)
+        }
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.isModalInPresentation = true
+        present(navigation, animated: true)
+    }
+
+    private func chooseFiles() {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: Self.acceptedTypes, asCopy: false)
         picker.delegate = self
         picker.allowsMultipleSelection = true

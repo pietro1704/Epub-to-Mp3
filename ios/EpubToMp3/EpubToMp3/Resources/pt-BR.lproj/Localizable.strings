@@ -287,7 +287,7 @@
 "convert.error.unsupportedBookType" = "Este livro não tem texto para converter em áudio.";
 
 /* === LibraryView === */
-"library.addBookHint" = "Escolha um ou mais livros EPUB ou PDF.";
+"library.addBookHint" = "Escolha arquivos locais ou encontre livros em domínio público.";
 "library.bookList" = "Biblioteca de livros";
 "library.tags" = "Tags";
 "player.openFullPlayer" = "Abrir player completo";
@@ -590,3 +590,35 @@
 "models.missing.message" = "Nenhum modelo baixado lê o idioma deste livro (%@). Baixe um na tela de Modelos.";
 "models.missing.open" = "Abrir Modelos";
 "models.systemVoice" = "Voz do sistema";
+
+/* Free book discovery */
+"discovery.chooseFiles" = "Escolher arquivos…";
+"discovery.title" = "Encontrar livros gratuitos";
+"discovery.search" = "Título ou autor";
+"discovery.searchAction" = "Buscar";
+"discovery.language" = "Idioma";
+"discovery.language.all" = "Todos os idiomas";
+"discovery.language.pt" = "Português";
+"discovery.language.en" = "Inglês";
+"discovery.gutenbergRights" = "Project Gutenberg · Domínio público nos EUA. Confira os direitos da edição onde você mora.";
+"discovery.brazilCatalog" = "Brasil · Consultar MEC Livros (abre o navegador)";
+"discovery.more" = "Mais resultados";
+"discovery.download" = "Baixar e importar";
+"discovery.source" = "Ver fonte da edição";
+"discovery.close" = "Fechar";
+"discovery.searching" = "Buscando em catálogos de livros…";
+"discovery.noResults" = "Nenhuma edição compatível nesta página.";
+"discovery.searchFailed" = "Busca indisponível. Tente novamente.";
+"discovery.downloading" = "Baixando a edição…";
+"discovery.importing" = "Importando para sua biblioteca…";
+"discovery.imported" = "Disponível na sua biblioteca.";
+"discovery.downloadFailed" = "Falha no download. Selecione a edição para tentar novamente.";
+"discovery.importFailed" = "Falha na importação. Selecione a edição para tentar novamente.";
+"discovery.cancelled" = "Cancelado.";
+"discovery.gutenbergUnavailable" = "A busca do Project Gutenberg está indisponível. Veja as edições verificadas que correspondem à sua busca.";
+"discovery.provider.gutenberg" = "Project Gutenberg";
+"discovery.provider.brasiliana" = "Biblioteca Brasiliana Guita e José Mindlin (USP)";
+"discovery.provider.camara" = "Edições Câmara";
+"discovery.rights.gutenberg" = "Domínio público nos EUA";
+"discovery.rights.brasiliana" = "Domínio público segundo a BBM/USP";
+"discovery.rights.camara" = "Download gratuito da editora · Direitos reservados no PDF";
