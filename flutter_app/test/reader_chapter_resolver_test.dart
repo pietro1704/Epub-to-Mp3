@@ -112,4 +112,36 @@ void main() {
           reason: 'fallback should treat playable index as fulltext position');
     });
   });
+
+  group('ReaderChapterResolver (Rust-parsed indices)', () {
+    // Rust numbers chapters from 1, while the audio queue counts places in the
+    // book from 0: the queue must never be compared with FulltextChapter.index.
+    final fulltext = EbookFulltext(
+      jobId: 'j',
+      bookTitle: 'Rust Book',
+      bookAuthor: null,
+      chapters: [
+        FulltextChapter(index: 1, name: 'First', text: 'first text'),
+        FulltextChapter(index: 2, name: 'Second', text: 'second text'),
+        FulltextChapter(index: 3, name: 'Third', text: 'third text'),
+      ],
+    );
+    final queue = [
+      for (var i = 0; i < 3; i++)
+        ChapterProgress(index: i, name: 'Ch$i', status: 'completed', downloadUrl: 'u$i'),
+    ];
+
+    test('the queue position selects the chapter at that place in the book', () {
+      for (final (playable, text) in [(0, 'first text'), (1, 'second text'), (2, 'third text')]) {
+        expect(
+          ReaderChapterResolver.resolveFulltextChapter(
+            fulltext: fulltext,
+            playableChapters: queue,
+            playableIndex: playable,
+          )?.text,
+          text,
+        );
+      }
+    });
+  });
 }

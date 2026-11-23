@@ -93,7 +93,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final binding = MeasuredPlaybackBinding(
       player: player,
       bookId: widget.bookId ?? '',
-      chapterIndex: chapter.index,
+      // The audio queue names chapters by their place in the book.
+      chapterIndex: widget.fulltext.chapters.indexOf(chapter),
       source: chapter.text,
     );
     _measuredBinding = binding;
@@ -311,7 +312,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
         player.currentBookId == widget.bookId &&
         queueIndex >= 0 &&
         queueIndex < player.chapters.length &&
-        player.chapters[queueIndex].index == chapter.index;
+        player.chapters[queueIndex].index ==
+            widget.fulltext.chapters.indexOf(chapter);
     _bindMeasuredPlayback(chapter);
     final spans = chapter.splitSentences();
     final bg = ReaderThemeColors.background(
