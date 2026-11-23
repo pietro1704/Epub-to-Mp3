@@ -13,6 +13,60 @@ final class ReaderChapterPositionTests: XCTestCase {
         try await verifyTOC(hasAudio: true)
     }
 
+    func testContentsSelectionMadeDuringWarmOpenSurvivesCatalogHydration() async throws {
+        let fixture = try PositionFixture(hasAudio: false)
+        defer { fixture.cleanUp() }
+        let original = try XCTUnwrap(LocalFulltextCache.read(bookId: fixture.id))
+        let chapters = zip([1, 7, 18], original.chapters).map { index, chapter in
+            EbookFulltext.Chapter(index: index, name: chapter.name, text: chapter.text, html: nil,
+                                  css: nil, charCount: chapter.charCount, segments: nil)
+        }
+        let payload = EbookFulltext(jobId: fixture.id, bookTitle: original.bookTitle,
+                                    bookAuthor: original.bookAuthor, chapters: chapters)
+        LocalFulltextCache.save(payload, bookId: fixture.id)
+        ReaderProgressStore.save(bookId: fixture.id, chapterIndex: 0, offsetFraction: 0)
+        try await fixture.store.write(bookID: fixture.id, chapterOrdinal: 0,
+            fulltextURL: try XCTUnwrap(LocalFulltextCache.storageURL(bookId: fixture.id)))
+        LocalFulltextCache.evictInMemoryPayload(bookId: fixture.id)
+
+        var sender: AsyncStream<EbookFulltext>.Continuation?
+        let gatedCatalog = AsyncStream<EbookFulltext> { sender = $0 }
+        let delivery = try XCTUnwrap(sender)
+        defer { delivery.finish() }
+        try await fixture.open(waitForCatalog: false, readFulltext: { _ in
+            await gatedCatalog.first { _ in true }
+        })
+        let reader = try XCTUnwrap(fixture.controller)
+        XCTAssertEqual(reader.currentReaderChapterIndex, 0)
+        XCTAssertEqual(reader.playbackChapterEstimates.count, 1, "The installed chapter must precede full catalog hydration")
+
+        // Two real sheet selections precede the delayed catalog; source indices are sparse.
+        for row in [2, 1] {
+            var sheet: UIViewController?
+            reader.contentsPresentation.presentTOC(presentIn: { sheet = $0 })
+            let navigation = try XCTUnwrap(sheet as? UINavigationController)
+            let contents = try XCTUnwrap(navigation.topViewController as? TocScreenController)
+            contents.loadViewIfNeeded()
+            XCTAssertEqual(contents.tableView.numberOfRows(inSection: 0), 3)
+            contents.tableView(contents.tableView, didSelectRowAt: IndexPath(row: row, section: 0))
+        }
+        XCTAssertTrue(fixture.textView()?.text.hasPrefix("Chapter 1.") == true)
+        XCTAssertEqual(ReaderProgressStore.read(bookId: fixture.id)?.chapterIndex, 0)
+
+        delivery.yield(payload)
+        delivery.finish()
+        for _ in 0..<250 {
+            await fixture.settle()
+            if reader.playbackChapterEstimates.count == payload.chapters.count,
+               reader.currentReaderChapterIndex == 6 { break }
+        }
+        XCTAssertEqual(reader.playbackChapterEstimates.count, payload.chapters.count)
+        XCTAssertTrue(fixture.textView()?.text.hasPrefix("Chapter 2.") == true)
+        XCTAssertEqual(reader.currentReaderChapterIndex, 6)
+        XCTAssertEqual(try fixture.offset(), 0, accuracy: 0.5)
+        XCTAssertEqual(ReaderProgressStore.read(bookId: fixture.id)?.chapterIndex, 1)
+    }
+
     func testPlaybackLocationSurvivesHydrationAndLatestSelectionWins() async throws {
         try await verifyPlaybackLocationAcrossHydration(supersedesPendingLocation: false)
         try await verifyPlaybackLocationAcrossHydration(supersedesPendingLocation: true)
