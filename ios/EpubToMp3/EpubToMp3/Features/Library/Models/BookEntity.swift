@@ -81,6 +81,8 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// section).
     var lastOpenedAt: Date?
     var lastPlayedAt: Date?
+    /// The latest time the listener opened the book (to read or to listen) or confirmed audio of it playing.
+    var lastInteractionAt: Date { max(lastOpenedAt ?? .distantPast, lastPlayedAt ?? .distantPast) }
 
     /// Resume point inside the book — chapter index + position seconds.
     /// Mirrors what `ResumeStore` keeps per (jobId, chapter).

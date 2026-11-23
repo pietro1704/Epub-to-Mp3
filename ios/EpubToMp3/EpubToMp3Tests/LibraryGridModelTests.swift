@@ -19,7 +19,7 @@ final class LibraryGridModelTests: XCTestCase {
             id: id,
             title: title,
             author: author,
-            bookmark: Data(),
+            bookmark: Data([1]),
             displayFilename: "\(id).epub",
             addedAt: addedAt,
             lastOpenedAt: lastOpenedAt,
@@ -47,18 +47,48 @@ final class LibraryGridModelTests: XCTestCase {
         XCTAssertEqual(LibraryGridModel.SortMode.saved(in: reopened), .lastPlayed)
     }
 
-    func testDefaultSortPutsRecentlyPlayedBooksBeforeBooksOnlyOpenedOrAdded() throws {
-        var earlier = make(id: "earlier", title: "Earlier", addedAt: date(100), lastOpenedAt: date(800))
+    func testDefaultSortOrdersByTheLatestOpenOrPlayAndKeepsNeverTouchedBooksLast() throws {
+        var earlier = make(id: "earlier", title: "Earlier", addedAt: date(100), lastOpenedAt: date(500))
         earlier.lastPlayedAt = date(300)
         var recent = make(id: "recent", title: "Recent", addedAt: date(200))
-        recent.lastPlayedAt = date(400)
+        recent.lastPlayedAt = date(700)
         let unopened = make(id: "new", title: "New", addedAt: date(900))
-        let readOnly = make(id: "read", title: "Read", addedAt: date(500), lastOpenedAt: date(950))
+        let readOnly = make(id: "read", title: "Read", addedAt: date(50), lastOpenedAt: date(950))
         let decoded = try JSONDecoder().decode([BookEntity].self,
             from: JSONEncoder().encode([earlier, unopened, recent, readOnly]))
         XCTAssertEqual(LibraryGridModel(books: decoded).arrangedBooks().map(\.id),
-                       ["recent", "earlier", "new", "read"])
+                       ["read", "recent", "earlier", "new"],
+                       "Opened-only books rank by their open time, played books by the later of open and play")
         XCTAssertNil(decoded[1].lastPlayedAt)
+    }
+
+    /// LIB-RECENCY-ON-OPEN: opening book B (to read or to listen) puts it first at once, with no audio played.
+    @MainActor
+    func testOpeningABookMovesItToTheFirstPositionWithoutPlayingAudio() throws {
+        let suite = "library-open-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let a = make(id: "a", title: "A", addedAt: date(100), lastOpenedAt: date(500))
+        let b = make(id: "b", title: "B", addedAt: date(200))
+        defaults.set(try JSONEncoder().encode([a, b]), forKey: "library.books.v1")
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
+        func order() -> [String] { LibraryGridModel(books: library.books).arrangedBooks().map(\.id) }
+        XCTAssertEqual(order(), ["a", "b"], "A was opened before; B was only added")
+        // Reading: opening B for the reader stamps it, with no playback recorded.
+        var opened = b
+        opened.lastOpenedAt = Date()
+        library.update(opened)
+        XCTAssertEqual(order(), ["b", "a"])
+        XCTAssertNil(library.books.first { $0.id == "b" }?.lastPlayedAt, "No audio was played")
+        // Listening: the next book opened to listen takes first place the same way.
+        var listened = a
+        listened.lastOpenedAt = Date().addingTimeInterval(5)
+        library.update(listened)
+        XCTAssertEqual(order(), ["a", "b"])
+        XCTAssertNil(library.books.first { $0.id == "a" }?.lastPlayedAt)
+        // Confirmed playback still counts and ranks by whichever happened last.
+        library.recordPlayback(of: "b", at: Date().addingTimeInterval(60))
+        XCTAssertEqual(order(), ["b", "a"])
     }
 
     @MainActor

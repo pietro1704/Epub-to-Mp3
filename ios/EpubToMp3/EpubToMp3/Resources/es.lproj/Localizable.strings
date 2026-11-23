@@ -31,7 +31,7 @@
 "library.more" = "Más opciones de la biblioteca";
 "library.columns" = "Columnas";
 "library.columnCount" = "%d";
-"library.lastPlayed" = "Reproducidos recientemente";
+"library.lastPlayed" = "Leídos o reproducidos recientemente";
 "library.lastOpened" = "Último abierto";
 "library.titleSort" = "Título";
 "library.dateAdded" = "Fecha de adición";
