@@ -57,6 +57,16 @@ extension NativeResponsiveScreenTests {
 #if os(iOS)
 #else
     func testReaderAppearanceControlsHaveSpokenNames() throws {
+        // The reader toolbar shows the most recently used tool, persisted in the app's own defaults
+        // (the test host shares them with the real app). Pin the Appearance tool for this test and
+        // restore whatever the machine had, so the outcome does not depend on how the app was used.
+        let toolKey = "reader.recentTool.v1"
+        let savedTool = UserDefaults.standard.object(forKey: toolKey)
+        UserDefaults.standard.set(ReaderTool.appearance.rawValue, forKey: toolKey)
+        defer {
+            if let savedTool { UserDefaults.standard.set(savedTool, forKey: toolKey) }
+            else { UserDefaults.standard.removeObject(forKey: toolKey) }
+        }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         defer { player.stop() }
         let reader = MacReaderViewController(library: LibraryStore(defaults: defaults),

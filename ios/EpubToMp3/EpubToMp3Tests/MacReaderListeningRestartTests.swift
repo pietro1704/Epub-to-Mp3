@@ -211,9 +211,18 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let contents = try XCTUnwrap(descendants(root.view).compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "reader.more" })
         let command = try XCTUnwrap(contents.menu?.items.first { ($0.representedObject as? String) == ReaderTool.contents.rawValue })
-        NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
-        let table = try XCTUnwrap(NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
-            .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == 12 })
+        // `showTOC` presents nothing until the book's full text has loaded, and that happens a little
+        // after the first page is on screen (visibly later in a loaded full-suite run). Ask again
+        // until the contents list is up instead of asking once.
+        func contentsTable() -> NSTableView? {
+            NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
+                .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == 12 }
+        }
+        for _ in 0..<100 where contentsTable() == nil {
+            NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let table = try XCTUnwrap(contentsTable(), "The contents list must appear")
         table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
         for _ in 0..<100 where standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) != 10 {
             try await Task.sleep(nanoseconds: 50_000_000)
