@@ -138,7 +138,17 @@ public static class ReaderTestDesktop
         var element = new FlutterElement();
         // Each property can fail independently on a replaced node; record the reason instead of losing the subtree.
         try { element.Name = ReadName(accessible, childId); }
-        catch (Exception error) { if (!IsNodeFailure(error)) throw; element.Name = "[name unavailable: " + error.Message + "]"; }
+        catch (Exception error)
+        {
+            if (!IsNodeFailure(error)) throw;
+            string extra = "";
+            // Probe what the node still answers, to tell a dead node from a variant problem.
+            try { extra += " childCount=" + accessible.accChildCount; } catch (Exception e1) { extra += " childCount=err"; }
+            try { extra += " value=" + accessible.get_accValue(childId); } catch (Exception e2) { extra += " value=err"; }
+            try { extra += " desc=" + accessible.get_accDescription(childId); } catch (Exception e3) { extra += " desc=err"; }
+            try { extra += " role=" + accessible.get_accRole(childId); } catch (Exception e4) { extra += " role=err"; }
+            element.Name = "[name unavailable depth=" + depth + " childId=" + childId + extra + ": " + error.Message + "]";
+        }
         try { element.Role = ReadRole(accessible, childId); }
         catch (Exception error) { if (!IsNodeFailure(error)) throw; element.Role = "unavailable"; }
         try { element.State = Convert.ToInt32(ReadState(accessible, childId)); }
@@ -497,6 +507,11 @@ try {
     try {
       if ($foreground -eq $window -and $flutterView -ne [IntPtr]::Zero) {
         Save-FlutterAccessibility $flutterView
+        try {
+          Save-ReaderAccessibility $flutterView
+        } catch {
+          Write-Warning "Could not capture the Flutter view UIA tree: $_"
+        }
       } else {
         Save-ReaderAccessibility $foreground
       }
