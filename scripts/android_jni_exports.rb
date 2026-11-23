@@ -19,6 +19,9 @@ module AndroidJniExports
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelInstallOperationFail
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelInstallOperationCancel
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelInstallOperationFree
+    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogLanguages
+    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsResolveLanguageModel
+    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookLanguage
   ].freeze
 
   def self.verify!(output, label: 'Android JNI library')
