@@ -29,7 +29,10 @@ jobs:
           mise install
           mise exec -- rustup component add rustfmt
       - name: Install explicit native speech and decoder fixtures
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends espeak-ng ffmpeg
+        timeout-minutes: 15
+        env:
+          CI_APT_ATTEMPT_TIMEOUT: '270'
+        run: bash scripts/ci_apt_install.sh espeak-ng ffmpeg
       - name: Reuse native fallback compilation
         uses: ./.github/actions/rust-build-cache
         with:

@@ -223,13 +223,10 @@ jobs:
       # Rust audio runs in process; the only test that requires ffmpeg runs in
       # native-fallback.yml, which installs it there.
       - name: Install eSpeak-NG phoneme data
-        timeout-minutes: 4
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          sudo /usr/bin/ruby scripts/normalize_ubuntu_package_mirror.rb
-          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
-          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends espeak-ng-data
+          bash scripts/ci_apt_install.sh espeak-ng-data
           phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
           test -n "$phoneme_table"
           test -f "$phoneme_table"
