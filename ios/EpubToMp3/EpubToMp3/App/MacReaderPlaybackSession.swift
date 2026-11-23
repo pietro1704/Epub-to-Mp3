@@ -54,7 +54,19 @@ final class MacReaderPlaybackSession {
               let book = library.books.first(where: { $0.id == bookID }),
               // Comics are read visually; there is no text to narrate (matches iOS reader listening).
               book.fileType.supportsAudioConversion else { return }
+        // The book's language is resolved first (analysis off the main thread, cached per book), unless
+        // the listener made an explicit per-job selection.
         let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
+        if optionsOverride == nil {
+            // The Play intent (chapter and page) is captured now, not after the asynchronous resolution.
+            let capturedRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
+            // The request is visibly in progress right away (buttons, duplicate Play) while Rust resolves.
+            localPlaybackBookID = book.id
+            isStartingLocalPlayback = true
+            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterIndex,
+                pageRatioOverride: .some(capturedRatio), pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            return
+        }
         let chapterStart = Int32(exactly: chapterIndex) ?? 0
         let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
         cancel(stopPlayer: false)
@@ -247,6 +259,51 @@ final class MacReaderPlaybackSession {
                 alert.informativeText = AppErrorReporter.message(error, context: "Reader listening")
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
+            }
+        }
+    }
+
+    private var languageResolution: UUID?
+
+    private func resolveLanguageModelThenStart(book: BookEntity, owner: AnyObject, chapterOverride: Int?,
+                                               pageRatioOverride: Double??, pdfAnchor: PDFReadingAudioMap.Anchor?,
+                                               voiceChange: ReaderVoiceChange?) {
+        let token = UUID()
+        languageResolution = token
+        Task { [weak self, weak owner] in
+            guard let self else { return }
+            var handedOver = false
+            // Not started (superseded, cancelled alert, deallocated owner): the pending state is dropped.
+            defer {
+                if !handedOver, languageResolution == token || languageResolution == nil, localPlaybackGeneration == nil {
+                    localPlaybackBookID = nil
+                    isStartingLocalPlayback = false
+                }
+            }
+            let outcome = await LanguageModelPlayback.outcome(
+                for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
+            let stillWanted = { [weak self] in
+                self?.languageResolution == token
+                    && UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id
+            }
+            guard stillWanted(), let owner else { return }
+            @MainActor func begin(_ options: ConversionOptions) {
+                handedOver = true
+                languageResolution = nil
+                // Explicit options: the resolver is skipped on this second pass.
+                start(owner: owner, optionsOverride: options, chapterOverride: chapterOverride,
+                      pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            }
+            let saved = NarrationConversionOptions.current(for: settings.ttsPreferences)
+            switch outcome {
+            case .useSettings: begin(saved)
+            case let .use(preferences): begin(NarrationConversionOptions.current(for: preferences))
+            case let .missing(language):
+                // Never downloads on its own: the recovery alert asks (download, system voice, Models).
+                let error = LanguageModelPlayback.missingModelError(language: language)
+                if let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: stillWanted), stillWanted() {
+                    begin(saved.recovering(with: choice.candidate, language: choice.language))
+                }
             }
         }
     }
