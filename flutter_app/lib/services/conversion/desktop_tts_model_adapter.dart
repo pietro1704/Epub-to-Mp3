@@ -237,6 +237,8 @@ final class DesktopTtsModelAdapter {
     }
   }
 
+  static ffi.DynamicLibrary openLibrary() => _openLibrary();
+
   static ffi.DynamicLibrary _openLibrary() {
     final override = Platform.environment['EPUBTOMP3_CONVERTER_FFI'];
     if (override != null && override.isNotEmpty) {

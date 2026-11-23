@@ -4,8 +4,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/model_install/model_install_models.dart';
+import 'package:flutter_app/services/conversion/model_install/model_install_runner.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
+import 'package:flutter_app/models/language_model_resolution.dart';
 
 class FakeConverter implements EmbeddedConverter {
   int calls = 0;
@@ -76,6 +79,28 @@ class FakeConverter implements EmbeddedConverter {
     required String sha256,
     required String root,
   }) async => '$root/$modelId/model.bin';
+
+  @override
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() async => const [];
+
+  @override
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  ) async => LanguageModelResolution(
+    bookLanguage: request.bookLanguage,
+    status: LanguageModelStatus.missingModel,
+  );
+
+  @override
+  Future<BookLanguageAnalysis> bookLanguage(String path) async =>
+      const BookLanguageAnalysis(languages: []);
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(installTtsModelFromCatalog, modelId: modelId, root: root);
 
   @override
   Future<String> installTtsModelFromCatalog({

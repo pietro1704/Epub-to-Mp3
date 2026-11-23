@@ -5,6 +5,40 @@ mixin _AndroidConversionModelChannels
   MethodChannel get _channel;
 
   @override
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() async {
+    final value = await _channel.invokeMethod<String>('ttsCatalogLanguages');
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty TTS catalog languages');
+    }
+    return TtsCatalogLanguage.parseAll(value);
+  }
+
+  @override
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  ) async {
+    final value = await _channel.invokeMethod<String>(
+      'ttsResolveLanguageModel',
+      {'request': jsonEncode(request.toJson())},
+    );
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty language model resolution');
+    }
+    return LanguageModelResolution.parse(value);
+  }
+
+  @override
+  Future<BookLanguageAnalysis> bookLanguage(String path) async {
+    final value = await _channel.invokeMethod<String>('bookLanguage', {
+      'path': path,
+    });
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty book language analysis');
+    }
+    return BookLanguageAnalysis.parse(value);
+  }
+
+  @override
   Future<String> ttsModels() async {
     final value = await _channel.invokeMethod<String>('ttsModels');
     if (value == null || value.isEmpty) {
@@ -129,6 +163,17 @@ mixin _AndroidConversionModelChannels
     if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
     return value;
   }
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(
+    installTtsModelFromCatalog,
+    modelId: modelId,
+    root: root,
+  );
 
   @override
   Future<String> installTtsModelFromCatalog({

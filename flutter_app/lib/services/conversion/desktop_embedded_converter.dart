@@ -1,3 +1,6 @@
+import 'model_install/desktop_model_install_operations.dart';
+import 'model_install/model_install_models.dart';
+import 'model_install/model_install_runner.dart';
 import '../../features/reader/epub_reader_resources.dart';
 
 import 'dart:convert';
@@ -9,6 +12,8 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
+import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/listening_schedule.dart';
@@ -85,6 +90,32 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   @override
   Future<String> ttsModels() async => _models.modelsJson();
 
+  late final DesktopLanguageModelBindings _languageModels =
+      DesktopLanguageModelBindings(library: _library);
+
+  @override
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() async =>
+      TtsCatalogLanguage.parseAll(
+        _languageModels.catalogLanguagesJson(
+          platform: Platform.isWindows ? 'windows' : 'linux',
+        ),
+      );
+
+  @override
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  ) async => LanguageModelResolution.parse(
+    _languageModels.resolveJson(jsonEncode(request.toJson())),
+  );
+
+  @override
+  Future<BookLanguageAnalysis> bookLanguage(String path) async {
+    _requireWorkerLibrary();
+    return BookLanguageAnalysis.parse(
+      await bookLanguageJsonInIsolate(_libraryPath, path),
+    );
+  }
+
   @override
   Future<String> ttsManualModels({required String root}) async {
     _requireWorkerLibrary();
@@ -118,6 +149,15 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       () => runDesktopModelInstallWorker(libraryPath, modelId, root),
     );
   }
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => ModelInstallRunner(
+    operations: DesktopModelInstallOperations(library: _library),
+  ).install(modelId: modelId, root: root, cancellation: cancellation);
 
   @override
   Future<bool> removeTtsModel({

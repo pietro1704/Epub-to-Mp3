@@ -14,6 +14,8 @@ class _InstalledNarrationModelsCardState
     extends ConsumerState<InstalledNarrationModelsCard> {
   Future<List<_NarrationModelRow>>? _catalog;
   final Set<String> _changingModels = {};
+  final Map<String, ModelInstallEvent> _progress = {};
+  final Map<String, ModelInstallCancellation> _cancellations = {};
 
   @override
   void didChangeDependencies() {
@@ -60,10 +62,28 @@ class _InstalledNarrationModelsCardState
       if (installed) {
         await converter.removeTtsModel(modelId: modelId, root: root);
       } else {
-        await converter.installTtsModelFromCatalog(
+        final cancellation = ModelInstallCancellation();
+        // The row shows its progress bar and Cancel from the moment it starts.
+        if (mounted) setState(() => _cancellations[modelId] = cancellation);
+        ModelInstallEvent? last;
+        await for (final event in converter.installTtsModelWithProgress(
           modelId: modelId,
           root: root,
-        );
+          cancellation: cancellation,
+        )) {
+          last = event;
+          if (mounted && !event.stage.terminal) {
+            setState(() => _progress[modelId] = event);
+          }
+        }
+        final failure = last?.failure;
+        if (last?.stage == ModelInstallStage.failed && mounted) {
+          throw StateError(
+            failure == null || failure.message.isEmpty
+                ? AppLocalizations.of(context)!.ttsManualModelUnavailable
+                : failure.message,
+          );
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -71,7 +91,9 @@ class _InstalledNarrationModelsCardState
             .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
+      _cancellations.remove(modelId);
       if (mounted) {
+        _progress.remove(modelId);
         _changingModels.remove(modelId);
         _refresh();
       }
@@ -84,18 +106,41 @@ class _InstalledNarrationModelsCardState
     required AppLocalizations t,
   }) {
     final modelId = model['id'] as String;
-    return ListTile(
-      title: Text(modelId),
-      subtitle: Text(
-        installed ? t.downloadComplete : '${model['languages'] ?? ''}',
-      ),
-      trailing: IconButton(
-        icon: Icon(installed ? Icons.delete_outline : Icons.download_outlined),
-        tooltip: installed ? t.remove : t.downloadAll,
-        onPressed: _changingModels.contains(modelId)
-            ? null
-            : () => _changeInstallation(modelId, installed: installed),
-      ),
+    final progress = _progress[modelId];
+    final installing = _cancellations.containsKey(modelId);
+    return Column(
+      children: [
+        ListTile(
+          title: Text(modelId),
+          subtitle: Text(
+            installed ? t.downloadComplete : '${model['languages'] ?? ''}',
+          ),
+          trailing: installing
+              ? IconButton(
+                  key: ValueKey('cancel-install-$modelId'),
+                  icon: const Icon(Icons.close),
+                  tooltip: MaterialLocalizations.of(context).cancelButtonLabel,
+                  onPressed: () => _cancellations[modelId]?.cancel(),
+                )
+              : IconButton(
+                  icon: Icon(
+                    installed ? Icons.delete_outline : Icons.download_outlined,
+                  ),
+                  tooltip: installed ? t.remove : t.downloadAll,
+                  onPressed: _changingModels.contains(modelId)
+                      ? null
+                      : () => _changeInstallation(modelId, installed: installed),
+                ),
+        ),
+        if (installing)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: LinearProgressIndicator(
+              key: ValueKey('install-progress-$modelId'),
+              value: progress?.fraction,
+            ),
+          ),
+      ],
     );
   }
 

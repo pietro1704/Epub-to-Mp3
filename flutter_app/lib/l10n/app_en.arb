@@ -160,7 +160,7 @@
   "ttsNoSecondary": "None",
   "ttsSystemOffline": "System voice · Offline fallback",
   "ttsUseRecommendedDefaults": "Use book-language Piper with system voice fallback",
-  "ttsAllowOnlineSecondary": "Allow online secondary",
+  "ttsAllowOnlineSecondary": "Allow online fallback",
   "ttsOnlineSecondaryDescription": "Send failed segments to Edge only when enabled.",
   "ttsUsePreferences": "Use audio preferences",
   "ttsAllowJobSecondary": "Allow configured secondary for this conversion",
@@ -192,5 +192,18 @@
   "errorRateLimited": "The voice service is busy. Please try again in a moment.",
   "errorInputUnreadable": "This book could not be read. The file may be damaged.",
   "errorUnsupportedInput": "This kind of file is not supported.",
-  "errorConversionGeneric": "The book could not be converted to audio. Please try again. Technical details are available in the logs."
+  "errorConversionGeneric": "The book could not be converted to audio. Please try again. Technical details are available in the logs.",
+  "errorEdgeConsentRequired": "Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.",
+  "modelsTitle": "Models",
+  "modelsSubtitle": "Choose the narration for each book language",
+  "modelsAutomatic": "Automatic",
+  "modelsAutomaticDesc": "Uses the best installed model for the book",
+  "modelsLocalSection": "On this device",
+  "modelsOnlineSection": "Online",
+  "modelsOnlineNeedsConsent": "Turn on “Allow online fallback” in Settings to use online voices",
+  "modelsNotInstalled": "Tap to download and use",
+  "modelsEmpty": "No models are available for this device",
+  "modelsLoadFailed": "The model list could not be loaded",
+  "@modelsRowSubtitle": {"placeholders": {"count": {"type": "int"}}},
+  "modelsRowSubtitle": "{count, plural, =1{1 model} other{{count} models}}"
 }

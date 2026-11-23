@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
+import 'model_install/model_install_models.dart';
+import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
 import 'embedded_conversion_result.dart';
 import '../playback/growing_chapter_audio_source.dart';
 
@@ -56,6 +61,19 @@ abstract interface class EmbeddedConverter {
   );
   Future<String> ttsModels() =>
       throw EmbeddedConverterUnavailable('TTS model catalog is unavailable');
+
+  /// Base languages with at least one catalog model on this platform.
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages();
+
+  /// Rust's answer to "which narration plays this book language". Pure; never
+  /// downloads (`docs/models-by-language-contract.md`).
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  );
+
+  /// What Rust detects in the book file. Blocking natively; implementations run
+  /// it off the UI thread.
+  Future<BookLanguageAnalysis> bookLanguage(String path);
   Future<String> ttsDefaultEngine({
     required String language,
     required String platform,
@@ -93,6 +111,14 @@ abstract interface class EmbeddedConverter {
   }) => throw EmbeddedConverterUnavailable(
     'Catalog TTS model installation is unavailable',
   );
+
+  /// Installs a catalog model and reports its progress. Runtimes without the
+  /// shared install-operation binding use [installWithoutProgress].
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  });
 }
 
 abstract interface class CancellableEmbeddedConverter {
@@ -127,4 +153,32 @@ abstract interface class PositionedChapterConverter {
     required int textOffset, String? optionsJson,
     Future<void> Function(GrowingChapterAudioSource)? onFirstAudio,
   });
+}
+
+/// Fallback for runtimes that only have the blocking installer: it reports a
+/// start and an end, with no byte progress.
+Stream<ModelInstallEvent> installWithoutProgress(
+  Future<String> Function({required String modelId, required String root}) install, {
+  required String modelId,
+  required String root,
+}) async* {
+  ModelInstallEvent event(ModelInstallStage stage, {ModelInstallFailure? failure}) =>
+      ModelInstallEvent(
+        sequence: 0,
+        modelId: modelId,
+        stage: stage,
+        bytesCompleted: 0,
+        bytesTotal: 0,
+        failure: failure,
+      );
+  yield event(ModelInstallStage.downloading);
+  try {
+    await install(modelId: modelId, root: root);
+    yield event(ModelInstallStage.completed);
+  } on Object catch (error) {
+    yield event(
+      ModelInstallStage.failed,
+      failure: ModelInstallFailure(kind: 'install_failed', message: error.toString()),
+    );
+  }
 }

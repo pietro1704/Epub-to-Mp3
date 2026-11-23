@@ -156,7 +156,7 @@
   "ttsNoSecondary": "Nenhuma",
   "ttsSystemOffline": "Voz do sistema · Alternativa offline",
   "ttsUseRecommendedDefaults": "Usar Piper no idioma do livro com voz do sistema como alternativa",
-  "ttsAllowOnlineSecondary": "Permitir voz secundária online",
+  "ttsAllowOnlineSecondary": "Permitir reserva online",
   "ttsOnlineSecondaryDescription": "Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.",
   "ttsUsePreferences": "Usar preferências de áudio",
   "ttsAllowJobSecondary": "Permitir a voz secundária configurada nesta conversão",
@@ -188,5 +188,17 @@
   "errorRateLimited": "O serviço de voz está ocupado. Tente novamente em instantes.",
   "errorInputUnreadable": "Não foi possível ler este livro. O arquivo pode estar danificado.",
   "errorUnsupportedInput": "Este tipo de arquivo não é compatível.",
-  "errorConversionGeneric": "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs."
+  "errorConversionGeneric": "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.",
+  "errorEdgeConsentRequired": "As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.",
+  "modelsTitle": "Modelos",
+  "modelsSubtitle": "Escolha a narração de cada idioma de livro",
+  "modelsAutomatic": "Automático",
+  "modelsAutomaticDesc": "Usa o melhor modelo instalado para o livro",
+  "modelsLocalSection": "Neste dispositivo",
+  "modelsOnlineSection": "Online",
+  "modelsOnlineNeedsConsent": "Ative “Permitir reserva online” em Ajustes para usar vozes online",
+  "modelsNotInstalled": "Toque para baixar e usar",
+  "modelsEmpty": "Nenhum modelo disponível para este dispositivo",
+  "modelsLoadFailed": "Não foi possível carregar a lista de modelos",
+  "modelsRowSubtitle": "{count, plural, =1{1 modelo} other{{count} modelos}}"
 }

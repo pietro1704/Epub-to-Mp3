@@ -1,4 +1,7 @@
+import 'model_install/model_install_models.dart';
+import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
 
@@ -45,7 +48,31 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   }) => throw EmbeddedConverterUnavailable();
 
   @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(
+    installTtsModelFromCatalog,
+    modelId: modelId,
+    root: root,
+  );
+
+  @override
   Future<String> ttsModels() => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() =>
+      throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  ) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<BookLanguageAnalysis> bookLanguage(String path) =>
+      throw EmbeddedConverterUnavailable();
 
   @override
   Future<String> ttsDefaultEngine({

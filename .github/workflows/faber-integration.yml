@@ -480,8 +480,8 @@ jobs:
           model_dir="$RUNNER_TEMP/faber-models"
           mkdir -p "$model_dir"
           base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
-          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
-          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors "$base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors "$base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
           printf '%s  %s\n' \
             '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$model_dir/pt_BR-faber-medium.onnx" \
             '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \

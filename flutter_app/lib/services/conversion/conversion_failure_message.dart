@@ -39,11 +39,19 @@ String? localizedConversionFailure(AppLocalizations t, Object error) {
   if (code == null && isBookLanguageUncertain(error)) {
     return prefixed(t.bookLanguageUncertain);
   }
+  // The refusal marker of Edge as primary without consent also works before
+  // the converter appends error codes.
+  if ((code == null || code == 'edge_consent_required') &&
+      error.toString().contains('[[edge_consent_required_v1]]')) {
+    return prefixed(t.errorEdgeConsentRequired);
+  }
   switch (code) {
     case 'cancelled' || 'replaced' || 'playback_window_changed':
       return null;
     case 'book_language_uncertain':
       return prefixed(t.bookLanguageUncertain);
+    case 'edge_consent_required':
+      return prefixed(t.errorEdgeConsentRequired);
     case 'no_readable_text':
       return prefixed(t.errorNoReadableText);
     case 'engine_unavailable':

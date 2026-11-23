@@ -19,6 +19,38 @@ final ttsCatalogProvider = FutureProvider.autoDispose<TtsCatalog>(
   retry: (_, _) => null,
 );
 
+/// The user's explicit narration per book language, written only by the Models
+/// screen. Persisted as `languageModelChoices.v1`.
+final languageModelChoicesProvider =
+    StateNotifierProvider<LanguageModelChoicesNotifier, LanguageModelChoices>((
+      ref,
+    ) {
+      return LanguageModelChoicesNotifier(ref.watch(sharedPrefsProvider));
+    });
+
+class LanguageModelChoicesNotifier extends StateNotifier<LanguageModelChoices> {
+  LanguageModelChoicesNotifier(this._prefs)
+    : super(
+        LanguageModelChoices.parse(
+          _prefs.getString(LanguageModelChoices.storageKey),
+        ),
+      );
+
+  final SharedPreferences _prefs;
+
+  void choose(String language, TtsSelection selection) =>
+      _save(state.withChoice(language, selection));
+
+  /// Back to automatic for [language].
+  void clear(String language) => _save(state.without(language));
+
+  void _save(LanguageModelChoices next) {
+    if (identical(next, state)) return;
+    state = next;
+    _prefs.setString(LanguageModelChoices.storageKey, next.encode());
+  }
+}
+
 final showLowQualityModelsProvider = StateProvider<bool>((ref) => false);
 
 final ttsModelRootProvider = FutureProvider.autoDispose<String>((ref) async {

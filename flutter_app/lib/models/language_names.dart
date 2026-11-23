@@ -1,0 +1,47 @@
+/// Endonyms (a language's own name for itself) for the base languages of the
+/// model catalog. They do not depend on the app language, which is how language
+/// pickers conventionally list languages. Unknown tags fall back to the tag.
+const _endonyms = <String, String>{
+  'ar': 'العربية',
+  'bg': 'Български',
+  'ca': 'Català',
+  'cs': 'Čeština',
+  'cy': 'Cymraeg',
+  'da': 'Dansk',
+  'de': 'Deutsch',
+  'el': 'Ελληνικά',
+  'en': 'English',
+  'es': 'Español',
+  'fa': 'فارسی',
+  'fi': 'Suomi',
+  'fr': 'Français',
+  'hi': 'हिन्दी',
+  'hu': 'Magyar',
+  'id': 'Bahasa Indonesia',
+  'is': 'Íslenska',
+  'it': 'Italiano',
+  'ja': '日本語',
+  'ka': 'ქართული',
+  'kk': 'Қазақша',
+  'ko': '한국어',
+  'lb': 'Lëtzebuergesch',
+  'ne': 'नेपाली',
+  'nl': 'Nederlands',
+  'no': 'Norsk',
+  'pl': 'Polski',
+  'pt': 'Português',
+  'ro': 'Română',
+  'ru': 'Русский',
+  'sk': 'Slovenčina',
+  'sl': 'Slovenščina',
+  'sr': 'Српски',
+  'sv': 'Svenska',
+  'sw': 'Kiswahili',
+  'tr': 'Türkçe',
+  'uk': 'Українська',
+  'vi': 'Tiếng Việt',
+  'zh': '中文',
+};
+
+String languageEndonym(String baseTag) =>
+    _endonyms[baseTag.toLowerCase()] ?? baseTag;

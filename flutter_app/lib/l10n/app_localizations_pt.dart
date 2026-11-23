@@ -416,7 +416,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Usar Piper no idioma do livro com voz do sistema como alternativa';
 
   @override
-  String get ttsAllowOnlineSecondary => 'Permitir voz secundária online';
+  String get ttsAllowOnlineSecondary => 'Permitir reserva online';
 
   @override
   String get ttsOnlineSecondaryDescription =>
@@ -528,4 +528,51 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get errorConversionGeneric =>
       'Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.';
+
+  @override
+  String get errorEdgeConsentRequired =>
+      'As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.';
+
+  @override
+  String get modelsTitle => 'Modelos';
+
+  @override
+  String get modelsSubtitle => 'Escolha a narração de cada idioma de livro';
+
+  @override
+  String get modelsAutomatic => 'Automático';
+
+  @override
+  String get modelsAutomaticDesc =>
+      'Usa o melhor modelo instalado para o livro';
+
+  @override
+  String get modelsLocalSection => 'Neste dispositivo';
+
+  @override
+  String get modelsOnlineSection => 'Online';
+
+  @override
+  String get modelsOnlineNeedsConsent =>
+      'Ative “Permitir reserva online” em Ajustes para usar vozes online';
+
+  @override
+  String get modelsNotInstalled => 'Toque para baixar e usar';
+
+  @override
+  String get modelsEmpty => 'Nenhum modelo disponível para este dispositivo';
+
+  @override
+  String get modelsLoadFailed => 'Não foi possível carregar a lista de modelos';
+
+  @override
+  String modelsRowSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count modelos',
+      one: '1 modelo',
+    );
+    return '$_temp0';
+  }
 }
