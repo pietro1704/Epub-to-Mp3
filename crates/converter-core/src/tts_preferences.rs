@@ -171,6 +171,26 @@ impl TtsPreferences {
             ..Self::default()
         }
     }
+    /// Saved preferences that name Edge as the primary voice WITHOUT the online consent move to the default
+    /// Piper voice (the owner's decision after Edge primaries were found saved without consent). The models
+    /// on disk, the secondary voice (unless it would now repeat the primary), the consent and every other
+    /// field are preserved. With the consent nothing changes. Returns whether it migrated.
+    pub fn migrate_unconsented_edge_primary(&mut self) -> bool {
+        if self.primary.engine != "edge" || self.allow_online_fallback {
+            return false;
+        }
+        self.primary = TtsSelection::default();
+        if let Some(secondary) = &self.secondary {
+            if secondary.engine == self.primary.engine
+                && secondary.model_id == self.primary.model_id
+                && secondary.voice == self.primary.voice
+            {
+                self.secondary = None;
+            }
+        }
+        true
+    }
+
     pub fn continues_native(&self) -> bool {
         matches!(self.policy_version, Some(2 | 3))
     }
@@ -373,6 +393,75 @@ impl SegmentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn edge() -> TtsSelection {
+        TtsSelection {
+            engine: "edge".into(),
+            session: None,
+            model_id: None,
+            voice: None,
+        }
+    }
+
+    #[test]
+    fn an_edge_primary_without_consent_migrates_to_the_default_piper_and_preserves_the_rest() {
+        let secondary = TtsSelection {
+            engine: "system".into(),
+            session: None,
+            model_id: None,
+            voice: None,
+        };
+        let mut saved = TtsPreferences {
+            policy_version: Some(2),
+            primary: edge(),
+            secondary: Some(secondary.clone()),
+            allow_online_fallback: false,
+        };
+        assert!(
+            saved.validate(None).is_err(),
+            "unconsented Edge primary is refused"
+        );
+        assert!(saved.migrate_unconsented_edge_primary());
+        assert_eq!(saved.primary, TtsSelection::default());
+        assert_eq!(saved.primary.model_id.as_deref(), Some(FABER_MODEL_ID));
+        assert_eq!(
+            saved.secondary,
+            Some(secondary),
+            "the reserve voice is kept"
+        );
+        assert_eq!(saved.policy_version, Some(2));
+        assert!(!saved.allow_online_fallback);
+        assert!(saved.validate(None).is_ok());
+        assert!(!saved.migrate_unconsented_edge_primary(), "idempotent");
+    }
+
+    #[test]
+    fn an_edge_primary_with_consent_and_every_other_primary_stay_untouched() {
+        let mut consented = TtsPreferences {
+            primary: edge(),
+            allow_online_fallback: true,
+            ..TtsPreferences::default()
+        };
+        let before = consented.clone();
+        assert!(!consented.migrate_unconsented_edge_primary());
+        assert_eq!(consented, before);
+        let mut piper = TtsPreferences::default();
+        assert!(!piper.migrate_unconsented_edge_primary());
+        assert_eq!(piper, TtsPreferences::default());
+    }
+
+    #[test]
+    fn a_reserve_that_would_repeat_the_migrated_primary_is_dropped() {
+        let mut saved = TtsPreferences {
+            primary: edge(),
+            secondary: Some(TtsSelection::default()),
+            allow_online_fallback: false,
+            ..TtsPreferences::default()
+        };
+        assert!(saved.migrate_unconsented_edge_primary());
+        assert!(saved.secondary.is_none());
+    }
+
     #[test]
     fn rate_limit_health_checks_wait_and_survive_job_restart() {
         let preferences = TtsPreferences::app_default(true);
