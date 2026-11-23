@@ -532,4 +532,47 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get errorEdgeConsentRequired =>
       'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.';
+
+  @override
+  String get modelsTitle => 'Models';
+
+  @override
+  String get modelsSubtitle => 'Choose the narration for each book language';
+
+  @override
+  String get modelsAutomatic => 'Automatic';
+
+  @override
+  String get modelsAutomaticDesc =>
+      'Uses the best installed model for the book';
+
+  @override
+  String get modelsLocalSection => 'On this device';
+
+  @override
+  String get modelsOnlineSection => 'Online';
+
+  @override
+  String get modelsOnlineNeedsConsent =>
+      'Turn on “Allow online fallback” in Settings to use online voices';
+
+  @override
+  String get modelsNotInstalled => 'Tap to download and use';
+
+  @override
+  String get modelsEmpty => 'No models are available for this device';
+
+  @override
+  String get modelsLoadFailed => 'The model list could not be loaded';
+
+  @override
+  String modelsRowSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count models',
+      one: '1 model',
+    );
+    return '$_temp0';
+  }
 }

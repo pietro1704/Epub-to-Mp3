@@ -4,6 +4,7 @@ import '../models/tts_preferences.dart';
 import '../models/tts_catalog.dart';
 import '../models/tts_session_selection.dart';
 import '../views/reader_narration_menu.dart';
+import 'models_screen.dart';
 import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/model_install/model_install_models.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
@@ -41,6 +42,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: Text(t.settingsTitle)),
       body: AdaptiveSettingsLayout(
         narration: [
+          Card(
+            child: ListTile(
+              key: const ValueKey('settings-models-row'),
+              leading: const Icon(Icons.record_voice_over_outlined),
+              title: Text(t.modelsTitle),
+              subtitle: Text(t.modelsSubtitle),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const ModelsScreen()),
+              ),
+            ),
+          ),
           const VoiceSelectionSettings(),
           const InstalledNarrationModelsCard(),
           const SizedBox(height: 20),
