@@ -19,7 +19,7 @@ final class LibraryGridModelTests: XCTestCase {
             id: id,
             title: title,
             author: author,
-            bookmark: Data(),
+            bookmark: Data([1]),
             displayFilename: "\(id).epub",
             addedAt: addedAt,
             lastOpenedAt: lastOpenedAt,
@@ -70,8 +70,8 @@ final class LibraryGridModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let a = make(id: "a", title: "A", addedAt: date(100), lastOpenedAt: date(500))
         let b = make(id: "b", title: "B", addedAt: date(200))
-        defaults.set(try JSONEncoder().encode([a, b]), forKey: "library")
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library")
+        defaults.set(try JSONEncoder().encode([a, b]), forKey: "library.books.v1")
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
         func order() -> [String] { LibraryGridModel(books: library.books).arrangedBooks().map(\.id) }
         XCTAssertEqual(order(), ["a", "b"], "A was opened before; B was only added")
         // Reading: opening B for the reader stamps it, with no playback recorded.
