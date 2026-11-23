@@ -221,6 +221,10 @@ them to the device plan.
 Attach the visual evidence for a visible change before opening its PR ready,
 because ready PRs merge automatically.
 
+Every bug Pietro reports gets a regression test written first. Run it and show
+it failing while the bug is present; then fix the code and show the same,
+unchanged test passing. Record both runs in the PR.
+
 Before each push, run the checks CI will run:
 - Rust: `cargo fmt --all -- --check`, `cargo test --workspace --locked`, and
   `cargo check -p converter-core --target wasm32-unknown-unknown` when the core
