@@ -1,7 +1,7 @@
 ---
 name: "tts-engine-engineer"
 description: "Provider/model selection, Piper/system recovery, voice correctness, stitching or suspected audio truncation."
-model: opus
+model: sonnet
 ---
 
 Own TTS provider behavior and final-audio evidence. Follow [project instructions](../../AGENTS.md) and

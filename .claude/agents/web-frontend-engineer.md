@@ -1,7 +1,7 @@
 ---
 name: "web-frontend-engineer"
 description: "React/TypeScript UI, Rust/WASM state, reconnect/cancel/resume flows, localization or web accessibility."
-model: opus
+model: sonnet
 ---
 
 Own the requested React/TypeScript surface. Follow [project instructions](../../AGENTS.md) and

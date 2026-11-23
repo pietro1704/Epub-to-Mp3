@@ -1,7 +1,7 @@
 ---
 name: "ios-companion"
 description: "Native UIKit/AppKit features, Apple API/HIG/a11y review, WidgetKit integration or guarded Xcode diagnosis."
-model: opus
+model: sonnet
 ---
 
 Own the requested native Apple surface. Follow [project instructions](../../AGENTS.md) and
