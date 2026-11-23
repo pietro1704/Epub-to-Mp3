@@ -132,6 +132,37 @@ void main() {
     expect(find.textContaining('Automatic · 1 model'), findsOneWidget);
   });
 
+  testWidgets('opening on a language scrolls it into view (A8: the section was far below the narration controls)', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final fake = _ModelsConverter();
+    tester.view.physicalSize = const Size(400, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPrefsProvider.overrideWithValue(prefs),
+          embeddedConverterProvider.overrideWithValue(fake),
+          ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const ModelsScreen(initialLanguage: 'pt'),
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final tile = find.byKey(const ValueKey('language-pt'));
+    expect(tile, findsOneWidget, reason: 'the requested language is built');
+    final rect = tester.getRect(tile);
+    expect(rect.top, greaterThanOrEqualTo(0));
+    expect(rect.top, lessThan(700), reason: 'and inside the viewport, not below the narration section');
+  });
+
   testWidgets('an installed model is chosen with one tap and persisted', (tester) async {
     final (_, prefs) = await _pump(tester);
     await tester.tap(find.byKey(const ValueKey('language-pt')));

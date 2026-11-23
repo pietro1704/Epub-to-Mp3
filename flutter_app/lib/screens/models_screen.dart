@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
@@ -38,6 +39,21 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   final Map<String, ModelInstallEvent?> _progress = {};
   final Map<String, ModelInstallCancellation> _cancellations = {};
   String? _error;
+
+  /// The section of [ModelsScreen.initialLanguage]; scrolled into view once.
+  final GlobalKey _focusKey = GlobalKey();
+  bool _focused = false;
+
+  void _scrollToInitialLanguage() {
+    if (_focused || widget.initialLanguage == null) return;
+    _focused = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _focusKey.currentContext;
+      if (context != null && context.mounted) {
+        Scrollable.ensureVisible(context, duration: Duration.zero, alignment: 0.05);
+      }
+    });
+  }
 
   Future<_ModelsData> _load() async {
     final converter = ref.read(embeddedConverterProvider);
@@ -197,7 +213,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     final header = Theme.of(context).textTheme.labelLarge?.copyWith(
       color: Theme.of(context).colorScheme.primary,
     );
-    return ExpansionTile(
+    final tile = ExpansionTile(
       key: ValueKey('language-$base'),
       initiallyExpanded: base == widget.initialLanguage,
       title: Text(languageEndonym(base)),
@@ -246,6 +262,9 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
           ),
       ],
     );
+    return base == widget.initialLanguage
+        ? KeyedSubtree(key: _focusKey, child: tile)
+        : tile;
   }
 
   @override
@@ -259,6 +278,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       // Apple Models screen (Settings keeps a single row). They stay available
       // even when the language catalog cannot be loaded.
       body: ListView(
+        // Every section is built when a language was asked for, so it can be
+        // scrolled to (a lazy list has not built it yet).
+        scrollCacheExtent: widget.initialLanguage == null
+            ? null
+            : const ScrollCacheExtent.pixels(100000),
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -281,6 +305,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 );
               }
               final data = snapshot.requireData;
+              _scrollToInitialLanguage();
               if (data.languages.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.all(24),
