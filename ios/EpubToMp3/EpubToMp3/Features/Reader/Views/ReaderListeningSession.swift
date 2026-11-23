@@ -281,6 +281,7 @@ final class ReaderListeningSession {
                     player.persistResumePoint(force: true)
                 }
                 player.stop()
+                player.playbackClock.audioOutput.bindReaderJob(pending.jobId, to: book.id)
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 updateChapterEstimates(self.chapterEstimates, for: book.id)
                 player.approximateSeekJobID = jobID

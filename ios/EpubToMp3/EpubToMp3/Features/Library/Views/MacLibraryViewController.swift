@@ -18,7 +18,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     typealias RemovalConfirmation = @MainActor (_ title: String, _ window: NSWindow?) async -> Bool
     private let confirmRemoval: RemovalConfirmation
     private var cancellables: Set<AnyCancellable> = []
-    private var sortMode: LibraryGridModel.SortMode = .lastOpened
+    private var sortMode = LibraryGridModel.SortMode.saved() {
+        didSet { sortMode.save() }
+    }
     private var selectedTag: String?
     private var searchQuery = ""
     private var books: [BookEntity] = []

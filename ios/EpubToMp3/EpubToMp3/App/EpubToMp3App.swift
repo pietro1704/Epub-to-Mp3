@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 #if os(macOS)
@@ -17,13 +18,14 @@ private typealias PlatformApplicationDelegate = UIApplicationDelegate
 final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let settings = AppSettings(defaults: SettingsDefaultsSource.resolve())
     let library: LibraryStore
-    let player = AudioPlayer()
+    let player: AudioPlayer
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
 
     private let sessionDefaults: UserDefaults
     private var incomingBookRequestID = UUID()
     private var libraryImportTask: Task<Void, Never>?
+    private var playbackRecency: AnyCancellable?
 #if os(iOS)
     private var libraryPersistenceWindow: UIBackgroundTaskIdentifier = .invalid
     private var libraryPersistenceGeneration: UUID?
@@ -37,6 +39,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     override init() {
         library = AppStartupTiming.shared.measure(.libraryStoreCreation) { LibraryStore() }
         sessionDefaults = .standard
+        player = AudioPlayer()
         super.init()
         // One-shot and idempotent; it removes only values of removed features.
         LegacyPreferenceCleanup.runIfNeeded(standard: .standard,
@@ -46,14 +49,25 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         DevelopmentSeedBook.install(into: library)
         UITestPlaybackFixture.installIfRequested(library: library, player: player)
 #endif
+        observePlaybackRecency()
         ApplicationWidgetIntents.registerObserver()
     }
 
     /// Injected storage bypasses launch fixtures and isolates incoming navigation.
-    init(library: LibraryStore, sessionDefaults: UserDefaults = .standard) {
+    init(library: LibraryStore, sessionDefaults: UserDefaults = .standard, player: AudioPlayer? = nil) {
         self.library = library
         self.sessionDefaults = sessionDefaults
+        self.player = player ?? AudioPlayer()
         super.init()
+        observePlaybackRecency()
+    }
+
+    private func observePlaybackRecency() {
+        let audioBooks = player.playbackClock.audioOutput.$position.map { $0?.bookID }.removeDuplicates()
+        let speechBooks = player.speechOutput.$spokenWord.map { $0?.bookID }.removeDuplicates()
+        playbackRecency = Publishers.Merge(audioBooks, speechBooks)
+            .compactMap { $0 }
+            .sink { [weak self] bookID in self?.library.recordPlayback(of: bookID) }
     }
 
 #if os(macOS)

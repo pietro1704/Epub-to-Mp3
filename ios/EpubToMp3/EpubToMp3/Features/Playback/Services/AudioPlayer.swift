@@ -15,7 +15,12 @@ final class AudioPlayer: ObservableObject {
     // MARK: Public observable state
 
     @Published private(set) var snapshot: JobSnapshot? {
-        didSet { services.bookProgress.update(snapshot) }
+        didSet {
+            if oldValue?.jobId != snapshot?.jobId {
+                playbackClock.audioOutput.snapshotChanged(to: snapshot?.jobId)
+            }
+            services.bookProgress.update(snapshot)
+        }
     }
 
     var cachedBookChapterProgress: BookChapterProgress? { services.bookProgress.value }

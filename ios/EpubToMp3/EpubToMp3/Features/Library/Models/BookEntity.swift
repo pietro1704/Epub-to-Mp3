@@ -80,6 +80,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// Last time the user opened the book (used for "Continue reading"
     /// section).
     var lastOpenedAt: Date?
+    var lastPlayedAt: Date?
 
     /// Resume point inside the book — chapter index + position seconds.
     /// Mirrors what `ResumeStore` keeps per (jobId, chapter).
@@ -139,7 +140,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// when the legacy entry has a `.pdf` `displayFilename`.
     enum CodingKeys: String, CodingKey {
         case id, title, author, bookmark, displayFilename, addedAt,
-             lastOpenedAt, lastChapterIndex, lastPositionSeconds,
+             lastOpenedAt, lastPlayedAt, lastChapterIndex, lastPositionSeconds,
              coverPNG, pdfCoverVersion, lastJobId, cachedOffline, fileType, tags
     }
 
@@ -151,6 +152,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         displayFilename: String,
         addedAt: Date,
         lastOpenedAt: Date? = nil,
+        lastPlayedAt: Date? = nil,
         lastChapterIndex: Int? = nil,
         lastPositionSeconds: TimeInterval? = nil,
         coverPNG: Data? = nil,
@@ -167,6 +169,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         self.displayFilename = displayFilename
         self.addedAt = addedAt
         self.lastOpenedAt = lastOpenedAt
+        self.lastPlayedAt = lastPlayedAt
         self.lastChapterIndex = lastChapterIndex
         self.lastPositionSeconds = lastPositionSeconds
         self.coverPNG = coverPNG
@@ -186,6 +189,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         self.displayFilename = try c.decode(String.self, forKey: .displayFilename)
         self.addedAt = try c.decode(Date.self, forKey: .addedAt)
         self.lastOpenedAt = try c.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
+        self.lastPlayedAt = try c.decodeIfPresent(Date.self, forKey: .lastPlayedAt)
         self.lastChapterIndex = try c.decodeIfPresent(Int.self, forKey: .lastChapterIndex)
         self.lastPositionSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .lastPositionSeconds)
         self.coverPNG = try c.decodeIfPresent(Data.self, forKey: .coverPNG)
