@@ -975,6 +975,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Play from here'**
   String get readerPlayFromHere;
+
+  /// No description provided for @errorNoReadableText.
+  ///
+  /// In en, this message translates to:
+  /// **'No readable text could be extracted from this book.'**
+  String get errorNoReadableText;
+
+  /// No description provided for @errorEngineUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The speech converter is unavailable. Please reinstall the app or try again.'**
+  String get errorEngineUnavailable;
+
+  /// No description provided for @errorModelMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected narration model is not installed. Install it in Settings.'**
+  String get errorModelMissing;
+
+  /// No description provided for @errorModelLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'This model does not support the language of this book. Choose a compatible model.'**
+  String get errorModelLanguage;
+
+  /// No description provided for @errorUnsupportedEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected speech engine is not supported.'**
+  String get errorUnsupportedEngine;
+
+  /// No description provided for @errorSpeechTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The voice took too long to respond. Please try again.'**
+  String get errorSpeechTimeout;
+
+  /// No description provided for @errorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not connect. Check your connection and try again.'**
+  String get errorNetwork;
+
+  /// No description provided for @errorRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The voice service is busy. Please try again in a moment.'**
+  String get errorRateLimited;
+
+  /// No description provided for @errorInputUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'This book could not be read. The file may be damaged.'**
+  String get errorInputUnreadable;
+
+  /// No description provided for @errorUnsupportedInput.
+  ///
+  /// In en, this message translates to:
+  /// **'This kind of file is not supported.'**
+  String get errorUnsupportedInput;
+
+  /// No description provided for @errorConversionGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'The book could not be converted to audio. Please try again. Technical details are available in the logs.'**
+  String get errorConversionGeneric;
 }
 
 class _AppLocalizationsDelegate

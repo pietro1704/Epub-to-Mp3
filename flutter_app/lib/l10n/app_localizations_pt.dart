@@ -485,4 +485,47 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readerPlayFromHere => 'Tocar daqui';
+
+  @override
+  String get errorNoReadableText =>
+      'Não foi possível extrair texto legível deste livro.';
+
+  @override
+  String get errorEngineUnavailable =>
+      'O conversor de voz está indisponível. Reinstale o app ou tente novamente.';
+
+  @override
+  String get errorModelMissing =>
+      'O modelo de narração selecionado não está instalado. Instale-o nos Ajustes.';
+
+  @override
+  String get errorModelLanguage =>
+      'Este modelo não suporta o idioma deste livro. Escolha um modelo compatível.';
+
+  @override
+  String get errorUnsupportedEngine =>
+      'O mecanismo de voz selecionado não é compatível.';
+
+  @override
+  String get errorSpeechTimeout =>
+      'A voz demorou demais para responder. Tente novamente.';
+
+  @override
+  String get errorNetwork =>
+      'Não foi possível conectar. Verifique a conexão e tente novamente.';
+
+  @override
+  String get errorRateLimited =>
+      'O serviço de voz está ocupado. Tente novamente em instantes.';
+
+  @override
+  String get errorInputUnreadable =>
+      'Não foi possível ler este livro. O arquivo pode estar danificado.';
+
+  @override
+  String get errorUnsupportedInput => 'Este tipo de arquivo não é compatível.';
+
+  @override
+  String get errorConversionGeneric =>
+      'Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.';
 }

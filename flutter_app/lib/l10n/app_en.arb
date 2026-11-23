@@ -181,5 +181,16 @@
   "readerFootnotes": "Footnotes",
   "openReaderAtPlayback": "Open in reader",
   "readerAppearance": "Text appearance",
-  "readerPlayFromHere": "Play from here"
+  "readerPlayFromHere": "Play from here",
+  "errorNoReadableText": "No readable text could be extracted from this book.",
+  "errorEngineUnavailable": "The speech converter is unavailable. Please reinstall the app or try again.",
+  "errorModelMissing": "The selected narration model is not installed. Install it in Settings.",
+  "errorModelLanguage": "This model does not support the language of this book. Choose a compatible model.",
+  "errorUnsupportedEngine": "The selected speech engine is not supported.",
+  "errorSpeechTimeout": "The voice took too long to respond. Please try again.",
+  "errorNetwork": "Could not connect. Check your connection and try again.",
+  "errorRateLimited": "The voice service is busy. Please try again in a moment.",
+  "errorInputUnreadable": "This book could not be read. The file may be damaged.",
+  "errorUnsupportedInput": "This kind of file is not supported.",
+  "errorConversionGeneric": "The book could not be converted to audio. Please try again. Technical details are available in the logs."
 }

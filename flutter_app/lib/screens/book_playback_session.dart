@@ -29,15 +29,12 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
 
   void _showConversionError(Object error) {
     if (!mounted) return;
-    final detail = error.toString();
-    final l10n = AppLocalizations.of(context)!;
-    final message = isBookLanguageUncertain(error)
-        ? '${l10n.conversionFailed}: ${l10n.bookLanguageUncertain}'
-        : detail.contains('NO_MODEL') ||
-            detail.contains('ENGINE_UNAVAILABLE') ||
-            detail.contains('No TTS engine')
-        ? '${l10n.conversionFailed}: ${l10n.settingsTitle}'
-        : '${l10n.conversionFailed}: $detail';
+    final message = localizedConversionFailure(
+      AppLocalizations.of(context)!,
+      error,
+    );
+    // A job that merely stopped (cancelled or replaced) reports nothing.
+    if (message == null) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }

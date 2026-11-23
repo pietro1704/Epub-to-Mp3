@@ -177,5 +177,16 @@
   "readerFootnotes": "Notas al pie",
   "openReaderAtPlayback": "Abrir en el lector",
   "readerAppearance": "Apariencia del texto",
-  "readerPlayFromHere": "Reproducir desde aquí"
+  "readerPlayFromHere": "Reproducir desde aquí",
+  "errorNoReadableText": "No se pudo extraer texto legible de este libro.",
+  "errorEngineUnavailable": "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.",
+  "errorModelMissing": "El modelo de narración seleccionado no está instalado. Instálalo en Ajustes.",
+  "errorModelLanguage": "Este modelo no admite el idioma de este libro. Elige un modelo compatible.",
+  "errorUnsupportedEngine": "El motor de voz seleccionado no es compatible.",
+  "errorSpeechTimeout": "La voz tardó demasiado en responder. Inténtalo de nuevo.",
+  "errorNetwork": "No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.",
+  "errorRateLimited": "El servicio de voz está ocupado. Inténtalo de nuevo en un momento.",
+  "errorInputUnreadable": "No se pudo leer este libro. El archivo puede estar dañado.",
+  "errorUnsupportedInput": "Este tipo de archivo no es compatible.",
+  "errorConversionGeneric": "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros."
 }
