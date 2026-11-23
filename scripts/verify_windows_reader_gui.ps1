@@ -66,6 +66,7 @@ public static class ReaderTestDesktop
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IAccessible accessible);
+    [DllImport("oleacc.dll")] private static extern int AccessibleChildren([MarshalAs(UnmanagedType.Interface)] IAccessible container, int start, int count, [Out, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.Struct, SizeParamIndex = 1)] object[] children, out int obtained);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -160,6 +161,33 @@ public static class ReaderTestDesktop
             if (!IsNodeFailure(error)) throw;
             elements.Add(new FlutterElement { Name = "[child count unreadable at depth " + depth + ": " + error.Message + "]", Role = "error", State = 0x8000 });
         }
+        // AccessibleChildren is the supported enumeration: each entry is either a child IAccessible or a simple child ID.
+        // Flutter nodes can reject get_accChild(index) with E_INVALIDARG, so it is only the fallback.
+        object[] entries = new object[children];
+        int obtained = 0;
+        int enumerated = children > 0 ? AccessibleChildren(accessible, 0, children, entries, out obtained) : 0;
+        if (enumerated >= 0 && children > 0)
+        {
+            for (int index = 0; index < obtained && elements.Count < 1024; index++)
+            {
+                try
+                {
+                    IAccessible child = entries[index] as IAccessible;
+                    if (child != null)
+                        ReadAccessibleNode(child, 0, depth + 1, elements);
+                    else if (entries[index] is int)
+                        ReadAccessibleNode(accessible, (int)entries[index], depth + 1, elements);
+                }
+                catch (Exception error)
+                {
+                    if (!IsNodeFailure(error)) throw;
+                    elements.Add(new FlutterElement { Name = "[child " + (index + 1) + "/" + obtained + " at depth " + depth + " unreadable: " + error.Message + "]", Role = "error", State = 0x8000 });
+                }
+            }
+            return;
+        }
+        if (children > 0)
+            elements.Add(new FlutterElement { Name = "[AccessibleChildren failed at depth " + depth + ": 0x" + enumerated.ToString("X8") + "; falling back to get_accChild]", Role = "error", State = 0x8000 });
         for (int index = 1; index <= children && elements.Count < 1024; index++)
         {
             try
