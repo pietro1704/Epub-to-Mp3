@@ -48,27 +48,15 @@ jobs:
       - name: Run converter-ffi tests
         run: mise exec -- cargo test -p converter-ffi
 
+  # One job builds both simulator targets in sequence: two jobs waited 8-13 minutes
+  # each for one of the five hosted macOS runners.
   artifact-build:
     name: Build converter-ffi native artifacts
     env:
       MISE_ENABLE_TOOLS: rust,ruby
     needs: host-validation
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # The actual iOS device app link belongs to CodeQL's iOS
-          # build-for-testing scope and signed release packaging, not this
-          # unsupported standalone cdylib route. Never report it as skipped-success.
-          - os: macos-15
-            logical_target: ios-simulator-arm64
-            rust_target: aarch64-apple-ios-sim
-          - os: macos-15
-            logical_target: ios-simulator-x64
-            rust_target: x86_64-apple-ios
-
+    runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - name: Verify hosted Apple build environment
         shell: bash
@@ -95,27 +83,31 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
 
-      - name: Install Rust target
-        run: rustup target add "${{ matrix.rust_target }}"
+      # The actual iOS device app link belongs to CodeQL's iOS build scope and signed
+      # release packaging, not this unsupported standalone cdylib route. Never report
+      # it as skipped-success.
+      - name: Install Rust targets
+        run: rustup target add aarch64-apple-ios-sim x86_64-apple-ios
 
-      - name: Reuse target FFI compilation
+      - name: Reuse simulator FFI compilation
         uses: ./.github/actions/rust-build-cache
         with:
-          namespace: ffi-${{ matrix.rust_target }}
+          namespace: ffi-ios-simulators
 
-      - name: Build converter-ffi artifact (verification only)
+      - name: Build converter-ffi artifacts (verification only)
         run: |
-          mise exec -- ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --target "${{ matrix.rust_target }}"
+          set -euo pipefail
+          for rust_target in aarch64-apple-ios-sim x86_64-apple-ios; do
+            mise exec -- ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --target "$rust_target"
+          done
 
-      - name: Verify expected artifact exists
+      - name: Verify expected artifacts exist
         shell: bash
         run: |
           set -euo pipefail
-          case '${{ matrix.rust_target }}' in
-            *apple*) library=libconverter_ffi.dylib ;;
-            *) library=libconverter_ffi.so ;;
-          esac
-          artifact="target/${{ matrix.rust_target }}/release/${library}"
-          test -f "$artifact" || { echo "::error::Expected converter-ffi artifact was not produced: $artifact"; exit 1; }
-          echo "Verified $artifact"
+          for rust_target in aarch64-apple-ios-sim x86_64-apple-ios; do
+            artifact="target/${rust_target}/release/libconverter_ffi.dylib"
+            test -f "$artifact" || { echo "::error::Expected converter-ffi artifact was not produced: $artifact"; exit 1; }
+            echo "Verified $artifact"
+          done
           echo "No release artifact is published by this workflow."

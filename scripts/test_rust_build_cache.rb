@@ -46,7 +46,7 @@ class RustBuildCacheTest < Minitest::Test
       },
       'converter-ffi.yml' => {
         'host-validation' => ['ffi-host', 'mise exec -- cargo test -p converter-ffi'],
-        'artifact-build' => ['ffi-${{ matrix.rust_target }}', 'cargo build --locked -p converter-ffi --release']
+        'artifact-build' => ['ffi-ios-simulators', 'cargo build --locked -p converter-ffi --release']
       },
       'rust-dependency-audit.yml' => {
         'audit' => ['dependency-audit', 'mise exec -- cargo check --locked -p converter-core']

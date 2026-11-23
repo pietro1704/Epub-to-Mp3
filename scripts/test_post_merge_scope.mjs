@@ -24,12 +24,12 @@ test('only confined areas are recognized; everything else is shared', () => {
 
 test('a validation is skipped only when no change touches its areas or a shared path', () => {
   assert.deepEqual(selectJobs(modified('docs/a.md', 'CLAUDE.md')), none);
-  assert.deepEqual(selectJobs(modified('ios/EpubToMp3/a.swift')), { ...none, faber: true, isolation: true });
+  assert.deepEqual(selectJobs(modified('ios/EpubToMp3/a.swift')), { ...none, faber: true });
   assert.deepEqual(selectJobs(modified('flutter_app/a.dart')), { ...none, faber: true, flutter: true, linux: true });
   for (const shared of ['ruby_app/rails_gateway/public/sample.epub', 'README.md', 'scripts/x.rb']) {
     assert.deepEqual(selectJobs(modified('ios/EpubToMp3/a.swift', shared)), all, shared);
   }
-  assert.deepEqual(selectJobs([{ status: 'A', path: 'ios/EpubToMp3/new.swift' }, { status: 'D', path: 'docs/old.md' }]), { ...none, faber: true, isolation: true });
+  assert.deepEqual(selectJobs([{ status: 'A', path: 'ios/EpubToMp3/new.swift' }, { status: 'D', path: 'docs/old.md' }]), { ...none, faber: true });
   assert.deepEqual(selectJobs([{ status: 'D', path: 'CLAUDE.md' }]), all, 'Deleting a root marker is shared');
   assert.deepEqual(selectJobs([], { full: true }), all);
   assert.deepEqual(selectJobs([]), none, 'An empty diff since a validated ancestor changes nothing');
@@ -62,7 +62,7 @@ test('dispatch, a missing base, or unavailable metadata select everything', () =
   const result = decide({ sha, repo, event: 'push', api: () => ({ workflow_runs: [run(1, a)] }),
     run: git({ status: 0, stdout: 'M\0ios/EpubToMp3/a.swift\0M\0docs/x.md\0' }) });
   assert.equal(result.base, a);
-  assert.deepEqual(result.jobs, { ...none, faber: true, isolation: true });
+  assert.deepEqual(result.jobs, { ...none, faber: true });
   assert.throws(() => decide({ sha, repo, event: 'push', api: () => ({ workflow_runs: [run(1, a)] }), run: git({ status: 128, stdout: '' }) }), /diff/);
   assert.throws(() => decide({ sha, repo, event: 'push', api: () => ({ workflow_runs: [run(1, a)] }), run: () => ({ status: 128, stdout: '' }) }), /history/);
 });

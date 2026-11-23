@@ -83,9 +83,12 @@ class CiRuntimeScopeTest
   def test_ffi_artifact_jobs_have_no_skipped_success_rows_and_keep_device_link_owner
     ffi = YAML.load_file(File.expand_path('../.github/workflows/converter-ffi.yml', __dir__))
     artifacts = ffi.fetch('jobs').fetch('artifact-build')
-    assert_equal %w[aarch64-apple-ios-sim x86_64-apple-ios], artifacts.fetch('strategy').fetch('matrix').fetch('include').map { |entry| entry.fetch('rust_target') }.sort
+    refute artifacts.key?('strategy'), 'Both simulator targets build in one job so they need one macOS runner, not two'
+    assert_equal 'macos-15', artifacts.fetch('runs-on')
     refute artifacts.key?('if')
     commands = artifacts.fetch('steps').filter_map { |step| step['run'] }.join("\n")
+    assert_equal 2, commands.scan('for rust_target in aarch64-apple-ios-sim x86_64-apple-ios; do').size
+    assert_includes commands, 'rustup target add aarch64-apple-ios-sim x86_64-apple-ios'
     refute_includes commands, 'exit 0'
     assert_includes commands, 'native_job.rb build -- cargo build --locked'
     assert_includes commands, 'test -f "$artifact"'
