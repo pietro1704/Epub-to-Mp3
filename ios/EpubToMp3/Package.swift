@@ -57,6 +57,7 @@ let production = [
     "Shared/Configuration/LegacyPreferenceCleanup.swift",
     "Shared/Configuration/SpeechPreferenceMigration.swift",
     "Shared/Configuration/SpeechPreferences.swift",
+    "Shared/Configuration/AppIsolation.swift",
     "Shared/Configuration/SettingsDefaultsSource.swift",
     "Features/Conversion/Models/SessionRecord.swift",
     "Features/Conversion/Services/ConversionHistoryReader.swift",

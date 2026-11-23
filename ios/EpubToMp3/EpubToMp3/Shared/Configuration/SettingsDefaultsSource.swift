@@ -20,6 +20,8 @@ enum SettingsDefaultsSource {
         standard: UserDefaults = .standard,
         suiteName: String = isolatedSuiteName
     ) -> UserDefaults {
+        // Under the process-wide isolation `.standard` already is the throwaway suite.
+        if AppIsolation.isActive { return standard }
         guard arguments.contains(launchArgument), let suite = UserDefaults(suiteName: suiteName) else {
             return standard
         }
