@@ -1,6 +1,89 @@
 part of 'instant_reader_view.dart';
 
 extension _InstantReaderTools on _InstantReaderViewState {
+  /// The recent tool, unless it cannot apply to this chapter (Footnotes without
+  /// notes), in which case the text appearance stands in without forgetting it.
+  ReaderTool _shownTool(Chapter chapter) {
+    final recent = ref.watch(readerRecentToolProvider);
+    return recent == ReaderTool.footnotes && !chapter.hasFootnotes
+        ? ReaderTool.appearance
+        : recent;
+  }
+
+  ({IconData icon, String label, VoidCallback run}) _toolDescriptor(
+    ReaderTool tool,
+    Chapter chapter,
+  ) {
+    final t = AppLocalizations.of(context)!;
+    return switch (tool) {
+      ReaderTool.appearance => (
+        icon: Icons.text_format,
+        label: t.readerAppearance,
+        run: _showReaderSettings,
+      ),
+      ReaderTool.contents => (
+        icon: Icons.list,
+        label: t.tableOfContents,
+        run: _showContents,
+      ),
+      ReaderTool.search => (
+        icon: Icons.search,
+        label: t.searchInBook,
+        run: _showSearch,
+      ),
+      ReaderTool.bookmarks => (
+        icon: Icons.bookmark_outline,
+        label: t.bookmarksTitle,
+        run: _showBookmarks,
+      ),
+      ReaderTool.footnotes => (
+        icon: Icons.notes,
+        label: t.readerFootnotes,
+        run: () => _showFootnotes(chapter),
+      ),
+    };
+  }
+
+  List<Widget> _chromeTools(Chapter chapter, Color color) {
+    final tool = _shownTool(chapter);
+    final descriptor = _toolDescriptor(tool, chapter);
+    return [
+      IconButton(
+        key: const ValueKey('reader-recent-tool'),
+        icon: Icon(descriptor.icon, color: color),
+        tooltip: descriptor.label,
+        onPressed: descriptor.run,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+      ),
+    ];
+  }
+
+  /// Every tool except the one already beside More, plus Add bookmark.
+  List<ReaderMenuEntry> _menuEntries(Chapter chapter) {
+    final t = AppLocalizations.of(context)!;
+    final shown = _shownTool(chapter);
+    return [
+      for (final tool in ReaderTool.values)
+        if (tool != shown && (tool != ReaderTool.footnotes || chapter.hasFootnotes))
+          () {
+            final descriptor = _toolDescriptor(tool, chapter);
+            return ReaderMenuEntry(
+              keyName: tool.name,
+              icon: descriptor.icon,
+              label: descriptor.label,
+              tool: tool,
+              onSelected: descriptor.run,
+            );
+          }(),
+      ReaderMenuEntry(
+        keyName: 'add-bookmark',
+        icon: Icons.bookmark_add_outlined,
+        label: t.addBookmark,
+        onSelected: _addBookmark,
+      ),
+    ];
+  }
+
   /// Start of the sentence being spoken, as an exact source position, or null
   /// when nothing audible belongs to this book. The audible chapter can differ
   /// from the shown one, so its measured speech alignment is read on demand.

@@ -352,61 +352,12 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                             ),
                           ),
                         ),
-                        IconButton(
-                          icon: Icon(Icons.list, color: fg),
-                          tooltip: AppLocalizations.of(context)!
-                              .tableOfContents,
-                          onPressed: _showContents,
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.search, color: fg),
-                          tooltip: AppLocalizations.of(context)!.searchInBook,
-                          onPressed: _showSearch,
-                        ),
-                        // Only chapters with notes offer the action, so it
-                        // appears and disappears as the chapter changes.
-                        if (chapter.hasFootnotes)
-                          IconButton(
-                            key: const ValueKey('reader-footnotes'),
-                            icon: Icon(Icons.notes, color: fg),
-                            tooltip: AppLocalizations.of(context)!.readerFootnotes,
-                            onPressed: () => _showFootnotes(chapter),
-                          ),
-                        PopupMenuButton<String>(
-                          icon: Icon(Icons.bookmark_outline, color: fg),
-                          tooltip: AppLocalizations.of(context)!.bookmarksTitle,
-                          onSelected: (choice) => choice == 'add'
-                              ? _addBookmark()
-                              : _showBookmarks(),
-                          itemBuilder: (_) => [
-                            PopupMenuItem(
-                              value: 'add',
-                              child: Text(
-                                AppLocalizations.of(context)!.addBookmark,
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'list',
-                              child: Text(
-                                AppLocalizations.of(context)!.bookmarksTitle,
-                              ),
-                            ),
-                          ],
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.text_format,
-                            color: fg.withValues(alpha: 0.7),
-                          ),
-                          onPressed: _showReaderSettings,
-                          tooltip: 'Reader settings',
-                          constraints: const BoxConstraints(
-                            minWidth: 48,
-                            minHeight: 48,
-                          ),
-                        ),
+                        // Apple-style chrome: the recent tool beside More; the
+                        // other tools live in the overflow menu.
+                        ..._chromeTools(chapter, fg),
                         ReaderNarrationMenu(
                           color: fg,
+                          entries: _menuEntries(chapter),
                           onChanged: widget.onNarrationChanged,
                           currentSentence: _liveSentencePosition,
                         ),

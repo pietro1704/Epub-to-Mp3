@@ -175,5 +175,6 @@
   "ttsManualModelUnavailable": "Não foi possível preparar este modelo de narração.",
   "readerNarrationModel": "Modelo de narração",
   "readerFootnotes": "Notas de rodapé",
-  "openReaderAtPlayback": "Abrir no leitor"
+  "openReaderAtPlayback": "Abrir no leitor",
+  "readerAppearance": "Aparência do texto"
 }

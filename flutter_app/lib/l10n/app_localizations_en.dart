@@ -479,4 +479,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openReaderAtPlayback => 'Open in reader';
+
+  @override
+  String get readerAppearance => 'Text appearance';
 }

@@ -963,6 +963,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open in reader'**
   String get openReaderAtPlayback;
+
+  /// No description provided for @readerAppearance.
+  ///
+  /// In en, this message translates to:
+  /// **'Text appearance'**
+  String get readerAppearance;
 }
 
 class _AppLocalizationsDelegate
