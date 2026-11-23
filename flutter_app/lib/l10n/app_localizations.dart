@@ -1047,6 +1047,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.'**
   String get errorEdgeConsentRequired;
+
+  /// No description provided for @modelsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get modelsTitle;
+
+  /// No description provided for @modelsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the narration for each book language'**
+  String get modelsSubtitle;
+
+  /// No description provided for @modelsAutomatic.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get modelsAutomatic;
+
+  /// No description provided for @modelsAutomaticDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses the best installed model for the book'**
+  String get modelsAutomaticDesc;
+
+  /// No description provided for @modelsLocalSection.
+  ///
+  /// In en, this message translates to:
+  /// **'On this device'**
+  String get modelsLocalSection;
+
+  /// No description provided for @modelsOnlineSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get modelsOnlineSection;
+
+  /// No description provided for @modelsOnlineNeedsConsent.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on “Allow online fallback” in Settings to use online voices'**
+  String get modelsOnlineNeedsConsent;
+
+  /// No description provided for @modelsNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to download and use'**
+  String get modelsNotInstalled;
+
+  /// No description provided for @modelsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models are available for this device'**
+  String get modelsEmpty;
+
+  /// No description provided for @modelsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The model list could not be loaded'**
+  String get modelsLoadFailed;
+
+  /// No description provided for @modelsRowSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 model} other{{count} models}}'**
+  String modelsRowSubtitle(int count);
 }
 
 class _AppLocalizationsDelegate

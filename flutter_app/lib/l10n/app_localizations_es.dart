@@ -533,4 +533,47 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get errorEdgeConsentRequired =>
       'Las voces en línea de Edge necesitan tu permiso. Activa «Permitir respaldo en línea» en Ajustes o elige una voz local e inténtalo de nuevo.';
+
+  @override
+  String get modelsTitle => 'Modelos';
+
+  @override
+  String get modelsSubtitle => 'Elige la narración para cada idioma de libro';
+
+  @override
+  String get modelsAutomatic => 'Automático';
+
+  @override
+  String get modelsAutomaticDesc =>
+      'Usa el mejor modelo instalado para el libro';
+
+  @override
+  String get modelsLocalSection => 'En este dispositivo';
+
+  @override
+  String get modelsOnlineSection => 'En línea';
+
+  @override
+  String get modelsOnlineNeedsConsent =>
+      'Activa «Permitir respaldo en línea» en Ajustes para usar voces en línea';
+
+  @override
+  String get modelsNotInstalled => 'Toca para descargar y usar';
+
+  @override
+  String get modelsEmpty => 'No hay modelos disponibles para este dispositivo';
+
+  @override
+  String get modelsLoadFailed => 'No se pudo cargar la lista de modelos';
+
+  @override
+  String modelsRowSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count modelos',
+      one: '1 modelo',
+    );
+    return '$_temp0';
+  }
 }
