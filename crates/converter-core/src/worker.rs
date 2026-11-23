@@ -329,6 +329,8 @@ use conversion_input_policy::chapter_selection_matches;
 pub(crate) use conversion_input_policy::persisted_request_path;
 mod conversion_schedule;
 mod edge_synthesis_execution;
+mod error_code;
+pub use error_code::{ERROR_CODE_CLOSE, ERROR_CODE_OPEN};
 mod heading_pauses;
 mod job_lifecycle;
 mod language_routing;

@@ -103,6 +103,12 @@ fn clear_last_error() {
     LAST_ERROR.with(|error| error.borrow_mut().take());
 }
 
+/// Records a conversion failure with the additive `[[error_code_v1]]` marker,
+/// leaving the human message unchanged (see `WorkerError::code`).
+fn fail_worker<T: Default>(error: &converter_core::worker::WorkerError) -> T {
+    fail(error.message_with_code())
+}
+
 fn fail<T: Default>(error: String) -> T {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(error));
     // Null pointers, false/zero status and unit are the ABI failure sentinels.
