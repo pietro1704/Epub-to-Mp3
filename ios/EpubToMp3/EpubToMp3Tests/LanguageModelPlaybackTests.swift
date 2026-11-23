@@ -193,4 +193,26 @@ final class LanguageModelPlaybackTests: XCTestCase {
         let off = await go("en", ["pt_BR-faber-medium"], ["en-US"])
         XCTAssertEqual(off, .missing(language: "en"))
     }
+
+    // MARK: background (offline chapter) conversions
+
+    func testOfflineChapterOptionsFollowTheLanguageResolution() async throws {
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let english = TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil)
+        let used = try await LanguageModelPlayback.conversionOptions(
+            for: book, settings: settings, dependencies: dependencies(language: "en", selection: english))
+        XCTAssertEqual(used.ttsPreferences?.primary.modelID, "en_US-ljspeech-high", "An English book is narrated in English")
+        let same = try await LanguageModelPlayback.conversionOptions(
+            for: book, settings: settings, dependencies: dependencies(language: "pt", selection: faber))
+        XCTAssertEqual(same.ttsPreferences?.primary.modelID, "pt_BR-faber-medium", "pt with Faber: exactly today's options")
+        XCTAssertEqual(same.ttsPreferences, NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences)
+        do {
+            _ = try await LanguageModelPlayback.conversionOptions(
+                for: book, settings: settings, dependencies: dependencies(language: "en", status: .missingModel))
+            XCTFail("Nothing can read the language: no silent conversion with the wrong model")
+        } catch {
+            XCTAssertEqual(TtsLanguageMismatch.decode(error)?.language, "en")
+        }
+    }
 }

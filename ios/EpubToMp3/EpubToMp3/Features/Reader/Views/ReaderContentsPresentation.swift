@@ -144,6 +144,9 @@ final class ReaderChapterDownloads {
                 var bookURL: URL?
                 var hasSecurityScope = false
                 defer { if hasSecurityScope { bookURL?.stopAccessingSecurityScopedResource() } }
+                // The book's language decides the narration (cached analysis), like a listening request.
+                let options = try await LanguageModelPlayback.conversionOptions(
+                    for: book, settings: settings, dependencies: .live(library: library))
                 for index in chapters {
                     try Task.checkCancellation()
                     guard library.books.contains(where: { $0.id == book.id }) else { return }
@@ -156,7 +159,6 @@ final class ReaderChapterDownloads {
                     }
                     guard let bookURL else { throw CocoaError(.fileNoSuchFile) }
                     let control = try RustConversionCoordinator.makePlaybackControl()
-                    let options = NarrationConversionOptions.current(for: settings.ttsPreferences)
                     let result = try await withTaskCancellationHandler {
                         try await RustConversionCoordinator.executeStreaming(
                             bookURL: bookURL, jobID: UUID().uuidString, chapterStart: position,

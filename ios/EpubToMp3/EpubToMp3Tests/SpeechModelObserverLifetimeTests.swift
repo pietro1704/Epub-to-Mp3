@@ -6,7 +6,19 @@ import UIKit
 private typealias ModelObservationOwner = SettingsScreenController
 #else
 import AppKit
-private typealias ModelObservationOwner = MacSpeechModelLibraryPanel
+/// What the macOS Models screen's driver and iOS Settings share: the library session owns the
+/// install observers, so its lifetime is what these tests pin on macOS.
+@MainActor
+private final class ModelObservationSession {
+    let session: SpeechModelLibrarySession
+    init(client: SpeechModelLibraryClient) { session = SpeechModelLibrarySession(client: client) }
+    func reload() { session.reload() }
+    @discardableResult
+    func install(_ entry: SpeechModelSnapshot.Entry, acceptedTermsFingerprint: String?) -> Task<Void, Never> {
+        session.install(entry, acceptedTermsFingerprint: acceptedTermsFingerprint)
+    }
+}
+private typealias ModelObservationOwner = ModelObservationSession
 #endif
 
 private actor HeldModelInstallation {
@@ -327,8 +339,7 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
                 termsAcceptance: SpeechModelTermsAcceptanceStore(defaults: defaults), speechModels: client)
             owner.loadViewIfNeeded()
             #else
-            let owner = MacSpeechModelLibraryPanel(settings: settings, speechModels: client,
-                                                  termsAcceptance: SpeechModelTermsAcceptanceStore(defaults: defaults))
+            let owner = ModelObservationSession(client: client)
             owner.reload()
             #endif
             return owner

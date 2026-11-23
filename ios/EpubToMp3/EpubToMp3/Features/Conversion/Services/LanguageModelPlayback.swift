@@ -75,6 +75,19 @@ enum LanguageModelPlayback {
         }
     }
 
+    /// Options for a background conversion of a book (offline chapters): the language's resolved
+    /// narration like a listening request, and the missing-model error the shared recovery messages
+    /// understand when nothing can read the language.
+    static func conversionOptions(
+        for book: BookEntity, settings: AppSettings, dependencies: Dependencies
+    ) async throws -> ConversionOptions {
+        switch await outcome(for: book, settings: settings, hasExplicitSelection: false, dependencies: dependencies) {
+        case .useSettings: return NarrationConversionOptions.current(for: settings.ttsPreferences)
+        case let .use(preferences): return NarrationConversionOptions.current(for: preferences)
+        case let .missing(language): throw missingModelError(language: language)
+        }
+    }
+
     /// The same mismatch the conversion reports, so the existing recovery alert (download the
     /// recommended model, use the system voice, open Models) handles it on every platform.
     static func missingModelError(language: String) -> Error {

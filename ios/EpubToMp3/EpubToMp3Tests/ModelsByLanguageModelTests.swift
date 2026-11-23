@@ -11,6 +11,7 @@ final class ModelsByLanguageModelTests: XCTestCase {
         private var continuations: [String: AsyncStream<SpeechModelInstallEvent>.Continuation] = [:]
         var requiresTerms = false
         var installError: Error?
+        var installDelayNanoseconds: UInt64 = 0
 
         func catalogLanguages() async throws -> [CatalogLanguage] {
             [CatalogLanguage(tag: "pt", modelCount: 2), CatalogLanguage(tag: "en", modelCount: 1)]
@@ -36,6 +37,7 @@ final class ModelsByLanguageModelTests: XCTestCase {
 
         func install(modelID: String, acceptedTermsFingerprint: String?, language: String) async throws {
             lock.lock(); installs.append((modelID, acceptedTermsFingerprint, language)); lock.unlock()
+            if installDelayNanoseconds > 0 { try await Task.sleep(nanoseconds: installDelayNanoseconds) }
             if let installError { throw installError }
         }
 
@@ -258,5 +260,21 @@ final class ModelsByLanguageModelTests: XCTestCase {
         XCTAssertEqual(model.state.sections.map(\.language), ["en", "pt"], "English first although Portuguese has the installed model")
         model.priorityLanguage = nil
         XCTAssertEqual(model.state.sections.map(\.language), ["pt", "en"])
+    }
+
+    func testASlowDownloadNeverBlocksTheMainActor() async throws {
+        let source = FakeSource()
+        source.installDelayNanoseconds = 400_000_000
+        let (model, _, defaults, name) = try make(source)
+        defer { defaults.removePersistentDomain(forName: name) }
+        await model.load()
+        let cadu = try XCTUnwrap(model.state.sections[0].rows.first { $0.id == "piper:pt_BR-cadu-medium" })
+        var ticks = 0
+        let timer = Timer(timeInterval: 0.02, repeats: true) { _ in MainActor.assumeIsolated { ticks += 1 } }
+        RunLoop.main.add(timer, forMode: .common)
+        defer { timer.invalidate() }
+        await model.download(cadu, in: "pt")
+        XCTAssertGreaterThan(ticks, 5, "The main actor kept running while the download was in flight")
+        XCTAssertEqual(source.installs.map(\.model), ["pt_BR-cadu-medium"])
     }
 }
