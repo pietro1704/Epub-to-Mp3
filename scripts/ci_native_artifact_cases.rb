@@ -144,13 +144,14 @@ class CiRuntimeScopeTest
       assert_includes key, "${{ #{identity_key} }}"
     end
     ["hashFiles('Cargo.lock'", "'**/Cargo.toml'", "'.cargo/config.toml'", "'mise.toml'",
-      "'scripts/native_job.rb'", "'scripts/native_build_command.rb'", "'crates/**/*.rs'",
-      "'native/**/*.rs'", "'native/**/*.cpp'", "'native/vendor/espeak-rs-sys/espeak-ng/**'"]
+      "'scripts/native_job.rb'", "'scripts/native_build_command.rb'",
+      "'native/**/*.cpp'", "'native/vendor/espeak-rs-sys/espeak-ng/**'"]
       .each { |input| assert_includes key, input }
     restore_prefix = restore.fetch('with').fetch('restore-keys')
     assert_includes restore_prefix, '${{ runner.arch }}'
     assert_includes restore_prefix, "'Cargo.lock'"
-    refute_includes restore_prefix, "'crates/**/*.rs'"
+    refute_includes key, "'crates/**/*.rs'"
+    refute_includes restore_prefix, "'native/**/*.cpp'"
     assert_equal "${{ steps.rust-cache.outputs.cache-primary-key }}", save.fetch('with').fetch('key')
     assert_includes save.fetch('if'), "(matrix.arch != 'x86_64' || !inputs.intel_prebuilt)"
     assert_includes save.fetch('if'), "github.ref == 'refs/heads/master'"

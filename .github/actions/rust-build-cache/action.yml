@@ -4,6 +4,10 @@ inputs:
   namespace:
     description: Build contract and target; never share with instrumented builds
     required: true
+  cache-target:
+    description: Cache the Cargo target directory; false keeps only registry downloads
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -19,8 +23,7 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          target
-        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/piper-runtime/**/*.rs') }}
+          ${{ inputs.cache-target == 'true' && 'target' || '' }}
+        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}
         restore-keys: |
-          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-
           rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-
