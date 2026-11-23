@@ -13,7 +13,8 @@ void registerManualConversionCompletionCases() {
     expect(captured!.ttsPreferences.primary.modelId, 'piper-auto');
     final container = ProviderScope.containerOf(tester.element(find.byType(ConvertScreen)));
     await container.read(settingsProvider.notifier).setTtsPreferences(
-      const TtsPreferences(primary: TtsSelection.edge),
+      // Edge as primary needs the online consent (else it migrates to Piper).
+      const TtsPreferences(primary: TtsSelection.edge, allowOnlineFallback: true),
     );
     result.complete(jsonEncode({
       'jobId': 'captured-manual',

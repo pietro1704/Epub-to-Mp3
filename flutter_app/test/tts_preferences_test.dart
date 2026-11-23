@@ -69,7 +69,8 @@ void main() {
     final settings = MirrorAppSettings(prefs);
     final captured = settings.ttsPreferences.optionsJson(modelsRoot: '/models');
     await settings.setTtsPreferences(
-      const TtsPreferences(primary: TtsSelection.edge),
+      // Edge as primary needs the online consent (otherwise it migrates to Piper).
+      const TtsPreferences(primary: TtsSelection.edge, allowOnlineFallback: true),
     );
     final options = jsonDecode(captured) as Map<String, dynamic>;
     expect(options['models_root'], '/models');

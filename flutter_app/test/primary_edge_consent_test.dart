@@ -59,11 +59,11 @@ void main() {
     expect(_edgeOfferedAsPrimary(tester), isTrue);
   });
 
-  testWidgets('a saved Edge primary stays selectable so it is not silently changed', (tester) async {
+  testWidgets('a saved Edge primary without consent is migrated to Piper, so Edge is not offered', (tester) async {
     await _pump(
       tester,
       preferences: const TtsPreferences(primary: TtsSelection.edge, secondary: TtsSelection.system),
     );
-    expect(_edgeOfferedAsPrimary(tester), isTrue);
+    expect(_edgeOfferedAsPrimary(tester), isFalse);
   });
 }
