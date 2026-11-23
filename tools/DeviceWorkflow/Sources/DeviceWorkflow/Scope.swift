@@ -79,8 +79,12 @@ public struct Options {
         // Partial method audits must never authorize a whole-class selector.
         let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests", "NativePlaybackFeedbackTests", "NativeTransportFeedbackTests",
             "PDFReaderParityTests", "TtsMissingVoiceRecoveryTests", "ReaderReadingPositionTests",
-            "ReaderAccessibilityContractTests", "SpeechModelObserverLifetimeTests"]
+            "ReaderAccessibilityContractTests", "SpeechModelObserverLifetimeTests", "ModelsScreenAlertTests"]
         let allowedMethods: [String: Set<String>] = [
+            "ModelsScreenAlertTests": [
+                "testChoiceSheetsHaveExactlyOneCancelWhenPresented",
+                "testActionSheetNeverAddsASecondCancel",
+            ],
             "PDFReaderParityTests": [
                 "testPhysicalPDFPagesMapToTheBundledRustNarrationAxis",
                 "testRepeatedPagesRemainDistinctAndRatiosUseRustUnicodeScalars",
