@@ -82,6 +82,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             available: true, freeString: free, lastError: error,
             catalogJSONV3: symbol("converter_tts_catalog_json_v3", as: ConverterTtsCatalogV3.self),
             catalogProbeJSONV3: symbol("converter_tts_catalog_probe_json_v3", as: ConverterTtsCatalogProbeV3.self),
+            catalogManualJSONV3: symbol("converter_tts_catalog_manual_json_v3", as: ConverterTtsCatalogV3.self),
+            catalogProbeModelJSONV3: symbol("converter_tts_catalog_probe_model_json_v3", as: ConverterTtsCatalogProbeModelV3.self),
             defaultEngine: defaultEngine,
             selectInstalledReady: symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self),
             installArtifact: symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self),
@@ -292,6 +294,14 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     func bookLanguage(at url: URL) throws -> BookLanguageAnalysis { try languageModels.bookLanguage(at: url) }
     func speechModelSnapshot(target: SpeechModelLibraryTarget, probeRuntime: Bool = false) throws -> SpeechModelSnapshot {
         try modelCatalog.speechModelSnapshot(target: target, probeRuntime: probeRuntime)
+    }
+
+    func manualSpeechModelSnapshot(target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
+        try modelCatalog.manualSpeechModelSnapshot(target: target)
+    }
+
+    func probeSpeechModel(modelID: String, target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
+        try modelCatalog.probeSpeechModel(modelID: modelID, target: target)
     }
 
     func ttsDefaultEngine(language: String, platform: String, androidAPI: UInt32 = 0) throws -> String {

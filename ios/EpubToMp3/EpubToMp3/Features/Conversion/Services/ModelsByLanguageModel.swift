@@ -12,6 +12,27 @@ protocol ModelsByLanguageSource: Sendable {
     func cancelInstall(modelID: String) async
     func remove(modelID: String, configuredSelections: [TtsSelection]) async throws
     func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String)
+    /// The install browser: the language's models plus the explicit-only Piper Low voices.
+    func snapshot(language: String, includeLow: Bool) async throws -> SpeechModelSnapshot
+    func install(modelID: String, acceptedTermsFingerprint: String?, language: String, explicitLow: Bool) async throws
+    func remove(modelID: String, configuredSelections: [TtsSelection], explicitLowLanguage: String?) async throws
+    /// The selection that names an installed Low voice with its catalogue revision.
+    func explicitSelection(for entry: SpeechModelSnapshot.Entry, language: String) async throws -> TtsSelection
+}
+
+extension ModelsByLanguageSource {
+    func snapshot(language: String, includeLow: Bool) async throws -> SpeechModelSnapshot {
+        try await snapshot(language: language)
+    }
+    func install(modelID: String, acceptedTermsFingerprint: String?, language: String, explicitLow: Bool) async throws {
+        try await install(modelID: modelID, acceptedTermsFingerprint: acceptedTermsFingerprint, language: language)
+    }
+    func remove(modelID: String, configuredSelections: [TtsSelection], explicitLowLanguage: String?) async throws {
+        try await remove(modelID: modelID, configuredSelections: configuredSelections)
+    }
+    func explicitSelection(for entry: SpeechModelSnapshot.Entry, language: String) async throws -> TtsSelection {
+        throw SpeechModelInstallationError.incompatible(entry.identity.modelID)
+    }
 }
 
 struct SpeechModelsSource: ModelsByLanguageSource {
@@ -39,6 +60,20 @@ struct SpeechModelsSource: ModelsByLanguageSource {
     func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String) {
         try await client.auditionChoice(for: entry)
     }
+    func snapshot(language: String, includeLow: Bool) async throws -> SpeechModelSnapshot {
+        includeLow ? try await client.manualLanguageSnapshot(language) : try await snapshot(language: language)
+    }
+    func install(modelID: String, acceptedTermsFingerprint: String?, language: String, explicitLow: Bool) async throws {
+        _ = try await client.install(modelID: modelID, acceptedTermsFingerprint: acceptedTermsFingerprint,
+                                     language: language, explicitLow: explicitLow)
+    }
+    func remove(modelID: String, configuredSelections: [TtsSelection], explicitLowLanguage: String?) async throws {
+        _ = try await client.remove(modelID: modelID, configuredSelections: configuredSelections,
+                                    explicitLowLanguage: explicitLowLanguage)
+    }
+    func explicitSelection(for entry: SpeechModelSnapshot.Entry, language: String) async throws -> TtsSelection {
+        try await client.explicitSelection(for: entry, language: language)
+    }
 }
 
 /// Drives the Models screen: loads the catalog by language, applies the user's
@@ -50,6 +85,9 @@ final class ModelsByLanguageModel: ObservableObject {
     @Published private(set) var progress: [String: Double] = [:]
     @Published private(set) var failures: [String: String] = [:]
     @Published private(set) var isLoading = false
+    /// Piper Low voices are explicit-only: hidden until the listener asks to see them. Revealing a voice,
+    /// installing it and choosing it are three separate actions; hiding keeps an active explicit choice.
+    @Published private(set) var showLowQuality = false
     @Published private(set) var loadFailure: String?
     /// A licence the user must accept before the model can download.
     @Published private(set) var pendingTerms: PendingTerms?
@@ -65,6 +103,8 @@ final class ModelsByLanguageModel: ObservableObject {
     private let systemVoiceLanguages: @Sendable () -> Set<String>
     private let terms: SpeechModelTermsAcceptanceStore
     private var snapshots: [(tag: String, snapshot: SpeechModelSnapshot)] = []
+    /// Languages whose snapshot is the install browser (it lists Low voices).
+    private var lowLanguages: Set<String> = []
     private var watchers: [String: Task<Void, Never>] = [:]
     private var settingsObservation: AnyCancellable?
 
@@ -98,8 +138,10 @@ final class ModelsByLanguageModel: ObservableObject {
         do {
             let languages = try await source.catalogLanguages()
             snapshots = []
+            lowLanguages = []
             for language in languages {
-                snapshots.append((language.tag, try await source.snapshot(language: language.tag)))
+                let includeLow = showLowQuality || hasExplicitLowChoice(in: language.tag)
+                snapshots.append((language.tag, try await fetch(language.tag, includeLow: includeLow)))
                 // Show languages as they arrive instead of waiting for the whole catalog.
                 rebuild()
             }
@@ -109,12 +151,60 @@ final class ModelsByLanguageModel: ObservableObject {
     }
 
     /// Picks `row` for its language. Only a ready row can be chosen: a dimmed row
-    /// is downloaded first (explicit) and never selected silently.
+    /// is downloaded first (explicit) and never selected silently. A Low voice is never saved bare:
+    /// it goes through `chooseExplicit`, which pins its catalogue revision.
     @discardableResult
     func choose(_ row: ModelsByLanguageViewState.Row, in language: String) -> Bool {
-        guard row.availability == .ready else { return false }
+        guard row.availability == .ready, !row.isExplicitOnly else { return false }
         settings.selectLanguageModel(row.selection, for: language)
         return true
+    }
+
+    /// Chooses an installed Piper Low voice for its language with the revision-pinned selection the core requires.
+    @discardableResult
+    func chooseExplicit(_ row: ModelsByLanguageViewState.Row, in language: String) async -> Bool {
+        guard row.availability == .ready, row.isExplicitOnly, let entry = entry(for: row, in: language) else { return false }
+        do {
+            let selection = try await source.explicitSelection(for: entry, language: language)
+            settings.selectLanguageModel(selection, for: language)
+            failures[row.id] = nil
+            return true
+        } catch {
+            failures[row.id] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    /// Shows or hides the Low voices. Showing loads the install browser for every language; hiding only filters
+    /// (an explicit choice that is a Low voice stays visible and chosen).
+    func setShowLowQuality(_ value: Bool) async {
+        guard showLowQuality != value else { return }
+        showLowQuality = value
+        guard value else { rebuild(); return }
+        for index in snapshots.indices where !lowLanguages.contains(snapshots[index].tag) {
+            let tag = snapshots[index].tag
+            if let fresh = try? await fetch(tag, includeLow: true),
+               let current = snapshots.firstIndex(where: { $0.tag == tag }) {
+                snapshots[current] = (tag, fresh)
+            }
+        }
+        rebuild()
+    }
+
+    private func fetch(_ language: String, includeLow: Bool) async throws -> SpeechModelSnapshot {
+        if includeLow { lowLanguages.insert(language) } else { lowLanguages.remove(language) }
+        return includeLow ? try await source.snapshot(language: language, includeLow: true)
+                          : try await source.snapshot(language: language)
+    }
+
+    /// The language's saved choice is a revision-pinned Piper Low voice, so its row must stay listed.
+    private func hasExplicitLowChoice(in language: String) -> Bool {
+        settings.languageModelChoices[SpeechPreferences.languageKey(language)].map(Self.isExplicitLow) ?? false
+    }
+
+    static func isExplicitLow(_ selection: TtsSelection) -> Bool {
+        guard selection.engine == TtsSelection.piperEngine, let id = selection.modelID?.lowercased() else { return false }
+        return id.hasSuffix("-low") || id.hasSuffix("_low")
     }
 
     func clearChoice(in language: String) { settings.clearLanguageModel(for: language) }
@@ -158,8 +248,9 @@ final class ModelsByLanguageModel: ObservableObject {
             }
         }
         for section in state.sections {
+            // Piper Low voices are never offered as the default or reserve voice, only per language.
             for row in section.rows where row.kind == .local && row.selection.engine == TtsSelection.piperEngine
-                && row.availability == .ready {
+                && row.availability == .ready && !row.isExplicitOnly {
                 add(row.selection, row.title)
             }
         }
@@ -227,13 +318,13 @@ final class ModelsByLanguageModel: ObservableObject {
     /// Removes an installed model the client allows (not configured, chosen or in use) and refreshes its language.
     func remove(_ row: ModelsByLanguageViewState.Row, in language: String) async throws {
         guard let modelID = row.selection.modelID else { return }
-        try await source.remove(modelID: modelID, configuredSelections: protectedSelections)
-        progress[row.id] = nil
-        if let fresh = try? await source.snapshot(language: language),
-           let index = snapshots.firstIndex(where: { $0.tag == language }) {
-            snapshots[index] = (language, fresh)
-            rebuild()
+        if row.isExplicitOnly {
+            try await source.remove(modelID: modelID, configuredSelections: protectedSelections, explicitLowLanguage: language)
+        } else {
+            try await source.remove(modelID: modelID, configuredSelections: protectedSelections)
         }
+        progress[row.id] = nil
+        await refresh(language)
     }
 
     func auditionChoice(for row: ModelsByLanguageViewState.Row, in language: String) async throws
@@ -260,7 +351,11 @@ final class ModelsByLanguageModel: ObservableObject {
             }
         }
         do {
-            try await source.install(modelID: modelID, acceptedTermsFingerprint: fingerprint, language: language)
+            if row.isExplicitOnly {
+                try await source.install(modelID: modelID, acceptedTermsFingerprint: fingerprint, language: language, explicitLow: true)
+            } else {
+                try await source.install(modelID: modelID, acceptedTermsFingerprint: fingerprint, language: language)
+            }
         } catch {
             failures[row.id] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             progress[row.id] = nil
@@ -274,11 +369,7 @@ final class ModelsByLanguageModel: ObservableObject {
             progress[row.id] = nil
             watchers[row.id] = nil
             // The installed model becomes selectable: refresh its language only.
-            if let fresh = try? await source.snapshot(language: language),
-               let index = snapshots.firstIndex(where: { $0.tag == language }) {
-                snapshots[index] = (language, fresh)
-                rebuild()
-            }
+            await refresh(language)
         case .cancelled:
             progress[row.id] = nil
             watchers[row.id] = nil
@@ -290,6 +381,15 @@ final class ModelsByLanguageModel: ObservableObject {
         case .preflight, .downloading, .verifying, .publishing:
             progress[row.id] = event.bytesTotal > 0 ? min(1, Double(event.bytesCompleted) / Double(event.bytesTotal)) : 0
         }
+    }
+
+    /// Reloads one language's snapshot, keeping the Low voices listed when that language already shows them.
+    private func refresh(_ language: String) async {
+        let includeLow = lowLanguages.contains(language)
+        guard let fresh = try? await fetch(language, includeLow: includeLow),
+              let index = snapshots.firstIndex(where: { $0.tag == language }) else { return }
+        snapshots[index] = (language, fresh)
+        rebuild()
     }
 
     private func entry(for row: ModelsByLanguageViewState.Row, in language: String) -> SpeechModelSnapshot.Entry? {
@@ -308,7 +408,8 @@ final class ModelsByLanguageModel: ObservableObject {
             languages: snapshots.map { .init(tag: $0.tag, snapshot: $0.snapshot) },
             choices: settings.languageModelChoices,
             allowOnlineFallback: settings.allowOnlineAudioFallback,
-            systemVoiceLanguages: systemVoiceLanguages())
+            systemVoiceLanguages: systemVoiceLanguages(),
+            showLowQuality: showLowQuality)
         guard let focus = priorityLanguage.map(SpeechPreferences.languageKey),
               let index = made.sections.firstIndex(where: { $0.language == focus }), index > 0 else {
             state = made

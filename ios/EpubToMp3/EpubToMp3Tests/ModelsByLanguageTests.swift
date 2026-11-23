@@ -240,4 +240,31 @@ final class ModelsByLanguageTests: XCTestCase {
             XCTAssertTrue(String(describing: $0).contains("book not found"), "\($0)")
         }
     }
+
+    // MARK: Piper Low voices
+
+    func testLowVoicesAreListedOnlyOnRequestOrWhenChosen() throws {
+        let pt = try snapshot([
+            entry(id: "pt_BR-faber-medium", name: "Faber", installed: true),
+            entry(id: "pt_BR-edresson-low", name: "Edresson", quality: .low, installed: true),
+        ], language: "pt")
+        func rows(show: Bool, choices: [String: TtsSelection] = [:]) -> [String] {
+            ModelsByLanguageViewState.make(languages: [.init(tag: "pt", snapshot: pt)], choices: choices,
+                                           allowOnlineFallback: false, systemVoiceLanguages: [], showLowQuality: show)
+                .sections[0].local.map(\.title)
+        }
+        XCTAssertEqual(rows(show: false), ["Faber"], "Hidden by default")
+        XCTAssertEqual(rows(show: true), ["Faber", "Edresson"], "Shown last when asked")
+        let chosen = TtsSelection(engine: "piper", modelID: "pt_BR-edresson-low", voice: nil)
+        XCTAssertEqual(rows(show: false, choices: ["pt": chosen]), ["Faber", "Edresson"],
+                       "An explicit active choice stays visible with the filter off")
+        let low = try XCTUnwrap(ModelsByLanguageViewState.make(
+            languages: [.init(tag: "pt", snapshot: pt)], choices: ["pt": chosen], allowOnlineFallback: false,
+            systemVoiceLanguages: [], showLowQuality: false).sections[0].chosen)
+        XCTAssertTrue(low.isExplicitOnly)
+        XCTAssertFalse(try XCTUnwrap(
+            ModelsByLanguageViewState.make(languages: [.init(tag: "pt", snapshot: pt)], choices: [:], allowOnlineFallback: false,
+                                           systemVoiceLanguages: [], showLowQuality: true).sections[0].rows
+                .first { $0.title == "Faber" }).isExplicitOnly)
+    }
 }

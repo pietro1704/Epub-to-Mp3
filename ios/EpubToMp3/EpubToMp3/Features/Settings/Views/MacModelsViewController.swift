@@ -22,6 +22,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let secondaryPopup = NSPopUpButton()
     private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let lowQualityButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private var primaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
     private var secondaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
     private var items: [Item] = []
@@ -77,11 +78,18 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         onlineFallbackButton.target = self
         onlineFallbackButton.action = #selector(onlineFallbackChanged)
         onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
+        lowQualityButton.title = L10n.string("models.showLowQuality")
+        lowQualityButton.toolTip = L10n.string("models.showLowQualityDescription")
+        lowQualityButton.target = self
+        lowQualityButton.action = #selector(lowQualityChanged)
+        lowQualityButton.setAccessibilityIdentifier("models.showLowQuality")
+        lowQualityButton.setAccessibilityHelp(L10n.string("models.showLowQualityDescription"))
         let narration = NSGridView(views: [
             [label("settings.audioEngineChoice"), primaryPopup],
             [label("settings.secondaryVoice"), secondaryPopup],
             [NSView(), automaticFallbackButton],
             [NSView(), onlineFallbackButton],
+            [NSView(), lowQualityButton],
         ])
         narration.rowSpacing = 8
         narration.columnSpacing = 12
@@ -156,6 +164,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         secondaryPopup.selectItem(at: secondaryIndex.map { $0 + 1 } ?? 0)
         automaticFallbackButton.state = model.allowAutomaticSystemVoiceFallback ? .on : .off
         onlineFallbackButton.state = model.allowOnlineFallback ? .on : .off
+        lowQualityButton.state = model.showLowQuality ? .on : .off
     }
 
     @objc private func primaryChanged() {
@@ -170,6 +179,10 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
 
     @objc private func automaticFallbackChanged() { model.allowAutomaticSystemVoiceFallback = automaticFallbackButton.state == .on }
     @objc private func onlineFallbackChanged() { model.allowOnlineFallback = onlineFallbackButton.state == .on }
+    @objc private func lowQualityChanged() {
+        let show = lowQualityButton.state == .on
+        Task { [weak self] in await self?.model.setShowLowQuality(show) }
+    }
 
     // MARK: table
 
@@ -273,7 +286,9 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         guard items.indices.contains(index), case let .model(row, language) = items[index] else { return }
         switch row.availability {
         case .ready:
-            if row.isChosen { model.clearChoice(in: language) } else { model.choose(row, in: language) }
+            if row.isChosen { model.clearChoice(in: language) }
+            else if row.isExplicitOnly { Task { [weak self] in await self?.model.chooseExplicit(row, in: language) } }
+            else { model.choose(row, in: language) }
         case .downloadable:
             Task { [weak self] in await self?.model.download(row, in: language) }
         case .needsConsent:

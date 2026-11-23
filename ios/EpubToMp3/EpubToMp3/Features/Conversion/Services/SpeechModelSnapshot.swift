@@ -36,7 +36,7 @@ struct SpeechModelSnapshot: Decodable, Sendable {
         }
     }
 
-    struct Identity: Decodable, Sendable {
+    struct Identity: Decodable, Equatable, Sendable {
         let provider: String
         let runtime: String?
         let modelID: String

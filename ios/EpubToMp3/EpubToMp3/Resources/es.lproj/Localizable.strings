@@ -572,6 +572,8 @@
 "models.title" = "Modelos";
 "models.section.local" = "%@ · Local";
 "models.section.online" = "%@ · En línea";
+"models.showLowQuality" = "Mostrar calidad baja";
+"models.showLowQualityDescription" = "Las voces de calidad baja nunca se eligen automáticamente, ni se sugieren ni se usan como reserva. Mostrar, descargar y elegir una voz son pasos separados.";
 "models.automatic" = "Automático: se usa el mejor modelo descargado para este idioma.";
 "models.inUse" = "En uso para este idioma";
 "models.download" = "Toca para descargar · %@";

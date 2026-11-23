@@ -106,6 +106,32 @@ actor SpeechModelLibraryClient {
         return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: probeRuntime)
     }
 
+    /// The install browser of one language: the same entries plus the explicit-only Piper Low voices, with their
+    /// installed state. Never used by an automatic choice; the Models screen shows it only on request.
+    func manualLanguageSnapshot(_ language: String) throws -> SpeechModelSnapshot {
+        if let snapshotOverride { return try snapshotOverride() }
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        let snapshot = try adapter.manualSpeechModelSnapshot(target: target.selectingLanguage(language))
+        guard snapshot.target?.language == target.selectingLanguage(language).language else {
+            throw EmbeddedConverterError.artifactInvalid("Manual catalogue language does not match the request")
+        }
+        presentationStore?.rememberExplicitModels(in: snapshot)
+        return snapshot
+    }
+
+    /// The selection naming an installed Piper Low voice with its catalogue revision: the explicit opt-in the core
+    /// requires. Built from a targeted probe of that one model (the ordinary probe never loads Low voices).
+    func explicitSelection(for entry: SpeechModelSnapshot.Entry, language: String) throws -> TtsSelection {
+        let snapshot: SpeechModelSnapshot
+        if let snapshotOverride { snapshot = try snapshotOverride() } else {
+            guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+            snapshot = try adapter.probeSpeechModel(modelID: entry.identity.modelID,
+                                                    target: target.selectingLanguage(language))
+        }
+        presentationStore?.rememberExplicitModels(in: snapshot)
+        return try SpeechModelAudition.selection(for: entry, language: language, in: snapshot)
+    }
+
     /// The catalog's base languages, for the Models screen.
     func catalogLanguages() throws -> [CatalogLanguage] {
         guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
@@ -154,8 +180,12 @@ actor SpeechModelLibraryClient {
         }
     }
 
-    func install(modelID: String, acceptedTermsFingerprint: String? = nil, language: String? = nil) async throws -> URL {
-        let current = try language.map { try recoverySnapshot(language: $0) } ?? snapshot(probeRuntime: false)
+    /// `explicitLow` looks the model up in the install browser, the only catalogue that lists Piper Low voices.
+    func install(modelID: String, acceptedTermsFingerprint: String? = nil, language: String? = nil,
+                 explicitLow: Bool = false) async throws -> URL {
+        let current = try explicitLow
+            ? manualLanguageSnapshot(language ?? target.language)
+            : language.map { try recoverySnapshot(language: $0) } ?? snapshot(probeRuntime: false)
         guard let entry = current.entries.first(where: { $0.identity.modelID == modelID }) else {
             throw SpeechModelInstallationError.unknownModel(modelID)
         }
@@ -236,7 +266,8 @@ actor SpeechModelLibraryClient {
 
     func remove(
         modelID: String,
-        configuredSelections: [TtsSelection]
+        configuredSelections: [TtsSelection],
+        explicitLowLanguage: String? = nil
     ) throws -> SpeechModelSnapshot {
         guard active[modelID] == nil, !installIntents.contains(modelID) else {
             throw SpeechModelRemovalError.inUse(modelID)
@@ -244,7 +275,7 @@ actor SpeechModelLibraryClient {
         guard !configuredSelections.contains(where: { $0.modelID == modelID }) else {
             throw SpeechModelRemovalError.configured(modelID)
         }
-        let current = try snapshot(probeRuntime: false)
+        let current = try explicitLowLanguage.map { try manualLanguageSnapshot($0) } ?? snapshot(probeRuntime: false)
         guard current.entries.contains(where: {
             $0.identity.modelID == modelID && $0.installation.state == .installed
         }) else {

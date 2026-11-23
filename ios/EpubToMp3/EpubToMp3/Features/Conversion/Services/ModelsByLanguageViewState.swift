@@ -25,6 +25,8 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         let selection: TtsSelection
         let availability: Availability
         let isChosen: Bool
+        /// Piper Low voices: never automatic, a suggestion or a fallback; only an explicit per-language choice.
+        var isExplicitOnly: Bool { kind == .local && detail == "low" }
         /// The installed system voice is always available: never dimmed.
         var isDimmed: Bool {
             switch availability {
@@ -57,7 +59,8 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         languages: [Language],
         choices: [String: TtsSelection],
         allowOnlineFallback: Bool,
-        systemVoiceLanguages: Set<String>
+        systemVoiceLanguages: Set<String>,
+        showLowQuality: Bool = false
     ) -> Self {
         let systemLanguages = Set(systemVoiceLanguages.map(SpeechPreferences.languageKey))
         let sections = languages.map { language -> Section in
@@ -70,6 +73,8 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
                 // The "piper-default" alias is a catalog placeholder, not a voice.
                 .filter { $0.identity.modelID != "piper-default" }
             var rows = entries.compactMap { row(for: $0, chosen: chosen, allowOnlineFallback: allowOnlineFallback) }
+                // Low voices appear only on request; hiding never drops the voice the listener chose.
+                .filter { showLowQuality || !$0.isExplicitOnly || $0.isChosen }
             if systemLanguages.contains(key) {
                 let selection = TtsSelection.systemDefault
                 rows.append(Row(
