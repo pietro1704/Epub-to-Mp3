@@ -122,7 +122,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             // directly, no intermediate Read/Listen/Download menu.
             // The root presents the active reader when its book identity changes.
             self.library.update(Self.touchLastOpened(book))
-            ReaderSessionState.setCurrentlyReading(bookID: book.id)
+            self.player.location.setReadingBook(book.id)
         }
         gridController.onChooseLanguage = { [weak self] book in
             Task { [weak self] in

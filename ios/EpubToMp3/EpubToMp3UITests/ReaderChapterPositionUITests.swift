@@ -55,7 +55,7 @@ final class ReaderChapterPositionUITests: XCTestCase {
         app.buttons["reader.close"].firstMatch.tap()
         try openBook(app)
         XCTAssertEqual(chapter(app), destination)
-        assertPosition(pageTwo.values, harness: harness)
+        try assertPosition(pageTwo.values, harness: harness)
     }
 
     func testExistingLOTRTOCRestoresTurnedPageAfterProcessRelaunch() throws {
@@ -70,10 +70,10 @@ final class ReaderChapterPositionUITests: XCTestCase {
 
         try relaunchBook(app)
         XCTAssertEqual(chapter(app), destination)
-        assertPosition(pageTwo.values, harness: harness)
+        try assertPosition(pageTwo.values, harness: harness)
         try turn(forward: true, app: app, harness: harness)
         try turn(forward: false, app: app, harness: harness)
-        assertPosition(pageTwo.values, harness: harness)
+        try assertPosition(pageTwo.values, harness: harness)
     }
 
     func testExistingLOTRTOCRestoresChapterStartAfterProcessRelaunchWithoutPageTurn() throws {
@@ -113,7 +113,7 @@ final class ReaderChapterPositionUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         // Keep books, audio and reading progress. Overrides are launch-only.
-        app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", "paginated",
+        app.launchArguments = ["-developmentSeedBook", "-uiTestResetActiveReader", "-uiTestReaderLayout", "paginated",
             "-uiTestPaginationProbe", "-uiTestFlickerProbe", "-uiTestNoPageTurnOverlay",
             "-uiTestPageTurnStyle", "none", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
@@ -139,7 +139,8 @@ final class ReaderChapterPositionUITests: XCTestCase {
 
     private func relaunchBook(_ app: XCUIApplication) throws {
         app.terminate()
-        app.launchArguments.removeAll { $0 == "-uiTestResetActiveReader" }
+        XCTAssertEqual(app.state, .notRunning)
+        app.launchArguments.removeAll { ["-developmentSeedBook", "-uiTestResetActiveReader"].contains($0) }
         app.launch()
         let reader = app.buttons["reader.more"].firstMatch
         if reader.exists || app.images["reader.loadingCover"].firstMatch.exists
@@ -209,17 +210,20 @@ final class ReaderChapterPositionUITests: XCTestCase {
         return try XCTUnwrap(settled)
     }
 
-    private func assertPosition(_ expected: [String: Int], harness: ReaderModesHarness) {
-        var actual: [String: Int] = [:]
+    private func assertPosition(_ expected: [String: Int], harness: ReaderModesHarness) throws {
+        let keys = ["page", "offset", "first", "last"]
+        let expectedPosition = try keys.map { key in try XCTUnwrap(expected[key], "Missing \(key) in the saved position.") }
         let restored = wait {
-            actual = harness.paginationMetrics?.values ?? [:]
-            return actual["page"] == expected["page"] && actual["offset"] == expected["offset"]
+            guard let position = harness.paginationMetrics?.values else { return false }
+            return keys.compactMap { position[$0] } == expectedPosition
         }
+        let actual = harness.paginationMetrics?.values ?? [:]
         let evidence = XCTAttachment(string: "expected=\(expected); actual=\(actual)")
         evidence.name = "reopened-reader-position"
         evidence.lifetime = .keepAlways
         add(evidence)
-        XCTAssertTrue(restored, "The saved page and raw offset must both be restored: expected=\(expected); actual=\(actual)")
+        XCTAssertTrue(restored, "The saved page, offset and visible character range must be restored: \(actual)")
+        harness.assertNoClippedLines(scenario: "Restored reader position")
     }
 
     private func wait(_ condition: @escaping () -> Bool) -> Bool {

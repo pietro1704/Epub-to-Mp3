@@ -7,13 +7,13 @@ enum ReaderListeningStartLocation {
     /// teardown can publish another chapter. A PDF owns a separate exact anchor.
     static func pageRatio(bookID: String, chapter: Int, explicitRatio: Double?,
                           voiceChange: ReaderVoiceChange?, pdfAnchor: PDFReadingAudioMap.Anchor?,
-                          defaults: UserDefaults) -> Double? {
+                          location: ReaderLocation) -> Double? {
         if let voiceChange { return voiceChange.pageRatio }
         guard pdfAnchor == nil else { return nil }
         if let explicitRatio { return explicitRatio }
-        guard defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
-              defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int == chapter,
-              let ratio = defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,
+        guard location.readingBookID == bookID,
+              location.readerChapter == chapter,
+              let ratio = location.pageRatio,
               ratio.isFinite, ratio > 0, ratio <= 1 else { return nil }
         return ratio
     }

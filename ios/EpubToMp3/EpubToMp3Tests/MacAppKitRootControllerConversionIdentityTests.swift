@@ -24,7 +24,7 @@ extension MacAppKitRootControllerTests {
             let secondSource = try EpubFixture.createWithChapters(["Second one", "Second two", "Second three"])
             let first = try library.importBook(from: firstSource)
             let second = try library.importBook(from: secondSource)
-            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
             var continuations: [AsyncStream<Void>.Continuation] = []
             var controls: [ConverterPlaybackControl] = []
             var jobs: [String] = []

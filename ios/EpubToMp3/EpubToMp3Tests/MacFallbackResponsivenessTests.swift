@@ -9,7 +9,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
     func testClosingExpandedPlayerAfterFallbackReleasesReaderWindow() async throws {
         let suite = "MacFallbackPresentation.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self,
             from: Data(#"{"jobId":"fallback-presentation","state":"running","engine":"system"}"#.utf8)))
         let presentation = PlayerPresentation(defaults: defaults)
@@ -113,7 +113,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.selectPrimaryNarration(.defaultPiper)
         settings.selectSecondaryNarration(.systemDefault)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let presentation = PlayerPresentation(defaults: defaults)
         var control: ConverterPlaybackControl?
         var observedFallback = false

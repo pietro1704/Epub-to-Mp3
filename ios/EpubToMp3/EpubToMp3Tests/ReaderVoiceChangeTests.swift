@@ -128,10 +128,6 @@ final class ReaderVoiceChangeTests: XCTestCase {
         let anchor = try XCTUnwrap(map.anchor(page: 1, character: selectedWord.lowerBound.utf16Offset(in: selectedText)))
         let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: root)
         let book = try library.importBook(from: source)
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey,
-                    AudioPlayer.currentChapterIndexDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let settings = AppSettings(defaults: defaults)
         let submitted = [expectation(description: "Old job submitted"), expectation(description: "Voice job submitted")]
@@ -171,11 +167,10 @@ final class ReaderVoiceChangeTests: XCTestCase {
             session.cancel()
             pending.forEach { $0.resume(throwing: CancellationError()) }
             player.stop()
-            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
             defaults.removePersistentDomain(forName: suite)
             for url in [root, source] { try? FileManager.default.removeItem(at: url) }
         }
-        standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        player.location.setReadingBook(book.id)
         session.start(owner: self, pdfAnchor: anchor)
         await fulfillment(of: [submitted[0]], timeout: 5)
         let oldJob = try XCTUnwrap(jobs.first)

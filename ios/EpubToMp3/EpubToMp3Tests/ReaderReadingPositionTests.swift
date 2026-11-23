@@ -33,7 +33,7 @@ final class ReaderReadingPositionTests: XCTestCase {
         ))
         var hidden = false
         let restored = expectation(description: "Final layout restores position")
-        let position = ReaderReadingPosition(document: document, composition: composition,
+        let position = ReaderReadingPosition(document: document, composition: composition, location: ReaderLocation(defaults: defaults),
             facts: { .init(chromeHidden: hidden, isPaginated: false, isLoading: false, layoutResult: nil) },
             send: { event in
                 if case .updatePageIndicator = event { restored.fulfill() }

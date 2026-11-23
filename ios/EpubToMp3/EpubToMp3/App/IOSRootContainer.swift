@@ -48,7 +48,7 @@ final class IOSRootContainerController: UIViewController {
         bookmarkStore: BookmarkStore
     ) {
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
-            ReaderSessionState.setCurrentlyReading(bookID: nil)
+            player.location.setReadingBook(nil)
         }
         self.settings = settings
         self.library = library
@@ -72,7 +72,7 @@ final class IOSRootContainerController: UIViewController {
             playerPresentation: playerPresentation,
             bookmarkStore: bookmarkStore,
             onBrowseLibrary: {
-                ReaderSessionState.setCurrentlyReading(bookID: nil)
+                player.location.setReadingBook(nil)
             },
             openStageObserver: profiler?.observer()
         )
@@ -108,8 +108,8 @@ final class IOSRootContainerController: UIViewController {
         PlaybackRelaunchRestoration.restore(settings: settings, library: library, player: player, owner: self) { [weak self] in self?.refreshOverlayState() }
         readerOpenStageProfiler?.recordStartupStage("root_playback_controls_restored")
         let openingBookIDs = Set([
-            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
-            UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey),
+            player.location.readingBookID,
+            player.location.playingBookID,
         ].compactMap { $0 })
         LocalFulltextCache.startPrewarmingRecentBooks(excludingBookIDs: openingBookIDs)
         readerOpenStageProfiler?.recordStartupStage("root_prewarm_scheduled")
@@ -345,8 +345,8 @@ final class IOSRootContainerController: UIViewController {
         readerOpenStageProfiler?.recordStartupStage("root_overlay_refresh_started")
         refreshMiniPlayerContent()
         readerOpenStageProfiler?.recordStartupStage("root_overlay_mini_content_updated")
-        let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let currentBookID = player.location.playingBookID
+        let currentlyReadingBookID = player.location.readingBookID
         let availableBookIDs = Set(library.books.map(\.id))
         let readerActive = currentlyReadingBookID.flatMap { id in availableBookIDs.contains(id) ? id : nil } != nil
         let activeBookID = currentlyReadingBookID ?? currentBookID
@@ -421,15 +421,15 @@ final class IOSRootContainerController: UIViewController {
 
     private func dismissMiniPlayer() {
         MiniPlayerDismissal().dismiss(readingBookID:
-            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
-            playingBookID: UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+            player.location.readingBookID,
+            playingBookID: player.location.playingBookID)
         readerController.dismissListeningSession()
         playerPresentation.dismissFullPlayer()
         refreshOverlayState()
     }
 
     private func dismissReaderToLibrary() {
-        ReaderSessionState.setCurrentlyReading(bookID: nil)
+        player.location.setReadingBook(nil)
         refreshOverlayState()
     }
 

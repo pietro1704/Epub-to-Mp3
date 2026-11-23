@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     NSCollectionViewDataSource, NSCollectionViewDelegate {
+    private let location: ReaderLocation
     private let library: LibraryStore
     private let bookmarkStore: BookmarkStore
     private let onOpenBook: (String) -> Void
@@ -37,13 +38,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
     init(
-        library: LibraryStore,
+        library: LibraryStore, location: ReaderLocation = .standard,
         bookmarkStore: BookmarkStore,
         onOpenBook: @escaping (String) -> Void,
         onDownloadBook: @escaping (String) -> Void,
         onConvertBook: @escaping (String) -> Void,
         confirmRemoval: @escaping RemovalConfirmation = MacLibraryViewController.presentRemovalConfirmation
     ) {
+        self.location = location
         self.library = library
         self.bookmarkStore = bookmarkStore
         self.onOpenBook = onOpenBook
@@ -302,7 +304,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     private func open(_ book: BookEntity) {
-        UserDefaults.standard.set(book.id, forKey: "currentlyReadingBookID")
+        location.setReadingBook(book.id)
         var updated = book
         updated.lastOpenedAt = Date()
         library.update(updated)

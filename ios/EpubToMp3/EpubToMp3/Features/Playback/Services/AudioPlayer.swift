@@ -119,6 +119,7 @@ final class AudioPlayer: ObservableObject {
 
     @Published private(set) var isUsingSpeechFallback: Bool = false
 
+    let location: ReaderLocation
     private let configuration: PlaybackServices.Configuration
     /// Concrete playback services. Internal so tests drive and inspect the real
     /// seams (`services.queue`, `services.segments`, …); production callers use
@@ -126,7 +127,8 @@ final class AudioPlayer: ObservableObject {
     private(set) lazy var services: PlaybackServices = PlaybackServices(authority: self, configuration: configuration)
 
     init(
-        resumeStore: ResumeStore = ResumeStore(),
+        resumeStore: ResumeStore? = nil,
+        location: ReaderLocation? = nil,
         backendBaseURL: URL? = nil,
         speechFallback: SpeechFallbackPlayer? = nil,
         playbackClock: PlaybackClock? = nil,
@@ -135,7 +137,12 @@ final class AudioPlayer: ObservableObject {
     ) {
         let clock = playbackClock ?? PlaybackClock()
         self.playbackClock = clock
-        configuration = .init(resumeStore: resumeStore, speech: speechFallback, clock: clock,
+        // A custom marker backend may have no defaults domain. Its caller can
+        // inject a location explicitly; otherwise retain the app channel.
+        let location = location ?? ReaderLocation(defaults: resumeStore?.backingDefaults ?? .standard)
+        self.location = location
+        let markers = resumeStore ?? ResumeStore(storage: UserDefaultsResumeStorage(defaults: location.defaults))
+        configuration = .init(location: location, resumeStore: markers, speech: speechFallback, clock: clock,
                               artifacts: artifactStore, writer: segmentFileWriter)
         self.backendBaseURL = backendBaseURL
         // Synchronous forwarding preserves old-value ordering and every assignment.

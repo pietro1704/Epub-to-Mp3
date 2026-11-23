@@ -262,13 +262,13 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         // win over a persisted playback pointer so the compact player does
         // not keep showing a previously opened book while the reader is
         // already displaying a different one.
-        defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
-            ?? defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let location = ReaderLocation(defaults: defaults)
+        return location.readingBookID ?? location.playingBookID
     }
 
     private func render() {
         guard let player, let library else { return }
-        let currentBookID = Self.activeBookID()
+        let currentBookID = Self.activeBookID(defaults: player.location.defaults)
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
         titleLabel.text = player.effectiveChapterTitle
         chapterLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")

@@ -245,16 +245,10 @@ final class ReaderListeningSeekTests: XCTestCase {
     }
 
     func testTimelineSeekNeverUsesConflictingSavedReaderPage() async throws {
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
-            AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        defer { for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) } }
-        standard.set("book", forKey: keys[0])
-        standard.set(0, forKey: keys[1])
-        standard.set(0.9, forKey: keys[2])
         let fixture = try Fixture()
         defer { fixture.finish() }
+        fixture.player.location.setReadingBook("book")
+        fixture.player.location.setReaderAnchor(chapter: 0, pageRatio: 0.9)
         fixture.start(ratio: 0)
         try await fixture.waitUntil { fixture.jobs.count == 1 }
         let id = try fixture.seek(35)

@@ -256,7 +256,7 @@ final class WidgetDataSyncTests: XCTestCase {
         """.data(using: .utf8)!
         let snapshot = try! JSONDecoder().decode(JobSnapshot.self, from: json)
 
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard,
             artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")))
         defer { player.stop() }
         player.updateSnapshot(snapshot)

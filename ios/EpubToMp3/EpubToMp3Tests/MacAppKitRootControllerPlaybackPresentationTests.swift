@@ -12,7 +12,7 @@ extension MacAppKitRootControllerTests {
         let id = "MacActiveVoice.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         defer { defaults.removePersistentDomain(forName: id) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8))
         player.setSnapshot(snapshot)
@@ -117,7 +117,7 @@ extension MacAppKitRootControllerTests {
             let file = try AVAudioFile(forWriting: audioURL, settings: format.settings)
             try file.write(from: buffer)
         }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         // Prevent launch restoration from replacing the fixture with the
         // listener's real persisted audiobook while this test is suspended.

@@ -61,11 +61,13 @@ struct ReaderPlaybackLocation {
 
 @MainActor
 final class ReaderPlaybackPosition {
+    let location: ReaderLocation
     private let document: ReaderBookDocument
     private let composition: ReaderViewComposition
     private var lastPublishedReaderPageRatio: Double?
 
-    init(document: ReaderBookDocument, composition: ReaderViewComposition) {
+    init(document: ReaderBookDocument, composition: ReaderViewComposition, location: ReaderLocation) {
+        self.location = location
         self.document = document
         self.composition = composition
     }
@@ -110,7 +112,7 @@ final class ReaderPlaybackPosition {
             return
         }
         lastPublishedReaderPageRatio = ratio
-        UserDefaults.standard.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        location.pageRatio = ratio
     }
 
 }

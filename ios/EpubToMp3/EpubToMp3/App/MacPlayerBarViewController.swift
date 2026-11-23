@@ -192,8 +192,8 @@ final class MacPlayerBarViewController: NSViewController {
     @objc private func showFullPlayer() { onShowFullPlayer() }
 
     private func refresh() {
-        let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let currentBookID = player.location.playingBookID
+            ?? player.location.readingBookID
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
         let bookTitle = book?.resolvedTitle ?? player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
         titleLabel.stringValue = player.snapshot == nil ? bookTitle : player.effectiveChapterTitle

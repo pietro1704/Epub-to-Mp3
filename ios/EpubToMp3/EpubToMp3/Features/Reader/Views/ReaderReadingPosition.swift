@@ -35,13 +35,13 @@ final class ReaderReadingPosition {
     private var pendingDestination: Destination?
     private var scheduledInitialRestore: UUID?
 
-    init(document: ReaderBookDocument, composition: ReaderViewComposition,
+    init(document: ReaderBookDocument, composition: ReaderViewComposition, location: ReaderLocation,
          facts: @escaping () -> Facts, send: @escaping (Event) -> Void) {
         self.document = document
         self.composition = composition
         self.facts = facts
         self.send = send
-        playback = ReaderPlaybackPosition(document: document, composition: composition)
+        playback = ReaderPlaybackPosition(document: document, composition: composition, location: location)
     }
 
     struct ReadingAnchor {

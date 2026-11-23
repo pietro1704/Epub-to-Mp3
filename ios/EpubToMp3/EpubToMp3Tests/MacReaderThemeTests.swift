@@ -26,7 +26,7 @@ final class MacReaderThemeTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.readerTheme = .light
         settings.readerCustomColors = ((0.08, 0.10, 0.12), (0.92, 0.94, 0.96))
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             player.stop()
             for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }

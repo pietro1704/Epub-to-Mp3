@@ -7,9 +7,8 @@ import Foundation
 @MainActor
 enum PlaybackRelaunchRestoration {
     /// Resolves the book to restore: the last played book, else the open reader.
-    static func currentBookID(defaults: UserDefaults = .standard) -> String? {
-        defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+    private static func currentBookID(location: ReaderLocation) -> String? {
+        location.playingBookID ?? location.readingBookID
     }
 
     static func restore(
@@ -20,13 +19,11 @@ enum PlaybackRelaunchRestoration {
         isListeningActive: @escaping @MainActor () -> Bool = { false },
         onRestored: @escaping @MainActor () -> Void
     ) {
-        guard let bookID = currentBookID() else { return }
-        let chapterIndex = UserDefaults.standard.object(
-            forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int ?? 0
+        guard let bookID = currentBookID(location: player.location) else { return }
         let engine = settings.primaryEngine
         restore(
-            bookID: bookID, chapterIndex: chapterIndex, player: player, owner: owner,
-            defaults: .standard, isListeningActive: isListeningActive,
+            bookID: bookID, player: player, owner: owner,
+            isListeningActive: isListeningActive,
             loadSnapshot: {
                 await persistedSnapshot(bookID: bookID, engine: engine, library: library)
             },
@@ -36,23 +33,23 @@ enum PlaybackRelaunchRestoration {
     /// Test seam: the snapshot loader is the only part that touches disk.
     static func restore(
         bookID: String,
-        chapterIndex: Int,
         player: AudioPlayer,
         owner: AnyObject,
-        defaults: UserDefaults,
         isListeningActive: @escaping @MainActor () -> Bool,
         loadSnapshot: @escaping @MainActor () async -> JobSnapshot?,
         onRestored: @escaping @MainActor () -> Void
     ) {
+        let location = player.location
         Task { [weak owner] in
             guard owner != nil else { return }
             let snapshot = await loadSnapshot()
             // The owner may be gone, a listening start may have begun, or the
             // user may have switched book while the manifest was read.
             guard owner != nil, !isListeningActive(), player.snapshot == nil,
-                  currentBookID(defaults: defaults) == bookID
-                    || defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
-                  let snapshot else { return }
+                  currentBookID(location: location) == bookID, let snapshot else { return }
+            let readerChapter = location.readingBookID == bookID ? location.readerChapter : nil
+            let playingChapter = location.playingBookID == bookID ? location.playingChapter : nil
+            let chapterIndex = playingChapter ?? readerChapter ?? 0
             player.play(
                 snapshot: snapshot,
                 startingAt: AudioPlayer.restoredPlayableChapterOffset(

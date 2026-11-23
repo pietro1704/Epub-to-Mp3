@@ -4,6 +4,12 @@ import Foundation
 /// Decisions describe intent only; AudioPlayer alone changes the transport.
 @MainActor
 final class ChapterNavigationDecision {
+    private let location: ReaderLocation
+
+    init(location: ReaderLocation = .standard) {
+        self.location = location
+    }
+
     private var readerChapterTitles: [Int: String] = [:]
     var hasAnchor: Bool { readerPlaybackAnchor != nil }
     func clearAnchor() { readerPlaybackAnchor = nil }
@@ -21,18 +27,17 @@ final class ChapterNavigationDecision {
     }
 
     func rememberReaderPlaybackAnchor() {
-        let defaults = UserDefaults.standard
-        guard let chapter = defaults.object(forKey: Self.readerCurrentChapterIndexDefaultsKey) as? Int else { return }
+        guard let chapter = location.readerChapter else { return }
         readerPlaybackAnchor = ReaderPlaybackAnchor(
-            bookID: defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+            bookID: location.readingBookID,
             chapterIndex: chapter,
-            pageRatio: defaults.object(forKey: Self.readerCurrentPageRatioDefaultsKey) as? Double
+            pageRatio: location.pageRatio
         )
     }
 
     private func readerMovedFromPlaybackAnchor(chapterIndex: Int, pageRatio: Double?) -> Bool {
         guard let anchor = readerPlaybackAnchor else { return false }
-        if anchor.bookID != UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        if anchor.bookID != location.readingBookID
             || anchor.chapterIndex != chapterIndex { return true }
         guard let pageRatio, let previous = anchor.pageRatio else { return pageRatio != anchor.pageRatio }
         return abs(pageRatio - previous) > 0.001
@@ -46,7 +51,7 @@ final class ChapterNavigationDecision {
         if isPlaying { return .pause }
         guard let snapshot else { return .resume }
         if let bookID = readerPlaybackAnchor?.bookID,
-           bookID != UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) {
+           bookID != location.readingBookID {
             return .resume
         }
         if readerMovedFromPlaybackAnchor(chapterIndex: readerChapterIndex, pageRatio: readerPageRatio) {
@@ -123,9 +128,7 @@ final class ChapterNavigationDecision {
         // after an epigraph).
         if snapshot == nil,
            playbackChapters.isEmpty,
-           let readerIndex = UserDefaults.standard.object(
-               forKey: Self.readerCurrentChapterIndexDefaultsKey
-           ) as? Int,
+           let readerIndex = location.readerChapter,
            let readerTitle = readerChapterTitles[readerIndex] {
             return Self.preferredChapterTitle(
                 primary: readerTitle,
@@ -276,7 +279,7 @@ final class ChapterNavigationDecision {
     /// tap and, when they disagree, surface a three-option dialog so
     /// the user can choose what to start: current page, where they
     /// stopped, or the beginning.
-    static let readerCurrentChapterIndexDefaultsKey = "readerCurrentChapterIndex"
+    static let readerCurrentChapterIndexDefaultsKey = ReaderLocation.Key.readerChapter
 
     /// Companion channel — fraction (0.0 … 1.0) of how far into the
     /// current chapter the user has scrolled (paginated mode: page
@@ -285,12 +288,12 @@ final class ChapterNavigationDecision {
     /// actually lands near the user's reading position instead of
     /// the chapter start. Stored as `Double` (UserDefaults does the
     /// `NSNumber` boxing).
-    static let readerCurrentPageRatioDefaultsKey = "readerCurrentPageRatio"
+    static let readerCurrentPageRatioDefaultsKey = ReaderLocation.Key.pageRatio
 
     /// Companion channel — id of the first sentence on the user's
     /// currently-visible page. When the active chapter has timing
     /// data injected via `setSentenceTiming`, `startFromReaderPage`
     /// prefers this precise sentence anchor over the ratio
     /// approximation. Cleared on chapter change.
-    static let readerCurrentSentenceIdDefaultsKey = "readerCurrentSentenceId"
+    static let readerCurrentSentenceIdDefaultsKey = ReaderLocation.Key.sentence
 }
