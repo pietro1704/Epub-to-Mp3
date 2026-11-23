@@ -63,7 +63,15 @@ class RootScreen extends ConsumerWidget {
             ],
           ),
         ),
-        if (chromeVisible) const MiniPlayerBar(),
+        // Hidden with the reader chrome, but its space stays reserved so the
+        // page area never moves or resizes.
+        Visibility(
+          visible: chromeVisible,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: const MiniPlayerBar(),
+        ),
       ],
     );
 
