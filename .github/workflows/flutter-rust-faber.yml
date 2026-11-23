@@ -42,7 +42,13 @@ jobs:
           Set-Location flutter_app
           mise exec -- flutter test test/local_conversion_job_test.dart --reporter expanded
           if ($LASTEXITCODE -ne 0) { throw 'Windows durable history regression failed' }
-      - name: Explicitly provision pinned Windows runtime, decoder and model
+      - name: Provide the checksum-pinned Faber model
+        uses: ./.github/actions/faber-test-model
+        with:
+          directory: ${{ runner.temp }}/windows-dart-faber/models/pt_BR-faber-medium
+          onnx-name: model.onnx
+          json-name: model.onnx.json
+      - name: Explicitly provision pinned Windows runtime and decoder
         run: |
           $ErrorActionPreference = 'Stop'
           $owned = Join-Path $env:RUNNER_TEMP 'windows-dart-faber'
@@ -64,11 +70,6 @@ jobs:
           if (!(Test-Path (Join-Path $decoder 'ffmpeg.exe'))) { throw 'Missing pinned decoder' }
           $decoder >> $env:GITHUB_PATH
           $models = Join-Path $owned 'models'
-          $voice = Join-Path $models 'pt_BR-faber-medium'
-          New-Item -ItemType Directory -Force $voice | Out-Null
-          $base = 'https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
-          Get-VerifiedFile "$base/pt_BR-faber-medium.onnx" (Join-Path $voice 'model.onnx') 63201294 '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7'
-          Get-VerifiedFile "$base/pt_BR-faber-medium.onnx.json" (Join-Path $voice 'model.onnx.json') 4855 '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f'
           "EPUB_DART_FABER_MODELS=$models" >> $env:GITHUB_ENV
       - name: Build the actual supported Flutter Windows package
         run: |
@@ -201,7 +202,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg
-      - name: Explicitly provision checksum-pinned offline runtime and model
+      - name: Provide the checksum-pinned Faber model
+        uses: ./.github/actions/faber-test-model
+        with:
+          directory: ${{ runner.temp }}/ah13-dart-faber/models/pt_BR-faber-medium
+          onnx-name: model.onnx
+          json-name: model.onnx.json
+      - name: Explicitly provision checksum-pinned offline runtime
         run: |
           set -euo pipefail
           owned="$RUNNER_TEMP/ah13-dart-faber"
@@ -212,13 +219,6 @@ jobs:
           echo "ORT_LIB_LOCATION=$runtime" >> "$GITHUB_ENV"
           echo "ORT_DYLIB_PATH=$runtime/libonnxruntime.so" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$runtime" >> "$GITHUB_ENV"
-          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
-          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --max-time 180 "$base/pt_BR-faber-medium.onnx" -o "$owned/models/pt_BR-faber-medium/model.onnx"
-          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --max-time 60 "$base/pt_BR-faber-medium.onnx.json" -o "$owned/models/pt_BR-faber-medium/model.onnx.json"
-          printf '%s  %s\n' \
-            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$owned/models/pt_BR-faber-medium/model.onnx" \
-            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$owned/models/pt_BR-faber-medium/model.onnx.json" \
-            | sha256sum --check --status
           echo "EPUB_DART_FABER_MODELS=$owned/models" >> "$GITHUB_ENV"
       - name: Build the real Piper-enabled Rust FFI and phoneme data
         run: mise run converter-ffi:build
