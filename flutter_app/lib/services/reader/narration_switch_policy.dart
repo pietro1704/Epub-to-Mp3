@@ -107,3 +107,59 @@ ReaderListeningPosition? estimatedSentenceStart({
     return null;
   }
 }
+
+/// Typical speech rate of the narration, in text scalars per second of audio at
+/// 1.0x (playback speed does not change the audio file, only how fast it plays).
+const double kSpeechScalarsPerSecond = 15;
+
+/// Where synthesis restarts when a skip lands outside the audio that already
+/// exists (a chapter that is still being synthesized cannot be sought).
+///
+/// [startSourceOffset] is where this chapter's audio started, in source
+/// scalars (0 for a job that began at the chapter start); [targetSeconds] is the
+/// requested media time inside that audio. The text position is estimated from
+/// the voice speed and snapped to a sentence start. Returns null when the target
+/// falls beyond the chapter text: the skip then continues into the next chapter.
+ReaderListeningPosition? skipRestartPosition({
+  required FulltextChapter chapter,
+  required int position,
+  required int startSourceOffset,
+  required double targetSeconds,
+  double scalarsPerSecond = kSpeechScalarsPerSecond,
+}) {
+  if (!targetSeconds.isFinite || scalarsPerSecond <= 0) return null;
+  final spans = chapter.splitSentences();
+  if (spans.isEmpty) return null;
+  final startDisplay = _displayScalarForSource(chapter.text, startSourceOffset);
+  final target = (startDisplay + scalarsPerSecond * targetSeconds).floor();
+  if (target >= spans.last.endChar) return null;
+  var chosen = spans.first;
+  for (final span in spans) {
+    if (span.startChar > target) break;
+    chosen = span;
+  }
+  try {
+    return ReaderListeningPosition.fromDisplayScalar(
+      position,
+      chapter.text,
+      chosen.startChar,
+    );
+  } on FormatException {
+    return null;
+  }
+}
+
+/// Inverse of the source->display mapping used by
+/// [ReaderListeningPosition.fromDisplayScalar].
+int _displayScalarForSource(String source, int sourceOffset) {
+  final raw = source.runes.toList();
+  var display = 0;
+  for (var index = 0; index < raw.length && index < sourceOffset; index++) {
+    if (raw[index] == 0x0D && index + 1 < raw.length && raw[index + 1] == 0x0A) {
+      continue;
+    }
+    display++;
+    if (raw[index] == 0xFFFE) display++;
+  }
+  return display;
+}

@@ -366,6 +366,12 @@ class AudioPlayerService extends AudioPlayerInterface
   }
 
   @override
+  bool _isChapterStillGrowing(int sourceChapter) {
+    final entry = _growingChapters[sourceChapter];
+    return entry != null && !entry.source.isComplete;
+  }
+
+  @override
   Future<void> _waitForChapterSeek(int playerIndex) async {
     if (playerIndex < 0 || playerIndex >= _player.sequence.length) return;
     final source = _player.sequence[playerIndex];
@@ -486,6 +492,7 @@ class AudioPlayerService extends AudioPlayerInterface
 
   @override
   Future<void> dispose() async {
+    _dropPendingSkip();
     _seekGeneration++;
     _segmentGeneration++;
     await _segmentUpdates;
