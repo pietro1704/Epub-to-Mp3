@@ -137,11 +137,11 @@ final class ReaderListeningSessionTests: XCTestCase {
             conversionExecutor: { _, jobID, _, _, control, options, _, _, _ in
                 jobs.append((jobID, options?.ttsPreferences?.primary.modelID))
                 let isFirst = jobs.count == 1
+                defer { if isFirst { oldJobEnded = true } }
                 // Like Rust: a running job ends with a "cancelled" failure once its control is cancelled.
-                while control?.isCancellationRequested != true, !Task.isCancelled {
-                    try await Task.sleep(nanoseconds: 20_000_000)
+                while !control.isCancellationRequested, !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 20_000_000) } catch { break }
                 }
-                if isFirst { oldJobEnded = true }
                 throw EmbeddedConverterError.conversionFailed("Conversion cancelled")
             },
             currentBookID: { "book" },
