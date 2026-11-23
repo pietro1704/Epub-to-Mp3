@@ -1,3 +1,6 @@
+import 'model_install/desktop_model_install_operations.dart';
+import 'model_install/model_install_models.dart';
+import 'model_install/model_install_runner.dart';
 import '../../features/reader/epub_reader_resources.dart';
 
 import 'dart:convert';
@@ -118,6 +121,15 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       () => runDesktopModelInstallWorker(libraryPath, modelId, root),
     );
   }
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => ModelInstallRunner(
+    operations: DesktopModelInstallOperations(library: _library),
+  ).install(modelId: modelId, root: root, cancellation: cancellation);
 
   @override
   Future<bool> removeTtsModel({

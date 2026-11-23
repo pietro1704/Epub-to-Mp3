@@ -1,3 +1,5 @@
+import 'model_install/model_install_models.dart';
+import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
 import '../../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
@@ -43,6 +45,17 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
     required int chapterIndex,
     String? optionsJson,
   }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(
+    installTtsModelFromCatalog,
+    modelId: modelId,
+    root: root,
+  );
 
   @override
   Future<String> ttsModels() => throw EmbeddedConverterUnavailable();
