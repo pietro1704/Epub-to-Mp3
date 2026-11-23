@@ -54,8 +54,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          const VoiceSelectionSettings(),
-          const InstalledNarrationModelsCard(),
           const SizedBox(height: 20),
         ],
         preferences: [

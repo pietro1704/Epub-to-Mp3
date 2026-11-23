@@ -5,6 +5,7 @@ import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/screens/models_screen.dart';
 import 'package:flutter_app/screens/settings_screen.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ Future<void> _pump(
   Map<String, Object> prefsData = const {},
   Locale? locale,
   TtsCatalog? catalog,
+  bool models = false,
 }) async {
   SharedPreferences.setMockInitialValues(prefsData);
   final prefs = await SharedPreferences.getInstance();
@@ -29,7 +31,7 @@ Future<void> _pump(
         locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: const SettingsScreen(),
+        home: models ? const ModelsScreen() : const SettingsScreen(),
       ),
     ),
   );
@@ -58,7 +60,7 @@ void main() {
         secondary: TtsSelection(engine: 'piper', modelId: 'en_US-lessac-low'),
       );
       final saved = jsonEncode(preferences.toJson());
-      await _pump(t, prefsData: {'ttsPreferences': saved});
+      await _pump(t, models: true, prefsData: {'ttsPreferences': saved});
 
       expect(find.text('Piper · Book language'), findsOneWidget);
       expect(find.textContaining('-low'), findsNothing);
@@ -85,6 +87,7 @@ void main() {
       }));
       await _pump(
         t,
+        models: true,
         catalog: catalog,
         prefsData: {
           'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
@@ -109,7 +112,7 @@ void main() {
     testWidgets(
       'fresh speech defaults choose Piper by book language with offline fallback',
       (t) async {
-        await _pump(t);
+        await _pump(t, models: true);
         final saved = AppSettings(await SharedPreferences.getInstance())
             .ttsPreferences;
         expect(saved.primary.modelId, 'piper-auto');
@@ -126,6 +129,7 @@ void main() {
       (t) async {
         await _pump(
           t,
+          models: true,
           prefsData: {
             'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
           },
@@ -155,6 +159,7 @@ void main() {
         );
         await _pump(
           t,
+          models: true,
           prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
         );
         expect(t.takeException(), isNull);
@@ -180,6 +185,7 @@ void main() {
         );
         await _pump(
           t,
+          models: true,
           prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
         );
         await t.tap(find.text('Faber medium · Offline'));
@@ -213,7 +219,7 @@ void main() {
       testWidgets('new narration controls use ${item.$1} localization', (
         t,
       ) async {
-        await _pump(t, locale: Locale(item.$1));
+        await _pump(t, models: true, locale: Locale(item.$1));
         expect(find.text(item.$2), findsOneWidget);
         expect(find.text(item.$3), findsOneWidget);
         expect(find.text(item.$4), findsOneWidget);
@@ -224,7 +230,7 @@ void main() {
     testWidgets('online secondary requires consent and revocation clears it', (
       t,
     ) async {
-      await _pump(t);
+      await _pump(t, models: true);
       await t.scrollUntilVisible(
         find.text('Allow online fallback'),
         150,
@@ -273,7 +279,6 @@ void main() {
     testWidgets('shows top section headers', (t) async {
       await _pump(t);
 
-      expect(find.text('Audio engine'), findsOneWidget);
       expect(find.text('Remote backend'), findsNothing);
       await t.scrollUntilVisible(
         find.text('Reader'),
@@ -309,8 +314,17 @@ void main() {
       expect(find.text('Android'), findsOneWidget);
     });
 
-    testWidgets('primary and secondary narration controls exist', (t) async {
+    testWidgets('settings keeps a single Models row, no voice dropdowns', (t) async {
       await _pump(t);
+
+      expect(find.byKey(const ValueKey('settings-models-row')), findsOneWidget);
+      expect(find.text('Primary narration'), findsNothing);
+      expect(find.text('Secondary narration'), findsNothing);
+    });
+
+    testWidgets('the Models screen hosts the primary and secondary narration controls', (t) async {
+      await _pump(t, models: true);
+      expect(find.text('Audio engine'), findsOneWidget);
 
       expect(find.text('Primary narration'), findsOneWidget);
       expect(find.text('Secondary narration'), findsOneWidget);
