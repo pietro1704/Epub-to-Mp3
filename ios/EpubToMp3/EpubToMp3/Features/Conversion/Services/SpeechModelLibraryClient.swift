@@ -100,10 +100,10 @@ actor SpeechModelLibraryClient {
     }
 
     /// A language-specific query does not change study language or global selections.
-    func languageSnapshot(_ language: String) throws -> SpeechModelSnapshot {
+    func languageSnapshot(_ language: String, probeRuntime: Bool = true) throws -> SpeechModelSnapshot {
         if let snapshotOverride { return try snapshotOverride() }
         guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
-        return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: true)
+        return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: probeRuntime)
     }
 
     /// The catalog's base languages, for the Models screen.

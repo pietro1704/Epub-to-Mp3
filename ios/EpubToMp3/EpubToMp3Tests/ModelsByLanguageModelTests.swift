@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ModelsByLanguageModelTests: XCTestCase {
-    private final class FakeSource: ModelsByLanguageSource, @unchecked Sendable {
+    final class FakeSource: ModelsByLanguageSource, @unchecked Sendable {
         private let lock = NSLock()
         private var installed: Set<String> = ["pt_BR-faber-medium"]
         private(set) var installs: [(model: String, fingerprint: String?, language: String)] = []
@@ -20,7 +20,8 @@ final class ModelsByLanguageModelTests: XCTestCase {
             let ids = language == "pt" ? ["pt_BR-faber-medium", "pt_BR-cadu-medium"] : ["en_US-ljspeech-high"]
             let entries = ids.map { id in
                 lock.lock(); defer { lock.unlock() }
-                return Self.entry(id: id, installed: installed.contains(id), requiresTerms: requiresTerms && id == "pt_BR-cadu-medium")
+                return Self.entry(id: id, installed: installed.contains(id), requiresTerms: requiresTerms && id == "pt_BR-cadu-medium",
+                                  tag: language)
             }
             let document: [String: Any] = [
                 "schema_version": 3, "generated_from_catalog_revision": "fixture", "target": ["language": language],
@@ -70,10 +71,10 @@ final class ModelsByLanguageModelTests: XCTestCase {
                                                         artifactIndex: nil, bytesCompleted: done, bytesTotal: total, failure: nil))
         }
 
-        static func entry(id: String, installed: Bool, requiresTerms: Bool) -> SpeechModelSnapshot.Entry {
+        static func entry(id: String, installed: Bool, requiresTerms: Bool, tag: String) -> SpeechModelSnapshot.Entry {
             .init(identity: .init(provider: "piper", runtime: "piper", modelID: id, modelRevision: "fixture"),
                   presentation: .init(modelName: id, familyName: "Piper", quality: .medium, voiceChoices: []),
-                  languageEvidence: .init(routingTags: [], exactTags: []),
+                  languageEvidence: .init(routingTags: [tag], exactTags: []),
                   distribution: .init(installable: true, downloadBytes: 100, installedBytes: nil),
                   licence: .init(id: nil, category: "unknown", evidenceURL: nil,
                                  termsFingerprint: requiresTerms ? "fp1" : nil, requiresAcceptance: requiresTerms,

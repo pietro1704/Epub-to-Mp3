@@ -60,21 +60,42 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         systemVoiceLanguages: Set<String>
     ) -> Self {
         let systemLanguages = Set(systemVoiceLanguages.map(SpeechPreferences.languageKey))
-        return Self(sections: languages.map { language in
+        let sections = languages.map { language -> Section in
             let key = SpeechPreferences.languageKey(language.tag)
             let chosen = choices[key]
-            var rows = language.snapshot.entries.compactMap {
-                row(for: $0, chosen: chosen, allowOnlineFallback: allowOnlineFallback)
-            }
+            // A language snapshot lists the whole catalog with per-target compatibility:
+            // keep only the models that are about this language.
+            let entries = language.snapshot.entries
+                .filter { entry in entry.languageEvidence.routingTags.contains { SpeechPreferences.languageKey($0) == key } }
+                // The "piper-default" alias is a catalog placeholder, not a voice.
+                .filter { $0.identity.modelID != "piper-default" }
+            var rows = entries.compactMap { row(for: $0, chosen: chosen, allowOnlineFallback: allowOnlineFallback) }
             if systemLanguages.contains(key) {
                 let selection = TtsSelection.systemDefault
                 rows.append(Row(
-                    id: "system:\(key)", kind: .local, title: L10n.string("settings.systemTts"), detail: "",
+                    id: "system:\(key)", kind: .local,
+                    title: L10n.string(key == "pt" ? "settings.systemTts" : "models.systemVoice"), detail: "",
                     selection: selection, availability: .ready,
                     isChosen: chosen?.representsSameRequest(as: selection) == true))
             }
+            // Edge is an online engine, not a catalog model: it is offered for every language
+            // (its voice is chosen by Rust per language), dimmed until the online consent is on.
+            if !entries.contains(where: { $0.identity.provider == TtsSelection.edgeEngine }) {
+                let selection = TtsSelection.edgeDefault
+                rows.append(Row(
+                    id: "edge:\(key)", kind: .online, title: TtsSelection.displayName(forEngine: TtsSelection.edgeEngine) ?? "Edge",
+                    detail: "", selection: selection,
+                    availability: allowOnlineFallback ? .ready : .needsConsent,
+                    isChosen: chosen?.representsSameRequest(as: selection) == true))
+            }
             return Section(language: key, rows: rows.sorted(by: order))
-        })
+        }
+        // Languages with a ready local model come first (catalog order otherwise), so
+        // what the user can already read with is at the top of a long list.
+        func hasReadyLocal(_ section: Section) -> Bool {
+            section.rows.contains { $0.kind == .local && $0.availability == .ready && $0.selection.engine == TtsSelection.piperEngine }
+        }
+        return Self(sections: sections.filter(hasReadyLocal) + sections.filter { !hasReadyLocal($0) })
     }
 
     private static func row(
@@ -90,7 +111,7 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         if kind == .online {
             availability = !entry.compatibility.compatible ? .unavailable
                 : (allowOnlineFallback ? .ready : .needsConsent)
-        } else if entry.installation.state == .installed && entry.selection.selectable {
+        } else if entry.installation.state == .installed && usableWithoutProbe(entry) {
             availability = .ready
         } else if entry.installation.state != .installed && entry.compatibility.compatible
                     && entry.distribution.installable {
@@ -103,6 +124,14 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
             title: entry.presentation.modelName, detail: entry.presentation.quality.rawValue,
             selection: selection, availability: availability,
             isChosen: chosen?.representsSameRequest(as: selection) == true)
+    }
+
+    /// Installed and compatible; the runtime probe is not run for the listing, so
+    /// "readiness not inspected" is the only reason that does not block a choice.
+    private static func usableWithoutProbe(_ entry: SpeechModelSnapshot.Entry) -> Bool {
+        entry.selection.selectable
+            || (entry.compatibility.compatible
+                && entry.selection.reasons.allSatisfy { $0 == "readiness_not_inspected" })
     }
 
     /// Local before online, then installed before the rest, then best quality, then name.

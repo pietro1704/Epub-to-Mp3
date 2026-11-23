@@ -20,7 +20,12 @@ struct SpeechModelsSource: ModelsByLanguageSource {
     init(client: SpeechModelLibraryClient = .shared) { self.client = client }
 
     func catalogLanguages() async throws -> [CatalogLanguage] { try await client.catalogLanguages() }
-    func snapshot(language: String) async throws -> SpeechModelSnapshot { try await client.languageSnapshot(language) }
+    /// The listing only inspects installed files; loading every model's runtime for
+    /// every language would take many seconds. A model is chosen on that evidence
+    /// (the same the Rust resolver uses) and a runtime failure surfaces on use.
+    func snapshot(language: String) async throws -> SpeechModelSnapshot {
+        try await client.languageSnapshot(language, probeRuntime: false)
+    }
     func install(modelID: String, acceptedTermsFingerprint: String?, language: String) async throws {
         _ = try await client.install(modelID: modelID, acceptedTermsFingerprint: acceptedTermsFingerprint, language: language)
     }
@@ -92,12 +97,12 @@ final class ModelsByLanguageModel: ObservableObject {
         defer { isLoading = false }
         do {
             let languages = try await source.catalogLanguages()
-            var loaded: [(tag: String, snapshot: SpeechModelSnapshot)] = []
+            snapshots = []
             for language in languages {
-                loaded.append((language.tag, try await source.snapshot(language: language.tag)))
+                snapshots.append((language.tag, try await source.snapshot(language: language.tag)))
+                // Show languages as they arrive instead of waiting for the whole catalog.
+                rebuild()
             }
-            snapshots = loaded
-            rebuild()
         } catch {
             loadFailure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

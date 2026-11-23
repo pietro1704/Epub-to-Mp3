@@ -47,6 +47,8 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         table.headerView = nil
         table.rowSizeStyle = .custom
         table.usesAutomaticRowHeights = true
+        table.gridStyleMask = [.solidHorizontalGridLineMask]
+        table.intercellSpacing = NSSize(width: 0, height: 4)
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -108,7 +110,10 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         }
     }
 
-    private func languageTitle(_ tag: String) -> String { Locale.current.localizedString(forLanguageCode: tag) ?? tag }
+    private func languageTitle(_ tag: String) -> String {
+        let name = Locale.current.localizedString(forLanguageCode: tag) ?? tag
+        return name.prefix(1).uppercased() + name.dropFirst()
+    }
 
     private func refresh() {
         statusLabel.stringValue = model.isLoading ? L10n.string("models.loading")
@@ -182,9 +187,21 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         switch items[row] {
         case let .header(text, footer):
-            let label = NSTextField(wrappingLabelWithString: [text, footer].compactMap { $0 }.joined(separator: "\n"))
-            label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-            return label
+            let title = NSTextField(labelWithString: text)
+            title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+            var views: [NSView] = [title]
+            if let footer {
+                let note = NSTextField(wrappingLabelWithString: footer)
+                note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+                note.textColor = .secondaryLabelColor
+                views.append(note)
+            }
+            let stack = NSStackView(views: views)
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 2
+            stack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 4, right: 12)
+            return stack
         case let .model(row, language):
             return rowView(row, language: language)
         }
@@ -219,7 +236,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         views.append(menu)
         let stack = NSStackView(views: views)
         stack.alignment = .centerY
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 12, bottom: 4, right: 12)
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
         stack.alphaValue = row.isDimmed ? 0.55 : 1
         stack.setAccessibilityIdentifier("models.row.\(language).\(row.id)")
         stack.setAccessibilityValue(row.isChosen ? L10n.string("models.inUse") : nil)
@@ -248,8 +265,10 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
 
     // MARK: actions
 
-    @objc private func rowClicked() {
-        let index = table.clickedRow
+    @objc private func rowClicked() { activateRow(at: table.clickedRow) }
+
+    /// What a click on a row does (also driven directly by tests).
+    func activateRow(at index: Int) {
         guard items.indices.contains(index), case let .model(row, language) = items[index] else { return }
         switch row.availability {
         case .ready:

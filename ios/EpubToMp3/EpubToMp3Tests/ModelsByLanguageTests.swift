@@ -6,11 +6,11 @@ final class ModelsByLanguageTests: XCTestCase {
 
     private func entry(
         provider: String = "piper", id: String, name: String, quality: SpeechModelSnapshot.Quality = .medium,
-        installed: Bool, compatible: Bool = true, installable: Bool = true, bytes: UInt64? = 10
+        installed: Bool, compatible: Bool = true, installable: Bool = true, bytes: UInt64? = 10, tags: [String] = ["pt"]
     ) -> SpeechModelSnapshot.Entry {
         .init(identity: .init(provider: provider, runtime: provider, modelID: id, modelRevision: "fixture"),
               presentation: .init(modelName: name, familyName: "Family", quality: quality, voiceChoices: []),
-              languageEvidence: .init(routingTags: [], exactTags: []),
+              languageEvidence: .init(routingTags: tags, exactTags: []),
               distribution: .init(installable: installable, downloadBytes: bytes, installedBytes: nil),
               licence: .init(id: nil, category: "unknown", evidenceURL: nil, termsFingerprint: nil,
                              requiresAcceptance: false, validation: "unknown"),
@@ -43,10 +43,12 @@ final class ModelsByLanguageTests: XCTestCase {
             entry(id: "pt_BR-cadu-medium", name: "Cadu", installed: false, bytes: 63_000_000),
             entry(id: "pt_BR-jeff-medium", name: "Jeff", installed: false, installable: false),
             entry(provider: "edge", id: "edge", name: "Edge", installed: false),
+            // The language snapshot lists the whole catalog: other languages' models are not shown here.
+            entry(id: "en_US-ljspeech-high", name: "LJ Speech", installed: true, compatible: false, tags: ["en"]),
         ], language: "pt")
         let en = try snapshot([
-            entry(id: "en_US-ljspeech-high", name: "LJ Speech", quality: .high, installed: false),
-            entry(id: "en_GB-cori-medium", name: "Cori", installed: true),
+            entry(id: "en_US-ljspeech-high", name: "LJ Speech", quality: .high, installed: false, tags: ["en"]),
+            entry(id: "en_GB-cori-medium", name: "Cori", installed: true, tags: ["en"]),
         ], language: "en")
         return .make(languages: [.init(tag: "pt", snapshot: pt), .init(tag: "en", snapshot: en)],
                      choices: choices, allowOnlineFallback: consent, systemVoiceLanguages: system)
@@ -60,6 +62,18 @@ final class ModelsByLanguageTests: XCTestCase {
         let pt = sections[0]
         XCTAssertEqual(pt.local.map(\.title), ["Faber", "Cadu", "Jeff"])
         XCTAssertEqual(pt.online.map(\.title), ["Edge"])
+        XCTAssertFalse(pt.rows.contains { $0.title == "LJ Speech" }, "Another language's model must not appear in Portuguese.")
+    }
+
+    func testLanguagesWithAReadyLocalModelComeFirst() throws {
+        // Portuguese (Faber installed) and English (Cori installed) lead; order is otherwise the catalog's.
+        let tags = try state().sections.map(\.language)
+        XCTAssertEqual(tags, ["pt", "en"])
+        let onlyEnglishReady = try ModelsByLanguageViewState.make(
+            languages: [.init(tag: "pt", snapshot: snapshot([entry(id: "pt_BR-cadu-medium", name: "Cadu", installed: false)], language: "pt")),
+                        .init(tag: "en", snapshot: snapshot([entry(id: "en_GB-cori-medium", name: "Cori", installed: true, tags: ["en"])], language: "en"))],
+            choices: [:], allowOnlineFallback: false, systemVoiceLanguages: [])
+        XCTAssertEqual(onlyEnglishReady.sections.map(\.language), ["en", "pt"])
     }
 
     func testDimmingFollowsInstallationAvailabilityAndConsent() throws {
@@ -73,6 +87,40 @@ final class ModelsByLanguageTests: XCTestCase {
         XCTAssertEqual(try row("Edge").availability, .needsConsent)
         let consented = try state(consent: true).sections[0].rows.first { $0.title == "Edge" }
         XCTAssertEqual(consented?.availability, .ready)
+    }
+
+    func testEveryLanguageOffersEdgeOnlineAndHidesThePiperDefaultAlias() throws {
+        let sections = try state().sections
+        let english = sections[1]
+        XCTAssertEqual(english.online.map(\.title), ["Edge"], "Edge is offered online for every language.")
+        XCTAssertEqual(english.online.first?.availability, .needsConsent)
+        let withAlias = try ModelsByLanguageViewState.make(
+            languages: [.init(tag: "pt", snapshot: snapshot([entry(id: "piper-default", name: "Piper default", installed: false, installable: false)], language: "pt"))],
+            choices: [:], allowOnlineFallback: false, systemVoiceLanguages: [])
+        XCTAssertFalse(withAlias.sections[0].rows.contains { $0.title == "Piper default" })
+    }
+
+    func testAnInstalledModelIsReadyEvenWhenItsRuntimeWasNotProbedForTheListing() throws {
+        var unprobed = entry(id: "pt_BR-faber-medium", name: "Faber", installed: true)
+        unprobed = .init(identity: unprobed.identity, presentation: unprobed.presentation,
+                         languageEvidence: unprobed.languageEvidence, distribution: unprobed.distribution,
+                         licence: unprobed.licence, compatibility: unprobed.compatibility,
+                         installation: unprobed.installation,
+                         readiness: .init(state: .notInspected, activeRuntimeRevision: nil, failure: nil),
+                         selection: .init(selectable: false, reasons: ["readiness_not_inspected"]))
+        let broken = entry(id: "pt_BR-cadu-medium", name: "Cadu", installed: true)
+        let failing = SpeechModelSnapshot.Entry(
+            identity: broken.identity, presentation: broken.presentation, languageEvidence: broken.languageEvidence,
+            distribution: broken.distribution, licence: broken.licence, compatibility: broken.compatibility,
+            installation: broken.installation,
+            readiness: .init(state: .unavailable, activeRuntimeRevision: nil, failure: "boom"),
+            selection: .init(selectable: false, reasons: ["runtime_unavailable"]))
+        let view = try ModelsByLanguageViewState.make(
+            languages: [.init(tag: "pt", snapshot: snapshot([unprobed, failing], language: "pt"))],
+            choices: [:], allowOnlineFallback: false, systemVoiceLanguages: [])
+        XCTAssertEqual(view.sections[0].rows.first { $0.title == "Faber" }?.availability, .ready)
+        XCTAssertEqual(view.sections[0].rows.first { $0.title == "Cadu" }?.availability, .unavailable,
+                       "A runtime that is known to fail stays unavailable.")
     }
 
     func testTheInstalledSystemVoiceIsListedPerLanguageAndNeverDimmed() throws {

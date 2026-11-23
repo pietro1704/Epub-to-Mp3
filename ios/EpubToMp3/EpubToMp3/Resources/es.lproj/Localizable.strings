@@ -586,3 +586,4 @@
 "models.missing.title" = "Sin modelo para este idioma";
 "models.missing.message" = "Ningún modelo descargado puede leer el idioma de este libro (%@). Descarga uno en la pantalla de Modelos.";
 "models.missing.open" = "Abrir Modelos";
+"models.systemVoice" = "Voz del sistema";

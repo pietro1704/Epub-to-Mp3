@@ -69,7 +69,10 @@ final class ModelsScreenController: UITableViewController {
         }
     }
 
-    private func languageTitle(_ tag: String) -> String { Locale.current.localizedString(forLanguageCode: tag) ?? tag }
+    private func languageTitle(_ tag: String) -> String {
+        let name = Locale.current.localizedString(forLanguageCode: tag) ?? tag
+        return name.prefix(1).uppercased() + name.dropFirst()
+    }
 
     // MARK: data source
 
