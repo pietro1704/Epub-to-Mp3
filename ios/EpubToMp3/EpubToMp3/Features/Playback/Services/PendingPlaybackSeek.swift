@@ -19,6 +19,8 @@ final class PendingPlaybackSeek {
         var startsAtGeneratedOrigin = false
         var navigationTarget: PlaybackNavigationTarget? = nil
         var relativeSkip = false
+        /// Set while the target lies beyond the audio the job has produced so far; a play tap abandons such a wait.
+        var isWaitingForAudio = false
     }
 
     struct ProportionalRequest {
@@ -194,6 +196,7 @@ final class PendingPlaybackSeek {
                     switch resolution {
                     case .waiting:
                         self.chapter?.isApplying = false
+                        self.chapter?.isWaitingForAudio = true
                         self.durationTask = nil
                         // Retain files, but release paused queue capacity so Rust
                         // can produce the segment containing the requested time.

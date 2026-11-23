@@ -126,7 +126,12 @@ final class PlaybackTransportCommands {
     func resume() {
         if !navigation.hasAnchor { navigation.rememberReaderPlaybackAnchor() }
         if pendingSeek.autoplay != nil { pendingSeek.autoplay = true }
-        if pendingSeek.chapter != nil {
+        if pendingSeek.chapter?.isWaitingForAudio == true {
+            // The request targets audio that does not exist (yet): a voice change whose old position was a time on
+            // another voice's clock, or a skip past what was produced. Re-applying it can never succeed and used
+            // to leave the player stuck until the app was restarted; play drops it and plays what the job makes.
+            seeking.cancel()
+        } else if pendingSeek.chapter != nil {
             pendingSeek.chapter?.autoplay = true
             seeking.applyPending()
             return

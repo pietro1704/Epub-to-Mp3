@@ -105,7 +105,7 @@ public struct Options {
         var expectedCount = 0
         for filter in filters {
             let parts = filter.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-            let uiTestClasses: Set<String> = ["BackgroundLockPlaybackDeviceUITests"]
+            let uiTestClasses: Set<String> = ["BackgroundLockPlaybackDeviceUITests", "VoiceSwitchResumeDeviceUITests"]
             let targetMatches = parts.first == "EpubToMp3Tests"
                 ? parts.count > 1 && !uiTestClasses.contains(parts[1])
                 : parts.first == "EpubToMp3UITests" && parts.count > 1 && uiTestClasses.contains(parts[1])

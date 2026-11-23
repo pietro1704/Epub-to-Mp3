@@ -81,8 +81,22 @@ struct ReaderVoiceChange {
                                   activeSentence: player.activeSentenceId) {
             return .init(chapter: chapter, pageRatio: ratio, seek: nil, autoplay: autoplay)
         }
+        // No sentence timing (an engine without it, or a position still before its first sentence): the chapter
+        // clock still maps to the text through the same time-to-text ratio that feeds the slider. Carrying seconds
+        // would replay the OLD voice's time on a voice of another speed, which can lie beyond what the new job has
+        // generated and leaves the player waiting for it.
+        if book.fileType != .pdf, let ratio = timeAnchor(position: player.playbackClock.audioOutput.position, chapter: chapter) {
+            return .init(chapter: chapter, pageRatio: ratio, seek: nil, autoplay: autoplay)
+        }
         return chapterTime(player: player, chapter: chapter, jobID: snapshot.jobId, autoplay: autoplay,
             sourceScalarOffset: pdfOffset(at: chapter))
+    }
+
+    /// Fraction of the chapter already spoken, from the confirmed audio position; `nil` when unknown.
+    static func timeAnchor(position: PlaybackAudioOutput.Position?, chapter: Int) -> Double? {
+        guard let position, position.chapterIndex == chapter, position.seconds.isFinite, position.seconds >= 0,
+              position.duration.isFinite, position.duration > 0 else { return nil }
+        return min(1, position.seconds / position.duration)
     }
 
     private static func chapterTime(player: AudioPlayer, chapter: Int, jobID: String, autoplay: Bool,

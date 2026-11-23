@@ -202,6 +202,48 @@ extension AudioPlayerPendingSeekTests {
         }
     }
 
+    // VOICE-SWITCH-RESUME-EXACT (second defect): after a voice change left the player waiting for a second the new
+    // voice has not produced, NOTHING recovered it — not the play button, not another change — until the app was
+    // restarted. A play tap abandons a request that is waiting for audio that does not exist and plays what there is.
+    @MainActor
+    func testPlayRecoversAPlayerStuckWaitingForAudioThatDoesNotExist() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false, streamSegmentCount: 1) { player, _ in
+            player.setSegmentChapterEstimate(30, forChapterIndex: 0)
+            player.pause()
+            player.seek(to: 5)
+            try await self.waitForNavigation(player)
+            player.skipForward(seconds: 2_000)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertTrue(player.isSeeking, "Precondition: the player waits for a second that does not exist")
+            XCTAssertNotNil(player.pendingNavigation)
+
+            player.resume()
+            for _ in 0..<40 where player.isSeeking { try await Task.sleep(nanoseconds: 50_000_000) }
+
+            XCTAssertFalse(player.isSeeking, "Play must not re-apply a request that can never be satisfied")
+            XCTAssertNil(player.pendingNavigation)
+            XCTAssertTrue(player.isPlaying, "...and the available audio plays")
+        }
+    }
+
+    @MainActor
+    func testANewListeningJobClearsAStuckWaitingRequest() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false, streamSegmentCount: 1) { player, _ in
+            player.setSegmentChapterEstimate(30, forChapterIndex: 0)
+            player.pause()
+            player.seek(to: 5)
+            try await self.waitForNavigation(player)
+            player.skipForward(seconds: 2_000)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertTrue(player.isSeeking)
+
+            // What a model switch does before installing its new job.
+            player.stop()
+            XCTAssertFalse(player.isSeeking, "A replaced job must not inherit the old job's wait")
+            XCTAssertNil(player.pendingNavigation)
+        }
+    }
+
     @MainActor
     func testSkipForwardClampsConfirmedFinalChapterInsteadOfWaitingBeyondEnd() async throws {
         try await withPlayingFixture(streaming: true) { player, snapshot in

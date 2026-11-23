@@ -1,0 +1,2 @@
+testEveryEngineCarriesATextPositionWhenTheAudioHasNoSentenceTiming
+testEveryEngineResumesAtTheSpokenSentenceWhenTheAudioHasItsId
