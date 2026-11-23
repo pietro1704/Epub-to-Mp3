@@ -10,6 +10,8 @@ protocol ModelsByLanguageSource: Sendable {
     func install(modelID: String, acceptedTermsFingerprint: String?, language: String) async throws
     func watchInstall(modelID: String) async -> AsyncStream<SpeechModelInstallEvent>
     func cancelInstall(modelID: String) async
+    func remove(modelID: String, configuredSelections: [TtsSelection]) async throws
+    func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String)
 }
 
 struct SpeechModelsSource: ModelsByLanguageSource {
@@ -26,6 +28,12 @@ struct SpeechModelsSource: ModelsByLanguageSource {
         await client.watchInstall(modelID: modelID)
     }
     func cancelInstall(modelID: String) async { await client.cancelInstall(modelID: modelID) }
+    func remove(modelID: String, configuredSelections: [TtsSelection]) async throws {
+        _ = try await client.remove(modelID: modelID, configuredSelections: configuredSelections)
+    }
+    func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String) {
+        try await client.auditionChoice(for: entry)
+    }
 }
 
 /// Drives the Models screen: loads the catalog by language, applies the user's
@@ -127,6 +135,49 @@ final class ModelsByLanguageModel: ObservableObject {
     }
 
     func declinePendingTerms() { pendingTerms = nil }
+
+    /// The library helpers (names, details, actions) for one language's snapshot.
+    func libraryState(for language: String) -> SpeechModelLibraryViewState {
+        SpeechModelLibraryViewState(snapshot: snapshots.first { $0.tag == language }?.snapshot)
+    }
+
+    /// The Rust entry behind a row, for details, preview and removal.
+    func entry(forRow row: ModelsByLanguageViewState.Row, in language: String) -> SpeechModelSnapshot.Entry? {
+        entry(for: row, in: language)
+    }
+
+    func isTermsAccepted(for entry: SpeechModelSnapshot.Entry) -> Bool {
+        terms.isAccepted(modelID: entry.identity.modelID, fingerprint: entry.licence.termsFingerprint)
+    }
+
+    func revokeTerms(for entry: SpeechModelSnapshot.Entry) {
+        guard let fingerprint = entry.licence.termsFingerprint else { return }
+        terms.revoke(modelID: entry.identity.modelID, fingerprint: fingerprint)
+        objectWillChange.send()
+    }
+
+    /// Every selection that must keep its model: primary, secondary and each language's choice.
+    var protectedSelections: [TtsSelection] {
+        settings.configuredNarrationSelections + Array(settings.languageModelChoices.values)
+    }
+
+    /// Removes an installed model the client allows (not configured, chosen or in use) and refreshes its language.
+    func remove(_ row: ModelsByLanguageViewState.Row, in language: String) async throws {
+        guard let modelID = row.selection.modelID else { return }
+        try await source.remove(modelID: modelID, configuredSelections: protectedSelections)
+        progress[row.id] = nil
+        if let fresh = try? await source.snapshot(language: language),
+           let index = snapshots.firstIndex(where: { $0.tag == language }) {
+            snapshots[index] = (language, fresh)
+            rebuild()
+        }
+    }
+
+    func auditionChoice(for row: ModelsByLanguageViewState.Row, in language: String) async throws
+        -> (selection: TtsSelection, language: String) {
+        guard let entry = entry(for: row, in: language) else { throw SpeechModelInstallationError.unknownModel(row.id) }
+        return try await source.auditionChoice(for: entry)
+    }
 
     func cancelDownload(_ row: ModelsByLanguageViewState.Row) async {
         guard let modelID = row.selection.modelID else { return }

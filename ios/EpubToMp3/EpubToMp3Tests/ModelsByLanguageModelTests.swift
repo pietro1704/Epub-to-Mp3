@@ -46,6 +46,20 @@ final class ModelsByLanguageModelTests: XCTestCase {
 
         func cancelInstall(modelID: String) async { lock.lock(); cancelled.append(modelID); lock.unlock() }
 
+        private(set) var removals: [(model: String, configured: [TtsSelection])] = []
+        func remove(modelID: String, configuredSelections: [TtsSelection]) async throws {
+            lock.lock(); defer { lock.unlock() }
+            removals.append((modelID, configuredSelections))
+            if configuredSelections.contains(where: { $0.modelID == modelID }) {
+                throw SpeechModelRemovalError.configured(modelID)
+            }
+            installed.remove(modelID)
+        }
+
+        func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String) {
+            (TtsSelection(engine: "piper", modelID: entry.identity.modelID, voice: nil), "pt")
+        }
+
         func emit(_ modelID: String, _ stage: SpeechModelInstallEvent.Stage, done: UInt64 = 0, total: UInt64 = 100,
                   markInstalled: Bool = false) {
             lock.lock()
@@ -170,5 +184,45 @@ final class ModelsByLanguageModelTests: XCTestCase {
         XCTAssertEqual(model.failures[cadu.id], L10n.string("settings.modelInstall.downloadFailed"))
         XCTAssertNil(model.progress[cadu.id])
         XCTAssertTrue(model.state.sections[0].rows.first { $0.id == cadu.id }?.isDimmed ?? false)
+    }
+
+    func testRemovalRefreshesTheLanguageAndRefusesAChosenModel() async throws {
+        let source = FakeSource()
+        let (model, settings, defaults, name) = try make(source)
+        defer { defaults.removePersistentDomain(forName: name) }
+        await model.load()
+        let faber = try XCTUnwrap(model.state.sections[0].rows.first { $0.id == "piper:pt_BR-faber-medium" })
+        XCTAssertTrue(model.choose(faber, in: "pt"))
+        do {
+            try await model.remove(faber, in: "pt")
+            XCTFail("A model chosen for a language must keep its files.")
+        } catch let error as SpeechModelRemovalError {
+            XCTAssertEqual(error, .configured("pt_BR-faber-medium"))
+        }
+        XCTAssertTrue(source.removals.last?.configured.contains { $0.modelID == "pt_BR-faber-medium" } ?? false)
+        model.clearChoice(in: "pt")
+        settings.selectPrimaryNarration(.systemDefault)
+        await settle()
+        try await model.remove(faber, in: "pt")
+        let refreshed = try XCTUnwrap(model.state.sections[0].rows.first { $0.id == faber.id })
+        XCTAssertEqual(refreshed.availability, .downloadable(bytes: 100), "Removed: dimmed and downloadable again.")
+    }
+
+    func testTermsCanBeRevokedAndPreviewResolvesAChoice() async throws {
+        let source = FakeSource()
+        source.requiresTerms = true
+        let (model, _, defaults, name) = try make(source)
+        defer { defaults.removePersistentDomain(forName: name) }
+        await model.load()
+        let cadu = try XCTUnwrap(model.state.sections[0].rows.first { $0.id == "piper:pt_BR-cadu-medium" })
+        let entry = try XCTUnwrap(model.entry(forRow: cadu, in: "pt"))
+        XCTAssertFalse(model.isTermsAccepted(for: entry))
+        await model.download(cadu, in: "pt")
+        await model.acceptPendingTerms()
+        XCTAssertTrue(model.isTermsAccepted(for: entry))
+        model.revokeTerms(for: entry)
+        XCTAssertFalse(model.isTermsAccepted(for: entry))
+        let preview = try await model.auditionChoice(for: cadu, in: "pt")
+        XCTAssertEqual(preview.selection.modelID, "pt_BR-cadu-medium")
     }
 }
