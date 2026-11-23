@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
 import 'embedded_conversion_contract.dart';
 import 'model_install/model_install_models.dart';
 import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
