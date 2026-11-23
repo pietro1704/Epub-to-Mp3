@@ -41,7 +41,9 @@ impl ConversionWorker {
             source_offset,
             request.language.as_deref(),
         );
+        // Every structural unit is its own segment, so the pause after it is exact.
         let mut forced_boundaries = heading_ends.to_vec();
+        forced_boundaries.extend(paragraph_ends.iter().copied());
         forced_boundaries.extend(
             language_passages
                 .iter()

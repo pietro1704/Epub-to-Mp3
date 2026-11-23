@@ -21,7 +21,7 @@ pub(super) struct SegmentSynthesis<'a> {
     pub stale: &'a AtomicBool,
     pub generation: Option<u64>,
     pub source_index: usize,
-    pub heading_ends: &'a [usize],
+    pub structure: super::heading_pauses::Structure<'a>,
     pub book_identity: Option<&'a str>,
     pub segment_cache: &'a SegmentAudioCache,
 }
@@ -35,7 +35,8 @@ impl SegmentSynthesis<'_> {
         source_segment: &SourceTextSegment,
     ) -> Result<(Vec<u8>, bool), TtsFailure> {
         let segment = source_segment.speech();
-        let pause = super::heading_pauses::follows_heading(source_segment, self.heading_ends);
+        let boundary = super::heading_pauses::boundary_after(source_segment, &self.structure);
+        let pause = super::heading_pauses::pause_millis(boundary, &selection.engine);
 
         let context = SynthesisContext {
             language: self.language,

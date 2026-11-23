@@ -262,11 +262,17 @@ fn heading_pause_reaches_streamed_bytes_and_final_artifact_once() {
     );
     assert_eq!(original, chunks[..2].concat());
     assert_eq!(chunks[..2], chunks[2..]);
+    // Same speech for both segments: they differ only by the pause after each. The title
+    // gets the heading pause and the body, which ends the chapter, the chapter-end pause.
+    use super::super::heading_pauses::{pause_millis, Boundary};
+    let engine = &chunk_preferences().primary.engine;
+    let title_pause = pause_millis(Boundary::Heading, engine) as f64 / 1000.0;
+    let end_pause = pause_millis(Boundary::ChapterEnd, engine) as f64 / 1000.0;
     let first = crate::pcm::mp3_duration_seconds(&chunks[0]).unwrap();
     let body = crate::pcm::mp3_duration_seconds(&chunks[1]).unwrap();
     assert!(
-        (0.8..0.95).contains(&(first - body)),
-        "title={first}, body={body}"
+        ((first - body) - (title_pause - end_pause)).abs() < 0.08,
+        "title={first}, body={body}, title pause={title_pause}, chapter end pause={end_pause}"
     );
 }
 
@@ -276,7 +282,8 @@ fn cached_equal_speech_is_bound_to_each_source_occurrence_after_reuse() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let worker = chunk_worker(root.path(), calls.clone());
     *worker.source_identity.lock().unwrap() = Some("repeated-word-book".into());
-    let text = "Echo. Echo.";
+    // Two headings with the same words and the same pause, then a different last paragraph.
+    let text = "Echo. Echo. Tail.";
     let output = root.path().join("repeated.mp3");
     worker
         .synthesize_preferences_at_generation(
@@ -290,17 +297,17 @@ fn cached_equal_speech_is_bound_to_each_source_occurrence_after_reuse() {
             &Mutex::new(Vec::new()),
             1,
             None,
-            &[5, 11],
+            &[5, 11, 17],
             &[5, 11],
         )
         .unwrap();
     assert_eq!(
         *calls.lock().unwrap(),
-        ["Echo."],
+        ["Echo.", "Tail."],
         "Equal speech must still use the content-addressed cache"
     );
     let passages = crate::speech_alignment::collect(&mut fs::File::open(output).unwrap()).unwrap();
-    assert_eq!(passages.len(), 2);
+    assert_eq!(passages.len(), 3);
     assert_eq!(passages[0].source_offset, Some(0));
     assert_eq!(
         passages[1].source_offset,

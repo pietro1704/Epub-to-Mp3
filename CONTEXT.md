@@ -40,6 +40,19 @@ architecture.
 This is a hard architecture invariant. Do not reintroduce an external backend,
 platform-specific converter, or separate online/offline conversion pipeline.
 
+## Narration pauses
+
+Structural pauses are explicit segments of digital silence appended by the Rust worker
+(`worker/heading_pauses.rs`) to the segment that ends the structural unit, never part of
+the reader's text axis. Approved by Pietro (2026-11-23), totals measured with
+`ffmpeg silencedetect` (`scripts/verify_narration_pauses.rb`): a paragraph boundary is
+0.45 s with Piper and 0.55 s with the system voice (the explicit silence is the
+difference to the voice's natural gap, 0.14 s / 0.30 s); a heading keeps 0.8 s; the end
+of a chapter is 1.0 s; sentences keep the voice's own pacing. Each paragraph is its own
+segment. The policy is part of the cache identity (`narration-pause-v1`), so audio made
+without it is never reused. Inline footnotes get 0.5 s before and after (footnote
+narration, separate change).
+
 ## Provider feedback
 
 **Provider pressure**:

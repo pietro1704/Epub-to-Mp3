@@ -196,6 +196,25 @@ pub fn finalize_mp3(path: &Path) -> Result<bool, AudioError> {
     Ok(true)
 }
 
+/// Join independently encoded MPEG segments into ONE stream whose aggregate Info/Xing
+/// header declares every frame. Streamed chunks are decoded on their own, and Apple
+/// decoders take the length from the first header, so a second header-bearing stream
+/// would play past the declared length.
+pub fn join_mp3_segments(parts: &[&[u8]]) -> Result<Vec<u8>, AudioError> {
+    if let [only] = parts {
+        return Ok(only.to_vec());
+    }
+    let mut joined = tempfile::NamedTempFile::new()?;
+    for part in parts {
+        joined.write_all(part)?;
+    }
+    joined.as_file_mut().sync_all()?;
+    finalize_mp3(joined.path())?;
+    let mut bytes = Vec::new();
+    File::open(joined.path())?.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
