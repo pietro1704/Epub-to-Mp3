@@ -28,15 +28,17 @@ Future<void> _pump(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+  await tester.tap(find.descendant(
+    of: find.byKey(const ValueKey('narration-primary-row')),
+    matching: find.byType(ListTile),
+  ));
   await tester.pumpAndSettle();
 }
 
 bool _edgeOfferedAsPrimary(WidgetTester tester) {
-  final item = tester
-      .widgetList<DropdownMenuItem<String>>(find.byType(DropdownMenuItem<String>))
-      .firstWhere((item) => (item.child as Text).data == 'Edge · Online');
-  return item.enabled;
+  return tester
+      .widget<ListTile>(find.byKey(const ValueKey('narration-engine-edge')))
+      .enabled;
 }
 
 void main() {

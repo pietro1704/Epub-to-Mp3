@@ -388,10 +388,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get off => 'Desligado';
 
   @override
-  String get ttsPrimaryNarration => 'Narração principal';
+  String get ttsPrimaryNarration => 'Modelo de voz';
 
   @override
-  String get ttsSecondaryNarration => 'Narração secundária';
+  String get ttsSecondaryNarration => 'Voz secundária';
 
   @override
   String get ttsFaberOffline => 'Faber medium · Sem internet';
@@ -429,6 +429,24 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get ttsAutomaticSystemFallbackDescription =>
       'Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.';
+
+  @override
+  String get ttsEngineSystem => 'Voz do sistema';
+
+  @override
+  String get ttsEnginePiper => 'Piper';
+
+  @override
+  String get ttsEngineEdge => 'Edge (online)';
+
+  @override
+  String get ttsVoiceBookLanguage => 'Idioma do livro';
+
+  @override
+  String get ttsVoiceSystem => 'Voz instalada no sistema';
+
+  @override
+  String get ttsVoiceEdge => 'Voz online';
 
   @override
   String get ttsUsePreferences => 'Usar preferências de áudio';

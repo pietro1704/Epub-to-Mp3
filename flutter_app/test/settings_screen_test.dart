@@ -38,6 +38,18 @@ Future<void> _pump(
   await t.pumpAndSettle();
 }
 
+/// Opens a narration row, then chooses an engine that has a single voice.
+Future<void> _pickEngine(WidgetTester t, String rowKey, String engine) async {
+  final row = find.byKey(ValueKey(rowKey));
+  await t.scrollUntilVisible(row, -150, scrollable: find.byType(Scrollable).first);
+  await Scrollable.ensureVisible(t.element(row), alignment: 0.5);
+  await t.pumpAndSettle();
+  await t.tap(find.descendant(of: row, matching: find.byType(ListTile)));
+  await t.pumpAndSettle();
+  await t.tap(find.byKey(ValueKey('narration-engine-$engine')));
+  await t.pumpAndSettle();
+}
+
 void main() {
   group('SettingsScreen M3', () {
     const desktopHosts = {
@@ -62,7 +74,7 @@ void main() {
       final saved = jsonEncode(preferences.toJson());
       await _pump(t, models: true, prefsData: {'ttsPreferences': saved});
 
-      expect(find.text('Piper · Book language'), findsOneWidget);
+      expect(find.text('Book language'), findsOneWidget);
       expect(find.textContaining('-low'), findsNothing);
       final prefs = await SharedPreferences.getInstance();
       final effective = AppSettings(prefs).ttsPreferences;
@@ -119,8 +131,8 @@ void main() {
         expect(saved.secondary!.engine, 'system');
         expect(saved.policyVersion, 2);
         expect(saved.allowOnlineFallback, false);
-        expect(find.text('Piper · Book language'), findsOneWidget);
-        expect(find.text('System voice · Offline fallback'), findsOneWidget);
+        expect(find.text('Book language'), findsOneWidget);
+        expect(find.text('Installed system voice'), findsOneWidget);
       },
     );
 
@@ -163,8 +175,8 @@ void main() {
           prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
         );
         expect(t.takeException(), isNull);
-        expect(find.text('Edge · pt-BR-FranciscaNeural'), findsOneWidget);
-        expect(find.text('Edge · Online'), findsOneWidget);
+        expect(find.text('pt-BR-FranciscaNeural'), findsOneWidget);
+        expect(find.text('Online speech'), findsOneWidget);
         final saved = AppSettings(await SharedPreferences.getInstance())
             .ttsPreferences;
         expect(saved.primary.voice, 'pt-BR-FranciscaNeural');
@@ -188,10 +200,7 @@ void main() {
           models: true,
           prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
         );
-        await t.tap(find.text('Faber medium · Offline'));
-        await t.pumpAndSettle();
-        await t.tap(find.text('Edge · Online').last);
-        await t.pumpAndSettle();
+        await _pickEngine(t, 'narration-primary-row', 'edge');
         final saved = AppSettings(await SharedPreferences.getInstance())
             .ttsPreferences;
         expect(saved.primary.engine, 'edge');
@@ -205,8 +214,8 @@ void main() {
     for (final item in [
       (
         'pt',
-        'Narração principal',
-        'Narração secundária',
+        'Modelo de voz',
+        'Voz secundária',
         'Permitir reserva online',
       ),
       (
@@ -245,20 +254,7 @@ void main() {
       await t.pumpAndSettle();
       final prefs = await SharedPreferences.getInstance();
       expect(AppSettings(prefs).ttsPreferences.allowOnlineFallback, true);
-      await t.scrollUntilVisible(
-        find.text('System voice · Offline fallback'),
-        -150,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await Scrollable.ensureVisible(
-        t.element(find.text('System voice · Offline fallback')),
-        alignment: 0.5,
-      );
-      await t.pumpAndSettle();
-      await t.tap(find.text('System voice · Offline fallback'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Edge · Online').last);
-      await t.pumpAndSettle();
+      await _pickEngine(t, 'narration-secondary-row', 'edge');
       expect(AppSettings(prefs).ttsPreferences.secondary!.engine, 'edge');
       await t.scrollUntilVisible(
         find.text('Allow online fallback'),
@@ -318,16 +314,16 @@ void main() {
       await _pump(t);
 
       expect(find.byKey(const ValueKey('settings-models-row')), findsOneWidget);
-      expect(find.text('Primary narration'), findsNothing);
-      expect(find.text('Secondary narration'), findsNothing);
+      expect(find.text('Voice engine'), findsNothing);
+      expect(find.text('Secondary voice'), findsNothing);
     });
 
     testWidgets('the Models screen hosts the primary and secondary narration controls', (t) async {
       await _pump(t, models: true);
       expect(find.text('Audio engine'), findsOneWidget);
 
-      expect(find.text('Primary narration'), findsOneWidget);
-      expect(find.text('Secondary narration'), findsOneWidget);
+      expect(find.text('Voice engine'), findsOneWidget);
+      expect(find.text('Secondary voice'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsWidgets);
     });
 
