@@ -65,145 +65,41 @@ public struct Options {
             guard !skipBuild else {
                 throw WorkflowError("Device tests require a current incremental build; IOS_SKIP_BUILD and --skip-build are not accepted.")
             }
-            let selection = try Self.validateTestFilters(environment["IOS_TESTS"])
+            let selection = try Self.validateTestFilters(environment["IOS_TESTS"], root: root)
             testFilters = selection.filters
             expectedTestCount = selection.expectedCount
         }
     }
 
-    private static func validateTestFilters(_ supplied: String?) throws -> (filters: [String], expectedCount: Int) {
+    private static func loadAudited(root: URL, sourceFile: String = #filePath) throws -> [String: (wholeClass: Bool, methods: Set<String>)] {
+        // The repository's own audit directory; callers with a scratch root (tests) fall back to the package's.
+        let repository = root.appendingPathComponent("tools/DeviceWorkflow/Audited", isDirectory: true)
+        let package = URL(fileURLWithPath: sourceFile).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Audited", isDirectory: true)
+        let directory = FileManager.default.fileExists(atPath: repository.path) ? repository : package
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        var audited: [String: (wholeClass: Bool, methods: Set<String>)] = [:]
+        for file in files where file.pathExtension == "txt" {
+            let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            audited[file.deletingPathExtension().lastPathComponent] = (
+                lines.contains { $0.hasPrefix("*") }, Set(lines.filter { !$0.hasPrefix("*") }))
+        }
+        return audited
+    }
+
+    private static func validateTestFilters(_ supplied: String?, root: URL) throws -> (filters: [String], expectedCount: Int) {
         guard let supplied, !supplied.isEmpty else {
             throw WorkflowError("Set IOS_TESTS explicitly to audited focused device tests.")
         }
         // Keep exact method selectors aligned with the audited device test classes.
         // Partial method audits must never authorize a whole-class selector.
-        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests", "NativePlaybackFeedbackTests", "NativeTransportFeedbackTests",
-            "PDFReaderParityTests", "TtsMissingVoiceRecoveryTests", "ReaderReadingPositionTests",
-            "ReaderAccessibilityContractTests", "SpeechModelObserverLifetimeTests", "ModelsScreenAlertTests"]
-        let allowedMethods: [String: Set<String>] = [
-            "AudioPlayerPendingSeekTests": [
-                "testSkipBackwardBeforeTheGeneratedOriginRestartsFromTheEstimatedTextPosition",
-                "testRepeatedBackwardSkipsInsideTheRetainedAudioAccumulate",
-                "testBackwardSkipNearTheChapterStartLandsAtTheStartWithoutLoadingForever",
-                "testSkipBackwardCrossesSegmentsUsingChapterClockAndPreservesPause",
-                "testSkipForwardCrossesSegmentsUsingChapterClockAndPreservesPause",
-                "testSkipForwardWaitsForMissingSegmentAndPreservesPause",
-            ],
-            "ReaderListeningSessionTests": [
-                "testSwitchingTheModelWhileListeningRetiresTheOldJobSilentlyAndKeepsPlaying",
-            ],
-            "ModelsScreenAlertTests": [
-                "testChoiceSheetsHaveExactlyOneCancelWhenPresented",
-                "testActionSheetNeverAddsASecondCancel",
-            ],
-            "PDFReaderParityTests": [
-                "testPhysicalPDFPagesMapToTheBundledRustNarrationAxis",
-                "testRepeatedPagesRemainDistinctAndRatiosUseRustUnicodeScalars",
-                "testPDFLayoutSwitchPageNavigationAndReopenPreserveTheSourcePage",
-                "testAppLongPressRemainsOnTheContainingSurfaceAcrossPDFLayoutAndRemoval",
-                "testPDFSuppressesSystemEditingMenuButKeepsAppPlayAction",
-            ],
-            "TtsMissingVoiceRecoveryTests": [
-                "testMissingVoiceAlertExposesAllThreeActionsAndCancellation",
-                "testRecommendationNeverOffersInstalledIncompatibleOrOnlineModels",
-                "testConfirmedDownloadUsesBookLanguageWithoutChangingStudyLanguageOrPrimary",
-                "testDownloadFailureAndCancellationNeverBecomeAPlayableSelection",
-                "testSystemRecoveryServesOneRequestAsSecondaryVoiceWithoutChangingTheBookLanguage",
-                "testListeningPreflightAsksOnlyForAnAuthoritativeLanguageWithoutAnInstalledVoice",
-                "testLanguageActionPresentsTheVoiceModelDestinationOverACoveringReader",
-                "testStaleBookRequestDoesNotPresentAnAlertOrDownload",
-            ],
-            "ReaderReadingPositionTests": [
-                "testChromeTransitionRestoresExactFractionalRawOffsetAfterFinalLayout",
-            ],
-            "ReaderAccessibilityContractTests": [
-                "testNativeReaderInstallsStableContentAndNavigationIdentifiers",
-            ],
-            "SpeechModelObserverLifetimeTests": [
-                "testClosingIdleOwnerDeallocatesItAndTerminatesEveryModelObserver",
-                "testClosingOneOwnerPreservesAnotherOwnersSubscriptions",
-                "testRepeatedOpenAndCloseDoesNotAccumulateSubscriptionsOrInstallModels",
-                "testClosingOwnerDoesNotCancelItsConfirmedClientInstallation",
-                "testLateInstallationFailureDoesNotKeepOrRecreateClosedOwner",
-                "testSuccessfulInstallKeepsLiveOwnerSubscribedUntilItCloses",
-                "testExplicitInstallationCancellationDoesNotEndLiveViewSubscriptions",
-                "testVoiceModelDestinationGroupsModelsByLanguageWhileSettingsKeepsOneSummaryRow",
-                "testProgressPreservesVisibleCellsAndScrollPosition",
-            ],
-            "NativePlaybackFeedbackTests": [
-                "testBothMenusIncludeNormalSpeedAndMarkExactlyTheActiveRateIncludingLegacyValues",
-                "testExpandedPanelStartsAtRootSafeAreaInBothOrientations",
-                "testOutputRequiresAdvancingCurrentItemAndClearsForWaitingSeekReplacementAndStaleTicks",
-                "testReaderHighlightPreservesAnnotationsAndOffsetAndRejectsAnotherChapterOrBook",
-                "testRepeatedWordsUseTheirOwnUTF16Range",
-                "testListeningActivitySessionCannotCreateOrEndAnActivity",
-                "testRepeatedSentencesAfterEmojiResolveInReadingOrder",
-                "testSpeechHighlightsRequireOutputCallbacksAndRejectPausedOrObsoleteUtterances",
-            ],
-            "NativeTransportFeedbackTests": [
-                "testFifteenSecondCommandsAndChapterBoundariesPreservePause",
-                "testExpandedSliderCommitsArbitraryPositionAndLatestSeekWins",
-                "testConfirmedOutputDisappearsImmediatelyOnPauseAndSeek",
-            ],
-            "ReaderProgressiveListeningTests": [
-                "testMiniPlayerPreservesPageUntilCompleteChapterArrives",
-                "testMiniPlayerPageStartKeepsPauseWhileWaitingForChapter",
-                "testMiniPlayerRejectsNonfinitePageAnchorAndStreamsImmediately",
-                "testMiniPlayerPageAnchorDoesNotSurviveReplacementSession",
-                "testTerminalEmptySnapshotDoesNotWaitForReaderPageForever",
-                "testRequestedChapterPlaysBeforeConversionFinishesWithoutRestart",
-                "testPauseWhileWaitingPreventsChapterAutoplay",
-            ],
-            "AppErrorReporterTests": [
-                "testAlertMessageAlsoWritesErrorIdentityAndCauseToTerminal",
-                "testStringFailureRetainsLocalizedAlertAndPrefixesEveryDiagnosticLine",
-            ],
-            "DownloadedAudioFilesMirrorTests": [
-                "testRedownloadKeepsAFileTheListenerEditedAtTheOriginalPath",
-            ],
-            "LegacyAudioMigrationCoordinatorTests": [
-                "testFailedVisibleCopyKeepsTheLegacyFileUntilMigrationCanRetry",
-            ],
-            "DownloadManagerBackgroundTests": [
-                "testDownloadWithoutAKnownBookKeepsTheJobAndChapterIndices",
-            ],
-            "RustOutputRootValidationTests": [
-                "testSystemTemporaryRootSupportsWritingCountingAndOwnedRemoval",
-                "testCustomSymlinkAncestorStillRejectsWritesAndRemoval",
-                "testCanonicalRootStillRejectsTraversalAndPreservesAnotherBooksOutput",
-            ],
-            "ToolbarSettingsParityTests": [
-                "testInstalledSystemVoiceCanBeSelectedAsSecondaryWithoutChangingPrimary",
-                "testNewSpeechSettingsUseFaberWithNativeFallbackAndPersistExplicitNone",
-                "testLoadingConsentedEdgeFallbackAdoptsNativeRecoveryWithoutChangingSelections",
-                "testExistingSpeechSettingsRetainPrimaryAndRecoverThroughSystem",
-                "testExistingExplicitNativeFallbackAdoptsRecoveryWithoutSettingsEdit",
-                "testLoadingDuplicateLegacyFallbackClearsOnlySecondary",
-            ],
-            "ReaderViewportTransitionTests": [
-                "testRepeatedTargetIsIdempotentAndCapturesOnce",
-                "testReplacementMakesPreviousCommitStaleWithoutRecapturing",
-                "testReentrantGeometryChangeInvalidatesItsOwnCommit",
-                "testCancelInvalidatesOutstandingToken",
-            ],
-            "BackgroundLockPlaybackDeviceUITests": [
-                "testPlaybackContinuesAtHomeAndLockedAcrossChapterBoundary",
-                "testLOTRGrowingAudioContinuesAtHomeAndLocked",
-            ],
-            "ReaderProgressStoreTests": [
-                "testSaveAndReadRoundTrip", "testReadMissingBookReturnsNil", "testOffsetFractionIsClamped",
-                "testNegativeChapterIndexIsClampedForNewAndLegacyProgress",
-                "testInitialChapterSelectionRejectsEmptyContentAndClampsProgress", "testFirstOpenSkipsCoverBoilerplate",
-                "testPlaybackAnchorUsesCanonicalEpubIndexForManyMeetings",
-                "testPublishedPlaybackAnchorMakesTocSelectionStartAtSelectedPage",
-                "testSaveOverwritesPreviousEntryForSameBook", "testEvictRemovesSingleBook",
-                "testPruneOrphansDropsMissingBooks", "testPruneOrphansNoOpWhenAllValid",
-                "testCorruptDataIsIgnoredNotCrashing", "testLegacyEntryWithoutCharacterOffsetStillDecodes",
-                "testCharacterOffsetRoundTrips", "testPlaybackPriorityUsesLiveChapterForBookOpenInReader",
-                "testPlaybackPriorityUsesSavedProgressForDifferentBook",
-                "testPlaybackPriorityMapsSavedManyMeetingsPositionToEpubIndex",
-            ],
-        ]
+        // One file per audited class under Audited/: `* whole class` marks a class whose every test may run;
+        // otherwise only the listed methods. A new class is a new file and one line per method keeps merges clean.
+        let audited = try Self.loadAudited(root: root)
+        let allowedClasses = Set(audited.filter { $0.value.wholeClass }.keys)
+        let allowedMethods = audited.mapValues(\.methods)
         let filters = supplied.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
         var seen = Set<String>()
         var expectedCount = 0
@@ -293,4 +189,5 @@ public struct BenchmarkCase {
                                  bookPath: "EpubToMp3/DeviceTestInputs/\(runID)/book-\(index).epub", jobID: UUID().uuidString)
         }
     }
+
 }
