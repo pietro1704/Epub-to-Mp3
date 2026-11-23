@@ -14,7 +14,7 @@ if (-not [Environment]::UserInteractive) {
 }
 
 Add-Type -AssemblyName Accessibility, UIAutomationClient, UIAutomationTypes, System.Drawing
-Add-Type -ReferencedAssemblies ([Accessibility.IAccessible].Assembly.Location) -TypeDefinition @'
+$readerSource = @'
 using Accessibility;
 using System;
 using System.Collections.Generic;
@@ -70,7 +70,7 @@ public static class ReaderTestDesktop
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IAccessible accessible);
-    [DllImport("oleacc.dll")] private static extern int AccessibleChildren([MarshalAs(UnmanagedType.Interface)] IAccessible container, int start, int count, [Out, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.Struct, SizeParamIndex = 1)] object[] children, out int obtained);
+    [DllImport("oleacc.dll")] private static extern int AccessibleChildren([MarshalAs(UnmanagedType.Interface)] IAccessible container, int start, int count, [Out, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.Struct, SizeParamIndex = 2)] object[] children, out int obtained);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -233,7 +233,19 @@ public static class ReaderTestDesktop
     }
 }
 '@
-[void][ReaderTestDesktop]::SetThreadDpiAwarenessContext([IntPtr](-4))
+try {
+  Add-Type -ReferencedAssemblies ([Accessibility.IAccessible].Assembly.Location) -TypeDefinition $readerSource
+  [void][ReaderTestDesktop]::SetThreadDpiAwarenessContext([IntPtr](-4))
+} catch {
+  # Compilation and static initialisation happen before the journey's own handler.
+  if ($env:GITHUB_ACTIONS -eq 'true') {
+    $detail = $_.Exception.ToString()
+    if ($_.Exception.InnerException) { $detail += "`n" + $_.Exception.InnerException.ToString() }
+    $detail = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Host "::error title=Windows reader helper::$detail"
+  }
+  throw
+}
 
 $packagePath = (Resolve-Path -LiteralPath $Package).Path
 $fixturePath = (Resolve-Path -LiteralPath $Fixture).Path
