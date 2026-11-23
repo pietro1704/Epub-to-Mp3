@@ -42,9 +42,9 @@ final class MacPlayerBarViewController: NSViewController {
         coverView.layer?.cornerRadius = 5
         coverView.layer?.masksToBounds = true
         coverView.image = NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
-        chapterLabel.textColor = .secondaryLabelColor
+        chapterLabel.textColor = .readableSecondaryLabel
         chapterLabel.font = .systemFont(ofSize: 11)
-        etaLabel.textColor = .secondaryLabelColor
+        etaLabel.textColor = .readableSecondaryLabel
         etaLabel.font = .systemFont(ofSize: 10)
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         playButton.imagePosition = .imageOnly

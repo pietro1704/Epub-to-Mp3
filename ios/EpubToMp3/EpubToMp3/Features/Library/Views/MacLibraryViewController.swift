@@ -149,7 +149,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
             L10n.string("library.emptyDescription"),
         ].joined(separator: "\n")
         emptyLabel.alignment = .center
-        emptyLabel.textColor = .secondaryLabelColor
+        emptyLabel.textColor = .readableSecondaryLabel
         emptyLabel.isHidden = true
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         addButton.title = L10n.string("library.addBook")
@@ -428,7 +428,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         coverView.translatesAutoresizingMaskIntoConstraints = false
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 2
-        authorField.textColor = .secondaryLabelColor
+        authorField.textColor = .readableSecondaryLabel
         authorField.lineBreakMode = .byTruncatingTail
         convertButton.title = L10n.string("library.convertWholeBook")
         convertButton.bezelStyle = .rounded

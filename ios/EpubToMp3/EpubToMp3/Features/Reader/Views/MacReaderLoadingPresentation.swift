@@ -37,7 +37,7 @@ final class MacReaderLoadingPresentation {
         loadingTitleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
         loadingTitleLabel.alignment = .center
         loadingTitleLabel.lineBreakMode = .byTruncatingTail
-        loadingStatusLabel.textColor = .secondaryLabelColor
+        loadingStatusLabel.textColor = .readableSecondaryLabel
         loadingStatusLabel.alignment = .center
         loadingStatusLabel.setAccessibilityIdentifier("reader.loadingStatus")
         loadingRetryButton.title = L10n.string("reader.retry")

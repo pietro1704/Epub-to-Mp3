@@ -51,7 +51,17 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         }
         let tocRow = tocRows[safe: row]
         cell.textField?.stringValue = tocRow.map { String(repeating: "    ", count: $0.level) + $0.title } ?? ""
+        // Spoken name is the chapter title; the indentation is conveyed by the row's disclosure level.
+        let spoken = tocRow.map { $0.title.isEmpty ? L10n.string("toc.untitledChapter") : $0.title }
+        cell.textField?.setAccessibilityLabel(spoken)
+        cell.setAccessibilityLabel(spoken)
         return cell
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let rowView = NSTableRowView()
+        rowView.setAccessibilityDisclosureLevel(tocRows[safe: row]?.level ?? 0)
+        return rowView
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {

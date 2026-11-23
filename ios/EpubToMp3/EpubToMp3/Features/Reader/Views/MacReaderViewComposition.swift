@@ -38,7 +38,11 @@ final class MacReaderViewComposition {
     private let onKeyDown: (NSEvent) -> Bool
     private let onPageTap: (Bool) -> Void
     private let onBuildSelectionMenu: (NSRange) -> [NSMenuItem]
-    let chaptersTable = NSTableView()
+    let chaptersTable: NSTableView = {
+        let table = NSTableView()
+        table.setAccessibilityLabel(L10n.string("reader.contents"))
+        return table
+    }()
     let textView = MacReaderTextView()
     let comicPageImageView = NSImageView()
     let contentScrollView = NSScrollView()
@@ -115,7 +119,7 @@ final class MacReaderViewComposition {
         chapterTitleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         chapterTitleLabel.lineBreakMode = .byTruncatingTail
         chapterTitleLabel.setAccessibilityIdentifier("reader.chapterTitle")
-        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.textColor = .readableSecondaryLabel
         statusLabel.font = .systemFont(ofSize: 13)
         statusLabel.setAccessibilityIdentifier("reader.status")
         textView.isEditable = false

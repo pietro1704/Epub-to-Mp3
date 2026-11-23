@@ -58,7 +58,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
-        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.textColor = .readableSecondaryLabel
         statusLabel.stringValue = L10n.string("models.loading")
         func label(_ key: String) -> NSTextField { NSTextField(labelWithString: L10n.string(key)) }
         primaryPopup.target = self
@@ -194,7 +194,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             if let footer {
                 let note = NSTextField(wrappingLabelWithString: footer)
                 note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-                note.textColor = .secondaryLabelColor
+                note.textColor = .readableSecondaryLabel
                 views.append(note)
             }
             let stack = NSStackView(views: views)
@@ -211,9 +211,11 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private func rowView(_ row: ModelsByLanguageViewState.Row, language: String) -> NSView {
         let title = NSTextField(labelWithString: (row.isChosen ? "✓ " : "") + row.title)
         title.font = .systemFont(ofSize: NSFont.systemFontSize)
+        // Dimmed rows (not downloaded / unavailable) read as secondary, never faded below legibility.
+        title.textColor = row.isDimmed ? .readableSecondaryLabel : .labelColor
         let subtitle = NSTextField(wrappingLabelWithString: subtitle(for: row))
         subtitle.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        subtitle.textColor = .secondaryLabelColor
+        subtitle.textColor = .readableSecondaryLabel
         let texts = NSStackView(views: [title, subtitle])
         texts.orientation = .vertical
         texts.alignment = .leading
@@ -238,7 +240,6 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         let stack = NSStackView(views: views)
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
-        stack.alphaValue = row.isDimmed ? 0.55 : 1
         stack.setAccessibilityIdentifier("models.row.\(language).\(row.id)")
         stack.setAccessibilityValue(row.isChosen ? L10n.string("models.inUse") : nil)
         return stack
