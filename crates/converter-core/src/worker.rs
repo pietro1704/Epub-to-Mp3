@@ -336,6 +336,7 @@ mod job_lifecycle;
 mod language_routing;
 mod native_tts_adapters;
 mod playback_chunk_delivery;
+pub mod background_pacing;
 pub mod render_progress;
 mod request_preferences;
 mod segment_audio_cache;
