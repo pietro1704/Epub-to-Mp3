@@ -158,6 +158,8 @@
   "ttsUseRecommendedDefaults": "Usar Piper según el idioma del libro con voz del sistema como alternativa",
   "ttsAllowOnlineSecondary": "Permitir respaldo en línea",
   "ttsOnlineSecondaryDescription": "Envía los fragmentos que fallen a Edge solo cuando esta opción esté activada.",
+  "ttsAutomaticSystemFallback": "Voz del sistema como alternativa automática",
+  "ttsAutomaticSystemFallbackDescription": "Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.",
   "ttsUsePreferences": "Usar preferencias de audio",
   "ttsAllowJobSecondary": "Permitir la voz secundaria configurada en esta conversión",
   "ttsActualVoices": "Voz utilizada: {voices}",

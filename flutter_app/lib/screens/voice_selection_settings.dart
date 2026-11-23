@@ -198,7 +198,8 @@ class _VoiceSelectionSettingsState
                       primary: preferences.primary,
                       secondary: secondaryOptions[key],
                       allowOnlineFallback: preferences.allowOnlineFallback,
-                      policyVersion: 2,
+                      // Keep an explicit "no automatic system voice" policy.
+                      policyVersion: preferences.policyVersion == 3 ? 3 : 2,
                     ),
                   );
                 },
@@ -220,6 +221,15 @@ class _VoiceSelectionSettingsState
                     ),
                   );
                 },
+              ),
+              SwitchListTile(
+                key: const ValueKey('tts-automatic-system-fallback'),
+                title: Text(t.ttsAutomaticSystemFallback),
+                subtitle: Text(t.ttsAutomaticSystemFallbackDescription),
+                value: preferences.allowAutomaticSystemFallback,
+                onChanged: (value) => notifier.setTtsPreferences(
+                  preferences.withAutomaticSystemFallback(value),
+                ),
               ),
             ],
           ),

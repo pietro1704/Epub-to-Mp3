@@ -423,6 +423,14 @@ class AppLocalizationsPt extends AppLocalizations {
       'Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.';
 
   @override
+  String get ttsAutomaticSystemFallback =>
+      'Voz do sistema como alternativa automática';
+
+  @override
+  String get ttsAutomaticSystemFallbackDescription =>
+      'Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.';
+
+  @override
   String get ttsUsePreferences => 'Usar preferências de áudio';
 
   @override

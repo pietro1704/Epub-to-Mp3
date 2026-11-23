@@ -862,6 +862,18 @@ abstract class AppLocalizations {
   /// **'Send failed segments to Edge only when enabled.'**
   String get ttsOnlineSecondaryDescription;
 
+  /// No description provided for @ttsAutomaticSystemFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic system voice fallback'**
+  String get ttsAutomaticSystemFallback;
+
+  /// No description provided for @ttsAutomaticSystemFallbackDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.'**
+  String get ttsAutomaticSystemFallbackDescription;
+
   /// No description provided for @ttsUsePreferences.
   ///
   /// In en, this message translates to:
