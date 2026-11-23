@@ -1,0 +1,3 @@
+testAnAppLaunchedInTheBackgroundStartsPaced
+testTheLimitFollowsTheApplicationLifecycle
+testTheRealSymbolIsAvailableInTheBundledLibrary

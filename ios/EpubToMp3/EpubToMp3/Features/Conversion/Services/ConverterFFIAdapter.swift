@@ -9,6 +9,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
     private var auditionVoice: ConverterVoiceAudition?
     private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
+    /// `converter_set_background_cpu_limit_v1`: absent in older libraries (then pacing is simply unavailable).
+    private var setBackgroundCPULimitSymbol: (@convention(c) (UInt32) -> Void)?
     private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
@@ -74,6 +76,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
         handle = library
         prepareAudio = symbol("converter_audio_prepare_v1", as: (@convention(c) (UnsafePointer<CChar>?) -> Bool).self)
+        setBackgroundCPULimitSymbol = symbol("converter_set_background_cpu_limit_v1", as: (@convention(c) (UInt32) -> Void).self)
         close = { value in dispose(value) }
         metadata = { value in meta(value) }
         freeString = free
@@ -144,6 +147,15 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     }
 
     /// Completed files only; progressive segments keep their independent headers.
+    /// Limits (1...100 percent of one core) or lifts (0) the CPU local synthesis may use in the background.
+    /// Returns false when the loaded library predates the symbol.
+    @discardableResult
+    func setBackgroundCPULimit(percent: UInt32) -> Bool {
+        guard let setBackgroundCPULimitSymbol else { return false }
+        setBackgroundCPULimitSymbol(percent)
+        return true
+    }
+
     func prepareCompletedAudio(at url: URL) throws {
         guard url.isFileURL, url.pathExtension.lowercased() == "mp3" else { return }
         guard let prepareAudio else { throw EmbeddedConverterError.artifactInvalid("Audio preparation ABI is unavailable") }
