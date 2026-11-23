@@ -26,11 +26,14 @@ final class DeviceWorkflowTests: XCTestCase {
 
     func workflow(_ arguments: [String], runner: @escaping CommandRunner,
                           resourceCheck: @escaping () throws -> Void = {},
-                          environment: [String: String] = [:]) throws -> Workflow {
+                          environment: [String: String] = [:],
+                          notice: @escaping (String) -> Void = { _ in }) throws -> Workflow {
+        // The fake sleeper returns at once: waiting is accounted from the requested sleeps.
         Workflow(root: root, options: try options(arguments), runID: runID, runner: runner,
                  identity: { _ in "Wed Oct 7 12:00:00 2026" }, resourceCheck: resourceCheck,
                  heavyLock: root.appendingPathComponent("heavy.lock"), environment:
-                    ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"].merging(environment) { _, override in override })
+                    ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"].merging(environment) { _, override in override },
+                 sleeper: { _ in }, notice: notice)
     }
 
     func xctestrun() -> [String: Any] {
@@ -67,8 +70,9 @@ final class DeviceWorkflowTests: XCTestCase {
     }
 
     func fakeRunner(phases: NSMutableArray, failNative: Bool = false, cleanupAbsent: Bool = true,
-                            locked: Bool = false) -> CommandRunner {
-        { command, observe in
+                            locked: Bool = false, lockedQueries: Int = 0) -> CommandRunner {
+        let remainingLockedQueries = NSMutableArray(object: NSNumber(value: lockedQueries))
+        return { command, observe in
             phases.add(command.phase)
             XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent("heavy.lock")))
             XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent(".reports/device/workflow.lock")))
@@ -81,7 +85,10 @@ final class DeviceWorkflowTests: XCTestCase {
             if let outputIndex = command.arguments.firstIndex(of: "--json-output") {
                 var result: [String: Any] = [:]
                 switch command.phase {
-                case "lockState", "readinessBeforeTest": result = ["passcodeRequired": locked]
+                case "lockState", "readinessBeforeTest":
+                    let remaining = (remainingLockedQueries[0] as? NSNumber)?.intValue ?? 0
+                    if remaining > 0 { remainingLockedQueries[0] = NSNumber(value: remaining - 1) }
+                    result = ["passcodeRequired": locked || remaining > 0]
                 case "details": result = ["hardware": ["udid": "hardware-udid"], "developerModeStatus": "enabled"]
                 case "processes": result = ["runningProcesses": [
                     ["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 42],
