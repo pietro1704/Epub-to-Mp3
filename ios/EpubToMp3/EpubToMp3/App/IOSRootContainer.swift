@@ -25,6 +25,8 @@ final class IOSRootContainerController: UIViewController {
     private let readerPresentationCoordinator = ReaderRootPresentationCoordinator()
     private var isCommittingInitialReaderPresentation = false
     private var reservesShellMiniPlayer = false
+    /// The reader keeps room for the mini player while its book has playback, even when the chrome fades it.
+    private var reservesReaderMiniPlayer = false
     private lazy var miniPlayerPresentation = IOSMiniPlayerPresentation(view: miniPlayerController.view)
 
     override var prefersStatusBarHidden: Bool {
@@ -194,6 +196,14 @@ final class IOSRootContainerController: UIViewController {
     }
 
     /// Only shell scroll content reserves overlay space; reader geometry has its own owner.
+    /// Where the mini player sits in `target` while the reader reserves room for it (paginated text ends above it).
+    func readerMiniPlayerReservation(in target: UIView) -> CGRect? {
+        guard reservesReaderMiniPlayer else { return nil }
+        let height = max(miniPlayerController.view.bounds.height, 94)
+        let root = view.convert(CGRect(x: 0, y: view.bounds.maxY - height, width: view.bounds.width, height: height), to: target)
+        return root
+    }
+
     func shellMiniPlayerFrame(in target: UIView) -> CGRect? {
         guard reservesShellMiniPlayer else { return nil }
         if shellController.usesSystemBottomAccessory {
@@ -388,6 +398,11 @@ final class IOSRootContainerController: UIViewController {
             ? readerPresentationCoordinator.state.showsMiniPlayer(bookHasPlayback: showMini)
             : showMini
         reservesShellMiniPlayer = !readerActive && miniShouldBeVisible
+        let reservesReaderMini = readerActive && showMini && !readerPresentationCoordinator.state.isLoading
+        if reservesReaderMini != reservesReaderMiniPlayer {
+            reservesReaderMiniPlayer = reservesReaderMini
+            readerController.refreshMiniPlayerReservation()
+        }
         if shellController.supportsSystemBottomAccessory, !readerActive {
             shellController.setSystemMiniPlayerVisible(miniShouldBeVisible, animated: true)
             miniPlayerPresentation.hideImmediately()

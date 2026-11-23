@@ -109,7 +109,7 @@ final class ReaderTextPresentation {
         // the scroll viewport on the safe-area edge in both chrome states so
         // the first line can never be clipped by an outer 8pt gap.
         composition.scrollTopToSafeArea.constant = 0
-        composition.scrollBottomToPageIndicator.constant = -8
+        composition.scrollBottomToPageIndicator.constant = 0
         composition.scrollBottomToSafeArea.constant = 0
         NSLayoutConstraint.deactivate([
             composition.scrollTopToSafeArea,
@@ -121,7 +121,9 @@ final class ReaderTextPresentation {
         if configuration.usesScreenEdges {
             NSLayoutConstraint.activate([composition.scrollTopToRoot, composition.scrollBottomToRoot])
         } else {
-            NSLayoutConstraint.activate([composition.scrollTopToSafeArea, composition.scrollBottomToSafeArea])
+            // With the page indicator shown the text area ends where its reserved strip begins.
+            NSLayoutConstraint.activate([composition.scrollTopToSafeArea,
+                configuration.showsPageIndicator ? composition.scrollBottomToPageIndicator : composition.scrollBottomToSafeArea])
         }
         composition.forwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         composition.backwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
