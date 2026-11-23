@@ -171,9 +171,15 @@ pub fn resolve(request: &ResolutionRequest) -> Resolution {
     }
     let all = candidates(&context.language, request.platform, request.android_api);
     if chosen.is_none() {
-        if let Some(model) = all
-            .iter()
-            .find(|model| model.engine == "piper" && context.installed(model.id))
+        // One decision, not two: the job's own automatic ranking (`piper-auto`) comes first, so a
+        // client that sends `piper-auto` and one that resolves here pick the same voice; any other
+        // installed compatible model follows rather than reporting a missing model.
+        let ranked = crate::model_catalog::automatic_piper_models(&context.language)
+            .into_iter()
+            .filter(|model| all.iter().any(|supported| supported.id == model.id));
+        if let Some(model) = ranked
+            .chain(all.iter().copied().filter(|model| model.engine == "piper"))
+            .find(|model| context.installed(model.id))
         {
             chosen = Some((
                 TtsSelection {
