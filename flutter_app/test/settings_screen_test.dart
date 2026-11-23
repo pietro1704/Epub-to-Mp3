@@ -201,13 +201,13 @@ void main() {
         'pt',
         'Narração principal',
         'Narração secundária',
-        'Permitir voz secundária online',
+        'Permitir reserva online',
       ),
       (
         'es',
         'Narración principal',
         'Narración secundaria',
-        'Permitir voz secundaria en línea',
+        'Permitir respaldo en línea',
       ),
     ]) {
       testWidgets('new narration controls use ${item.$1} localization', (
@@ -226,16 +226,16 @@ void main() {
     ) async {
       await _pump(t);
       await t.scrollUntilVisible(
-        find.text('Allow online secondary'),
+        find.text('Allow online fallback'),
         150,
         scrollable: find.byType(Scrollable).first,
       );
       await Scrollable.ensureVisible(
-        t.element(find.text('Allow online secondary')),
+        t.element(find.text('Allow online fallback')),
         alignment: 0.5,
       );
       await t.pumpAndSettle();
-      await t.tap(find.text('Allow online secondary'));
+      await t.tap(find.text('Allow online fallback'));
       await t.pumpAndSettle();
       final prefs = await SharedPreferences.getInstance();
       expect(AppSettings(prefs).ttsPreferences.allowOnlineFallback, true);
@@ -255,16 +255,16 @@ void main() {
       await t.pumpAndSettle();
       expect(AppSettings(prefs).ttsPreferences.secondary!.engine, 'edge');
       await t.scrollUntilVisible(
-        find.text('Allow online secondary'),
+        find.text('Allow online fallback'),
         150,
         scrollable: find.byType(Scrollable).first,
       );
       await Scrollable.ensureVisible(
-        t.element(find.text('Allow online secondary')),
+        t.element(find.text('Allow online fallback')),
         alignment: 0.5,
       );
       await t.pumpAndSettle();
-      await t.tap(find.text('Allow online secondary'));
+      await t.tap(find.text('Allow online fallback'));
       await t.pumpAndSettle();
       expect(AppSettings(prefs).ttsPreferences.allowOnlineFallback, false);
       expect(AppSettings(prefs).ttsPreferences.secondary, isNull);

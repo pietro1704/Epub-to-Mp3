@@ -416,7 +416,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Usar Piper no idioma do livro com voz do sistema como alternativa';
 
   @override
-  String get ttsAllowOnlineSecondary => 'Permitir voz secundária online';
+  String get ttsAllowOnlineSecondary => 'Permitir reserva online';
 
   @override
   String get ttsOnlineSecondaryDescription =>
@@ -528,4 +528,8 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get errorConversionGeneric =>
       'Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.';
+
+  @override
+  String get errorEdgeConsentRequired =>
+      'As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.';
 }

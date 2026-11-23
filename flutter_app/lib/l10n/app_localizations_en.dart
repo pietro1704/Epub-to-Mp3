@@ -416,7 +416,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use book-language Piper with system voice fallback';
 
   @override
-  String get ttsAllowOnlineSecondary => 'Allow online secondary';
+  String get ttsAllowOnlineSecondary => 'Allow online fallback';
 
   @override
   String get ttsOnlineSecondaryDescription =>
@@ -528,4 +528,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get errorConversionGeneric =>
       'The book could not be converted to audio. Please try again. Technical details are available in the logs.';
+
+  @override
+  String get errorEdgeConsentRequired =>
+      'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.';
 }

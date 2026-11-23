@@ -68,6 +68,9 @@ export function saveTtsPreferences(storage, value) {
 
 /**
  * Per-job overrides never mutate defaults or silently retain a saved secondary.
+ * The saved online consent follows an override only where Edge is actually used:
+ * as the requested secondary, or as the override primary itself (Edge as primary
+ * needs that consent, and without it the converter refuses the job).
  * @param {TtsPreferences} saved
  * @param {TtsSelection | null} override
  * @param {boolean} [useSecondary]
@@ -84,6 +87,6 @@ export function effectiveTtsPreferences(saved, override, useSecondary = false) {
     ...(secondary && saved.policy_version !== undefined ? { policy_version: saved.policy_version } : {}),
     primary: override,
     secondary,
-    allow_online_fallback: secondary !== null && saved.allow_online_fallback,
+    allow_online_fallback: (secondary !== null || override.engine === "edge") && saved.allow_online_fallback,
   } : saved)
 }

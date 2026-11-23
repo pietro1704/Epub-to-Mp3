@@ -853,7 +853,7 @@ abstract class AppLocalizations {
   /// No description provided for @ttsAllowOnlineSecondary.
   ///
   /// In en, this message translates to:
-  /// **'Allow online secondary'**
+  /// **'Allow online fallback'**
   String get ttsAllowOnlineSecondary;
 
   /// No description provided for @ttsOnlineSecondaryDescription.
@@ -1041,6 +1041,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The book could not be converted to audio. Please try again. Technical details are available in the logs.'**
   String get errorConversionGeneric;
+
+  /// No description provided for @errorEdgeConsentRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.'**
+  String get errorEdgeConsentRequired;
 }
 
 class _AppLocalizationsDelegate

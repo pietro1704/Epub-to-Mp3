@@ -156,7 +156,7 @@
   "ttsNoSecondary": "Ninguna",
   "ttsSystemOffline": "Voz del sistema · Alternativa sin conexión",
   "ttsUseRecommendedDefaults": "Usar Piper según el idioma del libro con voz del sistema como alternativa",
-  "ttsAllowOnlineSecondary": "Permitir voz secundaria en línea",
+  "ttsAllowOnlineSecondary": "Permitir respaldo en línea",
   "ttsOnlineSecondaryDescription": "Envía los fragmentos que fallen a Edge solo cuando esta opción esté activada.",
   "ttsUsePreferences": "Usar preferencias de audio",
   "ttsAllowJobSecondary": "Permitir la voz secundaria configurada en esta conversión",
@@ -188,5 +188,6 @@
   "errorRateLimited": "El servicio de voz está ocupado. Inténtalo de nuevo en un momento.",
   "errorInputUnreadable": "No se pudo leer este libro. El archivo puede estar dañado.",
   "errorUnsupportedInput": "Este tipo de archivo no es compatible.",
-  "errorConversionGeneric": "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros."
+  "errorConversionGeneric": "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros.",
+  "errorEdgeConsentRequired": "Las voces en línea de Edge necesitan tu permiso. Activa «Permitir respaldo en línea» en Ajustes o elige una voz local e inténtalo de nuevo."
 }

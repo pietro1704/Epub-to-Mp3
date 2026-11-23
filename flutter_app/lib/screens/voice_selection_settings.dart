@@ -132,9 +132,15 @@ class _VoiceSelectionSettingsState
                     .map(
                       (entry) => DropdownMenuItem(
                         value: entry.key,
+                        // Edge is online speech: as the primary voice it needs the
+                        // same consent as the online fallback, so it is not offered
+                        // until the user allows it (a saved Edge primary stays).
                         enabled:
-                            !entry.value.manualModel ||
-                            (showLow && entry.key != primaryKey),
+                            (!entry.value.manualModel ||
+                                (showLow && entry.key != primaryKey)) &&
+                            (entry.value.engine != 'edge' ||
+                                preferences.allowOnlineFallback ||
+                                entry.key == primaryKey),
                         child: Text(selectionLabel(entry.value)),
                       ),
                     )
