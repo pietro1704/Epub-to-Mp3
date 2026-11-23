@@ -951,6 +951,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Narration model'**
   String get readerNarrationModel;
+
+  /// No description provided for @readerFootnotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Footnotes'**
+  String get readerFootnotes;
 }
 
 class _AppLocalizationsDelegate

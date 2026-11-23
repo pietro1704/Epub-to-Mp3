@@ -354,6 +354,15 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                           tooltip: AppLocalizations.of(context)!.searchInBook,
                           onPressed: _showSearch,
                         ),
+                        // Only chapters with notes offer the action, so it
+                        // appears and disappears as the chapter changes.
+                        if (chapter.hasFootnotes)
+                          IconButton(
+                            key: const ValueKey('reader-footnotes'),
+                            icon: Icon(Icons.notes, color: fg),
+                            tooltip: AppLocalizations.of(context)!.readerFootnotes,
+                            onPressed: () => _showFootnotes(chapter),
+                          ),
                         PopupMenuButton<String>(
                           icon: Icon(Icons.bookmark_outline, color: fg),
                           tooltip: AppLocalizations.of(context)!.bookmarksTitle,

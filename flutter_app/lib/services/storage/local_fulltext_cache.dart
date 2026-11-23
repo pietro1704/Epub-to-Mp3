@@ -20,6 +20,10 @@ import '../../models/ebook_fulltext.dart';
 import 'rebuildable_cache_policy.dart';
 
 class LocalFulltextCache {
+  /// Bumped when the payload gains fields (2: chapter footnotes), so older
+  /// entries are rebuilt instead of hiding the new data.
+  static const _contentVersion = 2;
+
   LocalFulltextCache({
     Future<Directory> Function()? directoryProvider,
     this.maxBytes = 128 * 1024 * 1024,
@@ -57,7 +61,7 @@ class LocalFulltextCache {
       final txt = await f.readAsString();
       await _touch(f);
       final map = jsonDecode(txt) as Map<String, dynamic>;
-      if (map['readerContentVersion'] != 1) return null;
+      if (map['readerContentVersion'] != _contentVersion) return null;
       return EbookFulltext.fromJson(map);
     } catch (_) {
       return null;
@@ -71,7 +75,7 @@ class LocalFulltextCache {
       if (f == null) return;
       final tmp = File('${f.path}.tmp');
       await tmp.writeAsString(
-        jsonEncode({...payload.toJson(), 'readerContentVersion': 1}),
+        jsonEncode({...payload.toJson(), 'readerContentVersion': _contentVersion}),
         flush: true,
       );
       await tmp.rename(f.path);

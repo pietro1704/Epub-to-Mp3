@@ -473,4 +473,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerNarrationModel => 'Narration model';
+
+  @override
+  String get readerFootnotes => 'Footnotes';
 }
