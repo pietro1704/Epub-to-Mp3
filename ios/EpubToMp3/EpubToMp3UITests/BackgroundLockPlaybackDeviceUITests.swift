@@ -183,13 +183,15 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         let libraryTab = app.tabBars.buttons["Library"]
         if libraryTab.waitForExistence(timeout: 5) { libraryTab.tap() }
         let tile = app.descendants(matching: .any)["library.bookTile.3e1c676b270dfa3fe555eba4d0cb9934"].firstMatch
-        if !tile.waitForExistence(timeout: 5) {
+        // The default order is "recently read or played", so the book can sit below the fold of the lazy grid.
+        let grid = app.collectionViews.firstMatch
+        for _ in 0..<10 where !tile.waitForExistence(timeout: 2) && grid.exists { grid.swipeUp() }
+        if !tile.exists {
             let search = app.searchFields["library.searchField"].firstMatch
             if search.waitForExistence(timeout: 5) { search.tap(); search.typeText("lord") }
         }
-        guard tile.waitForExistence(timeout: 20) else {
-            throw XCTSkip("Requires the retained local LOTR EPUB in the device library.")
-        }
+        // A missing book fails the journey instead of silently skipping it.
+        XCTAssertTrue(tile.waitForExistence(timeout: 20), "The retained local LOTR EPUB must be in the device library.")
         tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         XCTAssertTrue(app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 90), "The LOTR reader must open.")
 
