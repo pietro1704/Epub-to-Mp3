@@ -80,6 +80,58 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
     /// Job completion covers its selected range; book completeness covers the source.
     var sourceChaptersTotal: Int? = nil
 
+    static func listeningPending(
+        jobID: String,
+        bookTitle: String?,
+        bookAuthor: String?,
+        chapters: [Chapter]
+    ) -> JobSnapshot {
+        JobSnapshot(
+            jobId: jobID,
+            state: "running",
+            bookTitle: bookTitle,
+            bookAuthor: bookAuthor,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: nil,
+            progressPercent: 0,
+            chaptersTotal: nil,
+            chaptersCompleted: 0,
+            chapterProgress: chapters,
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: Date().timeIntervalSince1970,
+            chapterIndexBase: 0
+        )
+    }
+
+    func failed(error message: String) -> JobSnapshot {
+        JobSnapshot(
+            jobId: jobId,
+            state: "failed",
+            bookTitle: bookTitle,
+            bookAuthor: bookAuthor,
+            coverUrl: coverUrl,
+            coverMimeType: coverMimeType,
+            engine: engine,
+            voice: voice,
+            language: language,
+            progressPercent: progressPercent,
+            chaptersTotal: chaptersTotal,
+            chaptersCompleted: chaptersCompleted,
+            chapterProgress: chapterProgress,
+            outputs: outputs,
+            logUrl: logUrl,
+            error: message,
+            lastActivityAt: Date().timeIntervalSince1970,
+            chapterIndexBase: chapterIndexBase,
+            sourceChaptersTotal: sourceChaptersTotal
+        )
+    }
+
     var isCompleteBookAudio: Bool? {
         guard let total = sourceChaptersTotal, total > 0, chapterIndexBase == 0 else { return nil }
         let full = (chapterProgress ?? []).filter { $0.isCompleted && ($0.textOffset ?? 0) == 0 }
