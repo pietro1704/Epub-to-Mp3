@@ -156,6 +156,15 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeTtsModelInstallCatalogManifest(modelId: String, root: String): String?
     external fun nativeTtsModelMetadata(modelId: String, root: String): String?
     external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
+    external fun nativeTtsModelInstallOperationCreate(modelId: String, root: String, availableBytes: Long, recover: Boolean): Long
+    external fun nativeTtsModelInstallOperationPlan(handle: Long): String?
+    external fun nativeTtsModelInstallOperationEvent(handle: Long): String?
+    external fun nativeTtsModelInstallOperationRecordProgress(handle: Long, artifactIndex: Int, downloadedBytes: Long): Boolean
+    external fun nativeTtsModelInstallOperationAccept(handle: Long, artifactIndex: Int, downloadedPath: String): Boolean
+    external fun nativeTtsModelInstallOperationPublish(handle: Long): String?
+    external fun nativeTtsModelInstallOperationFail(handle: Long, kind: String, message: String): Boolean
+    external fun nativeTtsModelInstallOperationCancel(handle: Long)
+    external fun nativeTtsModelInstallOperationFree(handle: Long)
 
     external fun nativeLastError(): String
 

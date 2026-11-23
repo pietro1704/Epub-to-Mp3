@@ -88,19 +88,19 @@ class ModelInstallRunner {
     try {
       final available = await _freeBytes(root);
       operation =
-          operations.recover(
+          await operations.recover(
             modelId: modelId,
             root: root,
             availableBytes: available,
           ) ??
-          operations.begin(
+          await operations.begin(
             modelId: modelId,
             root: root,
             availableBytes: available,
           );
       final live = operation;
-      token._onCancel(live.cancel);
-      var plan = live.plan();
+      token._onCancel(() => unawaited(Future.sync(live.cancel)));
+      var plan = await live.plan();
       out.add(plan.event);
       if (!plan.ready) return; // The plan's event already carries the failure.
 
@@ -110,34 +110,36 @@ class ModelInstallRunner {
         if (next == null) break;
         await _fetch(live, next, token, out);
         try {
-          live.accept(next.index, next.inboxPath);
+          await live.accept(next.index, next.inboxPath);
         } on Object catch (error) {
-          live.fail('verification_failed', error.toString());
-          out.add(live.event());
+          await live.fail('verification_failed', error.toString());
+          out.add(await live.event());
           return;
         }
-        plan = live.plan();
-        out.add(live.event());
+        plan = await live.plan();
+        out.add(await live.event());
       }
-      live.publish();
-      out.add(live.event());
+      await live.publish();
+      out.add(await live.event());
     } on ModelInstallCancelled {
-      operation?.cancel();
-      if (operation != null) out.add(operation.event());
+      if (operation != null) {
+        await operation.cancel();
+        out.add(await operation.event());
+      }
     } on Object catch (error, stack) {
       final failed = operation;
       if (failed == null) {
         out.addError(error, stack);
       } else {
         try {
-          failed.fail('download_failed', error.toString());
-          out.add(failed.event());
+          await failed.fail('download_failed', error.toString());
+          out.add(await failed.event());
         } on Object {
           out.addError(error, stack);
         }
       }
     } finally {
-      operation?.dispose();
+      await operation?.dispose();
       await out.close();
     }
   }
@@ -149,6 +151,11 @@ class ModelInstallRunner {
     StreamController<ModelInstallEvent> out,
   ) async {
     var recorded = 0;
+    // Recording may be asynchronous (Android channel): keep it ordered and
+    // surface its first failure once the download stops.
+    var chain = Future<void>.value();
+    Object? recordError;
+    StackTrace? recordStack;
     await _download(
       url: Uri.parse(artifact.url),
       destination: artifact.inboxPath,
@@ -159,12 +166,23 @@ class ModelInstallRunner {
           return;
         }
         recorded = bytes;
-        operation.recordProgress(artifact.index, bytes);
-        out.add(operation.event());
+        chain = chain.then((_) async {
+          if (recordError != null) return;
+          try {
+            await operation.recordProgress(artifact.index, bytes);
+            out.add(await operation.event());
+          } on Object catch (error, stack) {
+            recordError = error;
+            recordStack = stack;
+          }
+        });
       },
     );
+    await chain;
+    final error = recordError;
+    if (error != null) Error.throwWithStackTrace(error, recordStack!);
     if (token.isCancelled) throw const ModelInstallCancelled();
-    operation.recordProgress(artifact.index, recorded);
+    await operation.recordProgress(artifact.index, recorded);
   }
 }
 

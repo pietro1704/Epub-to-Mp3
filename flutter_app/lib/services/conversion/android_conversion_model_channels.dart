@@ -169,11 +169,13 @@ mixin _AndroidConversionModelChannels
     required String modelId,
     required String root,
     ModelInstallCancellation? cancellation,
-  }) => installWithoutProgress(
-    installTtsModelFromCatalog,
-    modelId: modelId,
-    root: root,
-  );
+  }) {
+    final operations = AndroidModelInstallOperations(_channel);
+    return ModelInstallRunner(
+      operations: operations,
+      freeBytes: operations.freeBytes,
+    ).install(modelId: modelId, root: root, cancellation: cancellation);
+  }
 
   @override
   Future<String> installTtsModelFromCatalog({

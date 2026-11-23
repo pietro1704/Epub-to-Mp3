@@ -200,6 +200,7 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
     }
 
     fun close() {
+        models.close()
         methodChannels.forEach { it.setMethodCallHandler(null) }
         methodChannels.clear()
         eventChannels.forEach { it.setStreamHandler(null) }
