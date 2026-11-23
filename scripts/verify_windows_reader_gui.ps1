@@ -29,6 +29,10 @@ public static class ReaderTestDesktop
         BindAccessibleProperty<object>("get_accRole");
     private static readonly Func<IAccessible, object, object> ReadState =
         BindAccessibleProperty<object>("get_accState");
+    private static readonly Func<IAccessible, object, string> ReadValue =
+        BindAccessibleProperty<string>("get_accValue");
+    private static readonly Func<IAccessible, object, string> ReadDescription =
+        BindAccessibleProperty<string>("get_accDescription");
 
     private static Func<IAccessible, object, TValue> BindAccessibleProperty<TValue>(string accessor)
     {
@@ -144,9 +148,9 @@ public static class ReaderTestDesktop
             string extra = "";
             // Probe what the node still answers, to tell a dead node from a variant problem.
             try { extra += " childCount=" + accessible.accChildCount; } catch (Exception e1) { extra += " childCount=err"; }
-            try { extra += " value=" + accessible.get_accValue(childId); } catch (Exception e2) { extra += " value=err"; }
-            try { extra += " desc=" + accessible.get_accDescription(childId); } catch (Exception e3) { extra += " desc=err"; }
-            try { extra += " role=" + accessible.get_accRole(childId); } catch (Exception e4) { extra += " role=err"; }
+            try { extra += " value=" + ReadValue(accessible, childId); } catch (Exception e2) { extra += " value=err"; }
+            try { extra += " desc=" + ReadDescription(accessible, childId); } catch (Exception e3) { extra += " desc=err"; }
+            try { extra += " role=" + ReadRole(accessible, childId); } catch (Exception e4) { extra += " role=err"; }
             element.Name = "[name unavailable depth=" + depth + " childId=" + childId + extra + ": " + error.Message + "]";
         }
         try { element.Role = ReadRole(accessible, childId); }
