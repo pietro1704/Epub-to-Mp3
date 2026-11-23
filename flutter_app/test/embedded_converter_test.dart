@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/model_install/model_install_models.dart';
+import 'package:flutter_app/services/conversion/model_install/model_install_runner.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 
@@ -76,6 +78,13 @@ class FakeConverter implements EmbeddedConverter {
     required String sha256,
     required String root,
   }) async => '$root/$modelId/model.bin';
+
+  @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(installTtsModelFromCatalog, modelId: modelId, root: root);
 
   @override
   Future<String> installTtsModelFromCatalog({

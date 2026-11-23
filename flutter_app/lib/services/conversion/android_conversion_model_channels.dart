@@ -131,6 +131,17 @@ mixin _AndroidConversionModelChannels
   }
 
   @override
+  Stream<ModelInstallEvent> installTtsModelWithProgress({
+    required String modelId,
+    required String root,
+    ModelInstallCancellation? cancellation,
+  }) => installWithoutProgress(
+    installTtsModelFromCatalog,
+    modelId: modelId,
+    root: root,
+  );
+
+  @override
   Future<String> installTtsModelFromCatalog({
     required String modelId,
     required String root,
