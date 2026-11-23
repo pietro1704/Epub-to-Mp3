@@ -179,6 +179,9 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
 
         let expanded = app.buttons["fullPlayer.close"].firstMatch
         if expanded.waitForExistence(timeout: 3) { expanded.tap() }
+        // The app restores the last tab (Settings after an owner session): always start from the Library.
+        let libraryTab = app.tabBars.buttons["Library"]
+        if libraryTab.waitForExistence(timeout: 5) { libraryTab.tap() }
         let tile = app.descendants(matching: .any)["library.bookTile.3e1c676b270dfa3fe555eba4d0cb9934"].firstMatch
         if !tile.waitForExistence(timeout: 5) {
             let search = app.searchFields["library.searchField"].firstMatch
