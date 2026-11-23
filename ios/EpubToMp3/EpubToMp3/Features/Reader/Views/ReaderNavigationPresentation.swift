@@ -75,12 +75,15 @@ final class ReaderNavigationPresentation {
         animated: Bool,
         commitsLayout: Bool = true,
         readerTopToNavigation: NSLayoutConstraint?, readerTopToRoot: NSLayoutConstraint?,
+        reservesBar: Bool = false,
         in view: UIView
     ) {
+        // Paginated layout reserves the top bar's space whether the bar is shown or not, so showing and hiding it
+        // never moves the text; scrolling layout lets the text run under the (overlaid) bar.
         if let readerTopToNavigation,
            let readerTopToRoot {
             NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
-            readerTopToRoot.isActive = true
+            (reservesBar ? readerTopToNavigation : readerTopToRoot).isActive = true
         }
 
         guard let request = visibility.request(visible: shouldShow) else {

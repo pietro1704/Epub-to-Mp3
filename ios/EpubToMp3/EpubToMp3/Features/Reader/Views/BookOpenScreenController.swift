@@ -268,9 +268,23 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         showError: { [weak self] in self?.showLoadingError($0) },
         completeLoading: { [weak self] in self?.loadingSession.completeLoadingAfterStableTextLayoutIfNeeded() }
     )
+    /// Paginated layout ends the text above the mini player (the other screens use the same clearance).
+    private let miniPlayerClearance = MiniPlayerScrollClearance()
+    private var rootContainer: IOSRootContainerController? {
+        var ancestor = parent
+        while let current = ancestor {
+            if let root = current as? IOSRootContainerController { return root }
+            ancestor = current.parent
+        }
+        return nil
+    }
+
     override func viewDidLayoutSubviews() {
         observeOpenStage("reader_view_did_layout_started")
         super.viewDidLayoutSubviews()
+        if settings.readerLayout == .paginated, let root = rootContainer {
+            miniPlayerClearance.update(self, occlusion: root.readerMiniPlayerReservation(in: view))
+        } else { miniPlayerClearance.update(self, occlusion: nil) }
         textPresentation.layoutCommittedViewport()
     }
     private func showChapter(_ index: Int, preparedRendering: NSAttributedString? = nil) {

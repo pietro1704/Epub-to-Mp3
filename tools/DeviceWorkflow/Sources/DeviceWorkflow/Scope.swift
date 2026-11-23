@@ -71,20 +71,22 @@ public struct Options {
         }
     }
 
-    private static func loadAudited(root: URL, sourceFile: String = #filePath) throws -> [String: (wholeClass: Bool, methods: Set<String>)] {
+    private static func loadAudited(root: URL, sourceFile: String = #filePath) throws -> [String: (wholeClass: Bool, isUITest: Bool, methods: Set<String>)] {
         // The repository's own audit directory; callers with a scratch root (tests) fall back to the package's.
         let repository = root.appendingPathComponent("tools/DeviceWorkflow/Audited", isDirectory: true)
         let package = URL(fileURLWithPath: sourceFile).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Audited", isDirectory: true)
         let directory = FileManager.default.fileExists(atPath: repository.path) ? repository : package
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        var audited: [String: (wholeClass: Bool, methods: Set<String>)] = [:]
+        var audited: [String: (wholeClass: Bool, isUITest: Bool, methods: Set<String>)] = [:]
         for file in files where file.pathExtension == "txt" {
             let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map {
                 $0.trimmingCharacters(in: .whitespaces)
             }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            // `@ui-test` marks a class of the EpubToMp3UITests target; `* whole class` allows its class selector.
             audited[file.deletingPathExtension().lastPathComponent] = (
-                lines.contains { $0.hasPrefix("*") }, Set(lines.filter { !$0.hasPrefix("*") }))
+                lines.contains { $0.hasPrefix("*") }, lines.contains("@ui-test"),
+                Set(lines.filter { !$0.hasPrefix("*") && !$0.hasPrefix("@") }))
         }
         return audited
     }
@@ -105,7 +107,7 @@ public struct Options {
         var expectedCount = 0
         for filter in filters {
             let parts = filter.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-            let uiTestClasses: Set<String> = ["BackgroundLockPlaybackDeviceUITests", "VoiceSwitchResumeDeviceUITests"]
+            let uiTestClasses = Set(audited.filter { $0.value.isUITest }.keys)
             let targetMatches = parts.first == "EpubToMp3Tests"
                 ? parts.count > 1 && !uiTestClasses.contains(parts[1])
                 : parts.first == "EpubToMp3UITests" && parts.count > 1 && uiTestClasses.contains(parts[1])

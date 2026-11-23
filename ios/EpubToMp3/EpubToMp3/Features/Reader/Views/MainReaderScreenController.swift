@@ -166,7 +166,23 @@ final class MainReaderScreenController: UIViewController {
     private func bindAppearance() {
         appearanceCancellable = settings.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.applyReaderColors() }
+            .sink { [weak self] _ in
+                self?.applyReaderColors()
+                self?.refreshBarReservation()
+            }
+    }
+
+    /// The mini player appeared or went: let the reader recompute the room it leaves above the player.
+    func refreshMiniPlayerReservation() { readerController?.view.setNeedsLayout() }
+
+    /// Paginated layout reserves the top bar's space (see the 2026-11-23 ADR); scrolling layout overlays it.
+    private func refreshBarReservation() {
+        guard let readerTopToNavigation, let readerTopToRoot else { return }
+        let reserves = settings.readerLayout == .paginated
+        guard readerTopToNavigation.isActive != reserves else { return }
+        NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
+        (reserves ? readerTopToNavigation : readerTopToRoot).isActive = true
+        view.setNeedsLayout()
     }
 
     private func applyReaderColors() {
@@ -333,6 +349,7 @@ final class MainReaderScreenController: UIViewController {
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)
+        refreshBarReservation()
         view.bringSubviewToFront(readerNavigation.readerNavigationBackground)
         view.bringSubviewToFront(readerNavigation.readerNavigationBar)
         readerController = reader
@@ -386,13 +403,15 @@ final class MainReaderScreenController: UIViewController {
     @discardableResult
     func applyReaderPresentation(_ state: ReaderPresentationState, animated: Bool = false) -> Bool {
         let chromeChanged = readerController?.applyChromeVisibility(state.isChromeHidden) ?? false
-        let navigationChanged = !(readerTopToRoot?.isActive ?? false)
+        let reservesBar = settings.readerLayout == .paginated
+        let navigationChanged = (readerTopToRoot?.isActive ?? false) == reservesBar
         readerNavigation.applyLayout(
             shouldShow: state.showsReaderNavigation,
             animated: animated,
             commitsLayout: false,
             readerTopToNavigation: readerTopToNavigation,
             readerTopToRoot: readerTopToRoot,
+            reservesBar: reservesBar,
             in: view
         )
         return chromeChanged || navigationChanged

@@ -52,7 +52,8 @@ struct ReaderViewportConfiguration: Equatable {
             allowsVerticalScrolling: !paginated,
             allowsChapterSwipes: !paginated,
             usesPaginatedTextHeight: paginated,
-            showsPageIndicator: paginated && !chromeHidden && showsPageNumbers,
+            // The indicator owns a reserved strip below the text, so it stays when the chrome hides.
+            showsPageIndicator: paginated && showsPageNumbers,
             // Immersive mode removes reader chrome, not the system safe
             // area. Keeping text inside it prevents content from extending
             // under the status bar or home indicator during a reflow.

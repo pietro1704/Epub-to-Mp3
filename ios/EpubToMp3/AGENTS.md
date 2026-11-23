@@ -8,9 +8,12 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 - Text never clips. A rendered glyph must fit wholly within the visible reader
   viewport in every supported font, size, orientation, safe-area state, and
   reader mode.
-- Chrome overlays the fixed chrome-free reader viewport. Toggling bars preserves
-  text geometry, page boundaries and the exact raw `contentOffset`; capture and
-  restore that offset without substituting saved progress or a page boundary.
+- Toggling bars preserves text geometry, page boundaries and the exact raw
+  `contentOffset`; capture and restore that offset without substituting saved
+  progress or a page boundary. In scrolling layout the chrome overlays the
+  text; in paginated layout the surface permanently reserves the bars' space
+  (below the top bar, above the mini player; see the 2026-11-23 ADR) so no line
+  is ever half hidden behind them.
 - Canonical page offsets belong to explicit paginated page turns only.
 - Hidden chrome makes the text surface respect the physical safe area exactly.
 - A final, committed viewport is the only geometry that may drive TextKit
