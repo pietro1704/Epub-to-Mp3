@@ -19,9 +19,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  workflow_run:
-    workflows: ["Post-merge validation"]
-    types: [completed]
+  # Dispatched by Post-merge validation once the whole run succeeded, or manually.
   workflow_dispatch:
     inputs:
       validation_run:
@@ -44,12 +42,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # A manual run may only use master's workflow definition: this job holds a write token.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) &&
-       github.event.workflow_run.head_branch == 'master' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     steps:
       - name: Checkout trusted publication policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,9 +64,9 @@ jobs:
       - name: Require validated current merge
         id: validated
         env:
-          SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}
+          SKIP_SUPERSEDED: ${{ inputs.validation_run != '' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          SOURCE_REF: ${{ github.sha }}
         run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
       - name: Checkout
         if: steps.validated.outputs.sha != ''

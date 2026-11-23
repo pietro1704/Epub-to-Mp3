@@ -4,12 +4,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  # Auto-sync after post-merge validation on master whose publication job succeeded
-  # ("Publication surfaces validated"); unrelated platform failures do not block it.
-  workflow_run:
-    workflows: ["Post-merge validation"]
-    types: [completed]
-  # Manual trigger, and the start by a dispatched validation (see post-merge-validation.yml)
+  # Dispatched by Post-merge validation once its publication job succeeded
+  # ("Publication surfaces validated"; unrelated platform failures do not block it),
+  # or run manually (see post-merge-validation.yml).
   workflow_dispatch:
     inputs:
       validation_run:
@@ -29,12 +26,7 @@ concurrency:
 
 jobs:
   gate:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion) &&
-       contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) &&
-       github.event.workflow_run.head_branch == 'master' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -53,9 +45,9 @@ jobs:
       - name: Require validated current merge
         id: validated
         env:
-          SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}
+          SKIP_SUPERSEDED: ${{ inputs.validation_run != '' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          SOURCE_REF: ${{ github.sha }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest --required-job "Publication surfaces validated"
 
   sync:
