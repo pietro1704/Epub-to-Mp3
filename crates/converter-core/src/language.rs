@@ -6,6 +6,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 const SAMPLE_CHARS: usize = 1200;
 const MAX_SAMPLES: usize = 32;
+/// Inconclusive samples tolerated next to a single, unanimous conclusive language.
+const MAX_TOLERATED_INCONCLUSIVE_SAMPLES: usize = 1;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookLanguageAnalysis {
@@ -278,7 +280,9 @@ pub fn analyze_book<'a>(
         }
     }
     result.languages = languages.into_iter().collect();
-    if result.languages.len() == 1 && result.inconclusive_samples == 0 {
+    // One inconclusive sample among otherwise unanimous conclusive ones does not
+    // make the book uncertain; two or more, or any divergence, still do.
+    if result.languages.len() == 1 && result.inconclusive_samples <= MAX_TOLERATED_INCONCLUSIVE_SAMPLES {
         result.confirmed = result.languages.first().cloned();
     }
     Ok(result)
