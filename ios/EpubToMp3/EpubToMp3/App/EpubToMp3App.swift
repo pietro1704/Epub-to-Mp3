@@ -165,12 +165,15 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
 #else
     var window: UIWindow?
+    /// Keeps local synthesis under the OS background CPU limit (see `BackgroundSynthesisPacing`).
+    private let backgroundPacing = BackgroundSynthesisPacing()
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         ConversionLiveActivitySession.dismissOrphans()
+        backgroundPacing.start()
         _ = SpeechModelLibraryClient.shared
         Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
         library.installUITestFixtureIfRequested()
