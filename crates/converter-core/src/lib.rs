@@ -25,6 +25,7 @@ pub mod ingestion;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod jobs;
 pub mod language;
+pub mod language_model_resolution;
 pub mod model_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod model_store;

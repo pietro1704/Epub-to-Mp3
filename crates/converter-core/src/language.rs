@@ -189,6 +189,36 @@ pub fn markup_language(html: &str) -> Option<String> {
     None
 }
 
+/// Pure language analysis of a book file for clients that need the language
+/// before a job exists (it applies the same sampling and confirmation rule as a
+/// conversion). Reads and parses the file only; nothing is written.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn analyze_book_file(
+    path: &std::path::Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<BookLanguageAnalysis, String> {
+    if !path.is_file() {
+        return Err(format!("book not found: {}", path.display()));
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if extension != "epub" && extension != "pdf" {
+        return Err(format!("unsupported book type: {extension}"));
+    }
+    let source = crate::book_input::read_book_source(path).map_err(|error| error.to_string())?;
+    let book = crate::book_input::parse_book_source_with_cancel(path, &source, cancelled)
+        .map_err(|error| error.to_string())?;
+    analyze_book(
+        book.chapters.iter().map(|chapter| chapter.text.as_str()),
+        book.language.as_deref(),
+        cancelled,
+    )
+    .map_err(|_| "cancelled".to_owned())
+}
+
 /// Expand evenly distributed samples instead of repeatedly testing the opening.
 /// Unknown content is never turned into a definite language by its metadata alone.
 pub fn analyze_book<'a>(
