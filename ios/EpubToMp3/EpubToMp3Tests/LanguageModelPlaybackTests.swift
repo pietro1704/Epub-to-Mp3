@@ -31,26 +31,49 @@ final class LanguageModelPlaybackTests: XCTestCase {
               systemVoiceLanguages: { ["pt-BR"] })
     }
 
-    func testWithoutAnyLanguageChoiceTheResultIsExactlyTodaysAndNothingIsAnalyzed() async throws {
+    func testABookCompatibleWithThePrimaryKeepsTodaysResultWithoutAnyChoice() async throws {
         let (settings, defaults, name) = try makeSettings()
         defer { defaults.removePersistentDomain(forName: name) }
         let calls = Calls()
+        // Rust answers "the saved primary" for pt with Faber installed.
         let outcome = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
-                                                          dependencies: dependencies(language: "pt-BR", calls: calls))
-        XCTAssertEqual(outcome, .useSettings, "Primary Piper Faber for pt, as before")
-        XCTAssertEqual(calls.language + calls.resolve + calls.installed, 0, "No book analysis, no resolver, no catalog read")
+            dependencies: dependencies(language: "pt-BR", selection: faber, calls: calls))
+        XCTAssertEqual(outcome, .useSettings, "Primary Piper Faber for pt, exactly as before")
+        XCTAssertEqual(calls.language, 1, "The language is analyzed (and cached per book by the live dependency)")
+        XCTAssertEqual(calls.resolve, 1)
         XCTAssertEqual(settings.ttsPreferences.primary, faber)
     }
 
-    func testAChoiceForAnotherLanguageLeavesThisBookUntouched() async throws {
+    func testADifferentLanguageWithoutAChoiceUsesTheBestInstalledModelOfThatLanguage() async throws {
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let english = TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil)
+        let outcome = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
+            dependencies: dependencies(language: "en", selection: english))
+        guard case let .use(preferences) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(preferences.primary, english, "An English book never keeps the Portuguese primary")
+        XCTAssertEqual(settings.primaryTtsSelection, faber, "The saved primary is not rewritten")
+    }
+
+    func testADifferentLanguageWithoutAModelFallsToTheSystemVoiceThenToTheMissingModelAlert() async throws {
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let system = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
+            dependencies: dependencies(language: "en", status: .systemFallback, selection: .systemDefault))
+        guard case let .use(preferences) = system else { return XCTFail("\(system)") }
+        XCTAssertEqual(preferences.primary, .systemDefault)
+        let missing = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
+            dependencies: dependencies(language: "en", status: .missingModel))
+        XCTAssertEqual(missing, .missing(language: "en"))
+    }
+
+    func testAChoiceForAnotherLanguageDoesNotChangeThisBook() async throws {
         let (settings, defaults, name) = try makeSettings()
         defer { defaults.removePersistentDomain(forName: name) }
         settings.selectLanguageModel(TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil), for: "en")
-        let calls = Calls()
         let outcome = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
-                                                          dependencies: dependencies(language: "pt-BR", calls: calls))
+            dependencies: dependencies(language: "pt-BR", selection: faber))
         XCTAssertEqual(outcome, .useSettings)
-        XCTAssertEqual(calls.resolve, 0)
     }
 
     func testAnExplicitPerJobSelectionSkipsTheResolver() async throws {
@@ -67,7 +90,6 @@ final class LanguageModelPlaybackTests: XCTestCase {
     func testAnUnconfirmedLanguageKeepsTheCurrentFlow() async throws {
         let (settings, defaults, name) = try makeSettings()
         defer { defaults.removePersistentDomain(forName: name) }
-        settings.selectLanguageModel(cadu, for: "pt")
         let calls = Calls()
         let outcome = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
                                                           dependencies: dependencies(language: nil, calls: calls))
@@ -129,5 +151,46 @@ final class LanguageModelPlaybackTests: XCTestCase {
         let outcome = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
                                                           dependencies: dependencies(language: "pt", failing: true))
         XCTAssertEqual(outcome, .useSettings)
+    }
+
+    // MARK: the real Rust resolver
+
+    private func bundledAdapter() throws -> ConverterFFIAdapter {
+        let library = try XCTUnwrap(Bundle.main.privateFrameworksURL).appendingPathComponent("libconverter_ffi.dylib")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: library.path), "No embedded Rust library")
+        return ConverterFFIAdapter(libraryURL: library)
+    }
+
+    private func realDependencies(_ adapter: ConverterFFIAdapter, language: String, installed: [String],
+                                  systemVoices: [String] = []) -> LanguageModelPlayback.Dependencies {
+        .init(bookLanguage: { _ in language }, resolve: { try adapter.resolveLanguageModel($0) },
+              installedModelIDs: { installed }, systemVoiceLanguages: { systemVoices })
+    }
+
+    func testRealResolverKeepsTodaysResultForPortugueseWithFaberAndNeverKeepsItForEnglish() async throws {
+        let adapter = try bundledAdapter()
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let go = { (language: String, installed: [String], voices: [String]) async -> LanguageModelPlayback.Outcome in
+            await LanguageModelPlayback.outcome(for: self.book, settings: settings, hasExplicitSelection: false,
+                dependencies: self.realDependencies(adapter, language: language, installed: installed, systemVoices: voices))
+        }
+        // pt + Faber installed: exactly today's (the saved primary).
+        let portuguese = await go("pt-BR", ["pt_BR-faber-medium"], [])
+        XCTAssertEqual(portuguese, .useSettings)
+        // English, nothing English installed, no system voice: the alert.
+        let none = await go("en", ["pt_BR-faber-medium"], [])
+        XCTAssertEqual(none, .missing(language: "en"))
+        // English, system voice installed (setting on by default): the system voice.
+        guard case let .use(system) = await go("en", ["pt_BR-faber-medium"], ["en-US"]) else { return XCTFail() }
+        XCTAssertEqual(system.primary, .systemDefault)
+        // English model installed: it wins before the system voice.
+        guard case let .use(english) = await go("en", ["pt_BR-faber-medium", "en_US-ljspeech-high"], ["en-US"]) else { return XCTFail() }
+        XCTAssertEqual(english.primary.modelID, "en_US-ljspeech-high")
+        XCTAssertEqual(settings.primaryTtsSelection, faber)
+        // With the system-voice fallback turned off the alert comes back.
+        settings.allowAutomaticSystemVoiceFallback = false
+        let off = await go("en", ["pt_BR-faber-medium"], ["en-US"])
+        XCTAssertEqual(off, .missing(language: "en"))
     }
 }

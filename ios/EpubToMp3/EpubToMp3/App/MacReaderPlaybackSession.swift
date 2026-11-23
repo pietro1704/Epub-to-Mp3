@@ -54,9 +54,9 @@ final class MacReaderPlaybackSession {
               let book = library.books.first(where: { $0.id == bookID }),
               // Comics are read visually; there is no text to narrate (matches iOS reader listening).
               book.fileType.supportsAudioConversion else { return }
-        // A language with a stored model choice is resolved first (off the main thread, cached per
-        // book). Without one, or with an explicit per-job selection, nothing changes.
-        if optionsOverride == nil, !settings.languageModelChoices.isEmpty {
+        // The book's language is resolved first (analysis off the main thread, cached per book), unless
+        // the listener made an explicit per-job selection.
+        if optionsOverride == nil {
             resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterOverride,
                 pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
             return

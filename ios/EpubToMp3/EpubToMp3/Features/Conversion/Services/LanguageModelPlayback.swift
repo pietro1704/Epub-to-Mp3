@@ -8,8 +8,9 @@ import Foundation
 ///
 /// Rules (SETTINGS-MODELS-BY-LANGUAGE / PLAYBACK-USES-LANGUAGE-MODEL):
 /// - an explicit per-job selection is authoritative and skips the resolver;
-/// - a book whose language has no stored choice behaves exactly as before
-///   (the saved primary voice), without even analyzing the book;
+/// - otherwise the resolver always runs: the language's stored choice, else the saved primary when
+///   it can read the book's language (pt with Faber = exactly today's result), else the best
+///   installed local model of the language, else the system voice (if allowed), else a missing model;
 /// - an unconfirmed language keeps the current confirmation flow;
 /// - the language is analyzed off the main thread and cached per book.
 @MainActor
@@ -45,9 +46,8 @@ enum LanguageModelPlayback {
     static func outcome(
         for book: BookEntity, settings: AppSettings, hasExplicitSelection: Bool, dependencies: Dependencies
     ) async -> Outcome {
-        guard !hasExplicitSelection, !settings.languageModelChoices.isEmpty else { return .useSettings }
-        guard let language = await dependencies.bookLanguage(book),
-              settings.languageModelChoices[SpeechPreferences.languageKey(language)] != nil else { return .useSettings }
+        guard !hasExplicitSelection else { return .useSettings }
+        guard let language = await dependencies.bookLanguage(book) else { return .useSettings }
         var request = LanguageModelResolutionRequest(bookLanguage: language, platform: LanguageModelResolutionRequest.currentPlatform)
         request.perLanguageChoices = settings.languageModelChoices
         request.primary = settings.primaryTtsSelection

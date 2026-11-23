@@ -501,9 +501,9 @@ final class MainReaderScreenController: UIViewController {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
-        // A language with a stored model choice is resolved first (off the main thread, cached per
-        // book). Without one, with an explicit per-job selection or after a recovery, nothing changes.
-        if optionsOverride == nil, recovery == nil, !languageResolved, !settings.languageModelChoices.isEmpty {
+        // The book's language is resolved first (analysis off the main thread, cached per book), unless
+        // the listener made an explicit per-job selection or this is the retry after a recovery.
+        if optionsOverride == nil, recovery == nil, !languageResolved {
             resolveLanguageModelThenStart(book: book, presentsFullPlayer: presentsFullPlayer, requestedChapter: requestedChapter,
                 requestedRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor)
             return
