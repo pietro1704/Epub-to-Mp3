@@ -69,6 +69,8 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         attachScreenshot("01-playing-before-background")
 
         let before = read(elapsedLabel, chapterLabel)
+        XCTAssertFalse(before.chapter.contains("Neural"),
+                       "The job must run on local Piper, not an online Edge voice: \(before.chapter)")
         log.append("BEFORE date=\(before.date) chapter=\"\(before.chapter)\" elapsed=\(before.elapsed)s")
         XCTAssertTrue(before.chapter.contains("Chapter 1"), "Playback must start in chapter 1, got: \(before.chapter)")
         XCTAssertLessThan(before.elapsed, 30, "The chapter boundary must fall inside the locked period.")
@@ -161,9 +163,11 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         // `-reader.recentTool.v1 listen` puts Listen on the toolbar for this launch only.
         app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", "paginated",
                                "-reader.recentTool.v1", "listen",
+                               // Local Piper English pinned for this launch only; the saved settings stay as they are.
+                               SettingsDefaultsSourceArguments.speechSelection, "piper:en_US-ljspeech-high",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        var log: [String] = ["Book: retained LOTR EPUB. Voice: installed English Piper model expected."]
+        var log: [String] = ["Book: retained LOTR EPUB. Voice: local Piper en_US-ljspeech-high pinned for the launch (asserted on the player label; engine proven by the copied conversion.log)."]
         defer {
             let attachment = XCTAttachment(string: log.joined(separator: "\n"))
             attachment.name = "lotr-growing-audio-evidence"
@@ -265,4 +269,9 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+}
+
+/// Launch-argument spelling of `SettingsDefaultsSource` (the UI bundle does not import the app).
+private enum SettingsDefaultsSourceArguments {
+    static let speechSelection = "-uiTestSpeechSelection"
 }

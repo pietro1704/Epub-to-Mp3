@@ -67,6 +67,22 @@ final class SettingsDefaultsSourceTests: XCTestCase {
         XCTAssertNil(second.object(forKey: Key.onlineFallbackConsent))
     }
 
+    func testSpeechSelectionArgumentSeedsOnlyTheIsolatedSuite() throws {
+        let standard = try makeSuite().defaults
+        let name = "settings-defaults-source-seed-\(UUID().uuidString)"
+        suites.append(name)
+        let arguments = [SettingsDefaultsSource.speechSelectionArgument, "piper:en_US-ljspeech-high"]
+        let resolved = SettingsDefaultsSource.resolve(arguments: arguments, standard: standard, suiteName: name)
+        XCTAssertFalse(resolved === standard)
+        let preferences = SpeechPreferences(defaults: resolved)
+        XCTAssertEqual(preferences.primaryTtsSelection,
+                       TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil))
+        XCTAssertFalse(preferences.allowOnlineAudioFallback)
+        XCTAssertNotEqual(preferences.secondaryTtsSelection?.engine, "edge")
+        XCTAssertNil(standard.object(forKey: Key.primarySelection), "The real defaults are not seeded.")
+        XCTAssertNil(SettingsDefaultsSource.seededPrimary([SettingsDefaultsSource.speechSelectionArgument, "bogus"]))
+    }
+
     private static func speechSnapshot(_ defaults: UserDefaults) -> [String: Data?] {
         [Key.primarySelection: defaults.data(forKey: Key.primarySelection),
          Key.secondarySelection: defaults.data(forKey: Key.secondarySelection),
