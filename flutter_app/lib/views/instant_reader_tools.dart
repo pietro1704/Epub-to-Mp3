@@ -1,6 +1,49 @@
 part of 'instant_reader_view.dart';
 
 extension _InstantReaderTools on _InstantReaderViewState {
+  /// Start of the sentence being spoken, as an exact source position, or null
+  /// when nothing audible belongs to this book. The audible chapter can differ
+  /// from the shown one, so its measured speech alignment is read on demand.
+  Future<ReaderListeningPosition?> _liveSentencePosition() async {
+    final player = widget.player;
+    final playerIndex = player?.currentIndexValue;
+    if (player == null ||
+        playerIndex == null ||
+        player.currentBookId != widget.bookId) {
+      return null;
+    }
+    final queueIndex = player.chapterIndexForPlayerIndex(playerIndex);
+    if (queueIndex < 0 || queueIndex >= player.chapters.length) return null;
+    final sourceIndex = player.chapters[queueIndex].index;
+    final chapter = widget.fulltext.chapters
+        .where((candidate) => candidate.index == sourceIndex)
+        .firstOrNull;
+    if (chapter == null) return null;
+    final shown = _resolveChapter(_currentChapterIndex)?.index == sourceIndex;
+    var measured = shown ? _measuredRange : null;
+    final audio = player.currentAudioUri;
+    final seconds = player.positionSeconds;
+    if (measured == null && audio != null) {
+      try {
+        measured = (await MeasuredSpeechAlignment.read(
+          audio,
+        )).rangeAt(seconds, chapter.text);
+      } on Object {
+        measured = null; // Missing metadata keeps sentence-only resume.
+      }
+    }
+    return liveSentenceStart(
+          chapter: chapter,
+          measured: measured,
+          liveSentenceId: shown ? _liveSentenceId : null,
+        ) ??
+        estimatedSentenceStart(
+          chapter: chapter,
+          seconds: seconds,
+          durationSeconds: player.durationSeconds,
+        );
+  }
+
   void _jumpToChapter(int index) {
     if (index < 0 || index >= widget.fulltext.chapters.length) return;
     _update(() {

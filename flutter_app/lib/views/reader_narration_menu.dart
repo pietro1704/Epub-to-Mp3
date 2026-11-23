@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/tts_catalog.dart';
+import '../models/reader_listening_position.dart';
 import '../models/tts_preferences.dart';
 import '../state/providers.dart';
 
@@ -91,10 +92,25 @@ List<TtsSelection> readerNarrationChoices({
 /// Reader overflow menu: lists narration models, marks the active one and
 /// persists the choice. [onChanged] runs only after a different model is saved.
 class ReaderNarrationMenu extends ConsumerWidget {
-  const ReaderNarrationMenu({super.key, this.color, this.onChanged});
+  const ReaderNarrationMenu({
+    super.key,
+    this.color,
+    this.onChanged,
+    this.currentSentence,
+  });
 
   final Color? color;
-  final Future<void> Function(TtsSelection selection)? onChanged;
+
+  /// Called after a different model is saved, with the sentence that was
+  /// being read when it was chosen (null when none is playing).
+  final Future<void> Function(
+    TtsSelection selection,
+    ReaderListeningPosition? sentence,
+  )?
+  onChanged;
+
+  /// Sampled at the moment of the tap, before anything is saved.
+  final Future<ReaderListeningPosition?> Function()? currentSentence;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,10 +137,11 @@ class ReaderNarrationMenu extends ConsumerWidget {
       onSelected: (index) async {
         final selected = choices[index];
         if (selected.representsSameRequest(preferences.primary)) return;
+        final sentence = await currentSentence?.call();
         await ref
             .read(settingsProvider.notifier)
             .setTtsPreferences(preferences.withPrimary(selected));
-        await onChanged?.call(selected);
+        await onChanged?.call(selected, sentence);
       },
       itemBuilder: (_) => [
         PopupMenuItem<int>(

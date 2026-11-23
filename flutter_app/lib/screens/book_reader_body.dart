@@ -25,7 +25,11 @@ class _BookReaderBody extends ConsumerWidget {
   final List<ChapterProgress> playableChapters;
   final VoidCallback onRetry;
   final ValueChanged<ReaderListeningPosition?> onListeningPosition;
-  final Future<void> Function(TtsSelection selection) onNarrationChanged;
+  final Future<void> Function(
+    TtsSelection selection,
+    ReaderListeningPosition? sentence,
+  )
+  onNarrationChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
