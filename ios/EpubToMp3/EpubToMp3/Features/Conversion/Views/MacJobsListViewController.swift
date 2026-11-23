@@ -65,7 +65,7 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
         view.addSubview(spinner)
 
         messageLabel.alignment = .center
-        messageLabel.textColor = .secondaryLabelColor
+        messageLabel.textColor = .readableSecondaryLabel
         messageLabel.isHidden = true
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(messageLabel)
@@ -157,7 +157,7 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
             label.stringValue = [outcome, engine, chapters, String(session.timestamp.prefix(19))]
                 .filter { !$0.isEmpty }
                 .joined(separator: " • ")
-            label.textColor = .secondaryLabelColor
+            label.textColor = .readableSecondaryLabel
         }
         return cell
     }

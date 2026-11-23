@@ -46,11 +46,11 @@ final class MacFullPlayerViewController: NSViewController {
         }
         titleLabel.font = .boldSystemFont(ofSize: 24)
         titleLabel.alignment = .center
-        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.textColor = .readableSecondaryLabel
         statusLabel.setAccessibilityIdentifier("fullPlayer.chapterAndVoice")
         statusLabel.alignment = .center
-        elapsedLabel.textColor = .secondaryLabelColor
-        remainingLabel.textColor = .secondaryLabelColor
+        elapsedLabel.textColor = .readableSecondaryLabel
+        remainingLabel.textColor = .readableSecondaryLabel
         progressSlider.target = self
         progressSlider.action = #selector(progressChanged(_:))
         progressSlider.isContinuous = false

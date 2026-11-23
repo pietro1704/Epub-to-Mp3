@@ -92,8 +92,8 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
-        statusLabel.textColor = .secondaryLabelColor
-        storageLabel.textColor = .secondaryLabelColor
+        statusLabel.textColor = .readableSecondaryLabel
+        storageLabel.textColor = .readableSecondaryLabel
 
         let clearButton = NSButton(title: L10n.string("settings.clearAllDownloads"),
                                    target: self,
