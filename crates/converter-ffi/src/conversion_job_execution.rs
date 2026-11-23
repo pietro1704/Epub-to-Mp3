@@ -101,7 +101,7 @@ pub(super) unsafe fn convert_job_json(
     let previous_event = std::sync::Mutex::new(conversion_started);
     let worker = match converter_core::worker::ConversionWorker::new(config) {
         Ok(worker) => worker,
-        Err(error) => return fail(error.to_string()),
+        Err(error) => return fail_worker(&error),
     }
     .with_progress(Arc::new(move |event| {
         if event.engine.as_deref() == Some("system") {
@@ -224,11 +224,11 @@ pub(super) unsafe fn convert_job_json(
     };
     let worker = match worker.with_pronunciation(pronunciation) {
         Ok(worker) => worker,
-        Err(error) => return fail(error.to_string()),
+        Err(error) => return fail_worker(&error),
     };
     let worker = match worker.with_language_overrides(language_overrides) {
         Ok(worker) => worker,
-        Err(error) => return fail(error.to_string()),
+        Err(error) => return fail_worker(&error),
     };
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())
@@ -253,7 +253,7 @@ pub(super) unsafe fn convert_job_json(
                 "Rust converter panicked during embedded conversion: {message}"
             ))
         }
-        Ok(Err(error)) => fail(error.to_string()),
+        Ok(Err(error)) => fail_worker(&error),
         Ok(Ok(manifest)) => {
             let audio_path = manifest
                 .chapters
