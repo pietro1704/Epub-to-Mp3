@@ -85,7 +85,10 @@ class LocalFulltextCache {
   Future<void> evict(String bookId) async {
     try {
       final f = await _fileFor(bookId);
-      if (f != null && await f.exists()) await f.delete();
+      if (f == null) return;
+      if (await f.exists()) await f.delete();
+      final access = File('${f.path}.last_access');
+      if (await access.exists()) await access.delete();
     } catch (_) {
       // intentionally ignored
     }

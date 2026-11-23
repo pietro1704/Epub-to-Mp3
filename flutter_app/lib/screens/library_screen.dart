@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -242,6 +243,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             onPressed: () {
               store.remove(book.id);
               ref.read(bookmarkStoreProvider).removeAll(book.id);
+              if (ref.read(currentlyReadingBookIdProvider) == book.id) {
+                ref.read(currentlyReadingBookIdProvider.notifier).set(null);
+              }
+              unawaited(
+                ref
+                    .read(bookDerivedDataRemoverProvider)
+                    .remove(book.id, player: ref.read(globalAudioPlayerProvider)),
+              );
               Navigator.pop(context);
             },
             child: Text(t.remove),

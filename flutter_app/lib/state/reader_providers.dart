@@ -24,6 +24,15 @@ final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
   return LocalFulltextCache();
 });
 
+/// Deletes what the app derived from a book when it is removed from the library.
+final bookDerivedDataRemoverProvider = Provider<BookDerivedDataRemover>((ref) {
+  return BookDerivedDataRemover(
+    prefs: ref.watch(sharedPrefsProvider),
+    fulltextCache: ref.watch(localFulltextCacheProvider),
+    documents: getApplicationDocumentsDirectory,
+  );
+});
+
 /// Tab index controller for the root NavigationBar, so library can switch to
 /// the reader tab programmatically.
 final appDestinationProvider = StateProvider<AppDestination>(
