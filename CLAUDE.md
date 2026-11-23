@@ -21,7 +21,8 @@ guidelines (Material on Android, native desktop conventions on Linux/Windows).
 
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
-available. If Piper is missing or persistently fails, continue with the working
+available. This fallback is a user setting, on by default; when the user turns
+it off, a Piper failure stops the job with an actionable reason instead. If Piper is missing or persistently fails, continue with the working
 native fallback, report the active voice, retain Piper as primary and retry it
 at bounded recovery points. Explicit per-job selections remain authoritative.
 Edge fallback requires explicit consent and is disabled by default. Edge as
