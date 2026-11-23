@@ -1,0 +1,308 @@
+import AVFoundation
+import Foundation
+import Combine
+
+/// What the Models screen needs from the speech model library; the real source
+/// wraps `SpeechModelLibraryClient`, tests use a fake.
+protocol ModelsByLanguageSource: Sendable {
+    func catalogLanguages() async throws -> [CatalogLanguage]
+    func snapshot(language: String) async throws -> SpeechModelSnapshot
+    func install(modelID: String, acceptedTermsFingerprint: String?, language: String) async throws
+    func watchInstall(modelID: String) async -> AsyncStream<SpeechModelInstallEvent>
+    func cancelInstall(modelID: String) async
+    func remove(modelID: String, configuredSelections: [TtsSelection]) async throws
+    func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String)
+}
+
+struct SpeechModelsSource: ModelsByLanguageSource {
+    let client: SpeechModelLibraryClient
+
+    init(client: SpeechModelLibraryClient = .shared) { self.client = client }
+
+    func catalogLanguages() async throws -> [CatalogLanguage] { try await client.catalogLanguages() }
+    /// The listing only inspects installed files; loading every model's runtime for
+    /// every language would take many seconds. A model is chosen on that evidence
+    /// (the same the Rust resolver uses) and a runtime failure surfaces on use.
+    func snapshot(language: String) async throws -> SpeechModelSnapshot {
+        try await client.languageSnapshot(language, probeRuntime: false)
+    }
+    func install(modelID: String, acceptedTermsFingerprint: String?, language: String) async throws {
+        _ = try await client.install(modelID: modelID, acceptedTermsFingerprint: acceptedTermsFingerprint, language: language)
+    }
+    func watchInstall(modelID: String) async -> AsyncStream<SpeechModelInstallEvent> {
+        await client.watchInstall(modelID: modelID)
+    }
+    func cancelInstall(modelID: String) async { await client.cancelInstall(modelID: modelID) }
+    func remove(modelID: String, configuredSelections: [TtsSelection]) async throws {
+        _ = try await client.remove(modelID: modelID, configuredSelections: configuredSelections)
+    }
+    func auditionChoice(for entry: SpeechModelSnapshot.Entry) async throws -> (selection: TtsSelection, language: String) {
+        try await client.auditionChoice(for: entry)
+    }
+}
+
+/// Drives the Models screen: loads the catalog by language, applies the user's
+/// per-language choice, and starts downloads only on an explicit tap.
+@MainActor
+final class ModelsByLanguageModel: ObservableObject {
+    @Published private(set) var state = ModelsByLanguageViewState(sections: [])
+    /// Download progress 0...1 per row id while a download is active.
+    @Published private(set) var progress: [String: Double] = [:]
+    @Published private(set) var failures: [String: String] = [:]
+    @Published private(set) var isLoading = false
+    @Published private(set) var loadFailure: String?
+    /// A licence the user must accept before the model can download.
+    @Published private(set) var pendingTerms: PendingTerms?
+
+    struct PendingTerms: Equatable {
+        let row: ModelsByLanguageViewState.Row
+        let language: String
+        let fingerprint: String
+    }
+
+    private let source: ModelsByLanguageSource
+    private let settings: AppSettings
+    private let systemVoiceLanguages: @Sendable () -> Set<String>
+    private let terms: SpeechModelTermsAcceptanceStore
+    private var snapshots: [(tag: String, snapshot: SpeechModelSnapshot)] = []
+    private var watchers: [String: Task<Void, Never>] = [:]
+    private var settingsObservation: AnyCancellable?
+
+    init(source: ModelsByLanguageSource = SpeechModelsSource(),
+         settings: AppSettings,
+         terms: SpeechModelTermsAcceptanceStore = SpeechModelTermsAcceptanceStore(),
+         systemVoiceLanguages: (@Sendable () -> Set<String>)? = nil) {
+        self.source = source
+        self.settings = settings
+        self.terms = terms
+        self.systemVoiceLanguages = systemVoiceLanguages ?? Self.installedSystemVoiceLanguages
+        settingsObservation = settings.objectWillChange.sink { [weak self] _ in
+            // Settings publish before the value moves; recompute after it did.
+            Task { @MainActor in self?.rebuild() }
+        }
+    }
+
+    /// Languages (base tags) that have an installed system voice.
+    nonisolated static let installedSystemVoiceLanguages: @Sendable () -> Set<String> = {
+        #if canImport(AVFoundation)
+        return Set(AVSpeechSynthesisVoice.speechVoices().map { SpeechPreferences.languageKey($0.language) })
+        #else
+        return []
+        #endif
+    }
+
+    func load() async {
+        isLoading = true
+        loadFailure = nil
+        defer { isLoading = false }
+        do {
+            let languages = try await source.catalogLanguages()
+            snapshots = []
+            for language in languages {
+                snapshots.append((language.tag, try await source.snapshot(language: language.tag)))
+                // Show languages as they arrive instead of waiting for the whole catalog.
+                rebuild()
+            }
+        } catch {
+            loadFailure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Picks `row` for its language. Only a ready row can be chosen: a dimmed row
+    /// is downloaded first (explicit) and never selected silently.
+    @discardableResult
+    func choose(_ row: ModelsByLanguageViewState.Row, in language: String) -> Bool {
+        guard row.availability == .ready else { return false }
+        settings.selectLanguageModel(row.selection, for: language)
+        return true
+    }
+
+    func clearChoice(in language: String) { settings.clearLanguageModel(for: language) }
+
+    /// Tapping a dimmed, downloadable row starts its download at once.
+    func download(_ row: ModelsByLanguageViewState.Row, in language: String) async {
+        guard case .downloadable = row.availability, let modelID = row.selection.modelID,
+              watchers[row.id] == nil else { return }
+        if let entry = entry(for: row, in: language), entry.licence.requiresAcceptance,
+           let fingerprint = entry.licence.termsFingerprint,
+           !terms.isAccepted(modelID: modelID, fingerprint: fingerprint) {
+            pendingTerms = PendingTerms(row: row, language: language, fingerprint: fingerprint)
+            return
+        }
+        await startDownload(row, language: language, fingerprint: nil)
+    }
+
+    func acceptPendingTerms() async {
+        guard let pending = pendingTerms, let modelID = pending.row.selection.modelID else { return }
+        pendingTerms = nil
+        terms.accept(modelID: modelID, fingerprint: pending.fingerprint)
+        await startDownload(pending.row, language: pending.language, fingerprint: pending.fingerprint)
+    }
+
+    func declinePendingTerms() { pendingTerms = nil }
+
+    struct NarrationChoice: Equatable, Identifiable {
+        let selection: TtsSelection
+        let title: String
+        var id: String { "\(selection.engine):\(selection.modelID ?? ""):\(selection.voice ?? "")" }
+    }
+
+    /// Voices the user may make the default primary or reserve: every ready local
+    /// model of any language, the installed system voice, online Edge, and any
+    /// configured selection that is not in the catalog (kept so it stays visible).
+    var narrationChoices: [NarrationChoice] {
+        var choices: [NarrationChoice] = []
+        func add(_ selection: TtsSelection, _ title: String) {
+            if !choices.contains(where: { $0.selection.representsSameRequest(as: selection) }) {
+                choices.append(NarrationChoice(selection: selection, title: title))
+            }
+        }
+        for section in state.sections {
+            for row in section.rows where row.kind == .local && row.selection.engine == TtsSelection.piperEngine
+                && row.availability == .ready {
+                add(row.selection, row.title)
+            }
+        }
+        add(.systemDefault, L10n.string("settings.systemTts"))
+        add(.edgeDefault, TtsSelection.displayName(forEngine: TtsSelection.edgeEngine) ?? "Edge")
+        for selection in settings.configuredNarrationSelections { add(selection, title(for: selection)) }
+        return choices
+    }
+
+    func title(for selection: TtsSelection) -> String {
+        if selection.engine == TtsSelection.piperEngine, let id = selection.modelID {
+            for section in state.sections {
+                if let row = section.rows.first(where: { $0.selection.modelID == id }) { return row.title }
+            }
+            return id
+        }
+        return TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
+    }
+
+    /// Choices valid as a reserve for the current primary and consent.
+    var secondaryChoices: [NarrationChoice] {
+        narrationChoices.filter {
+            $0.selection.canBeSecondary(to: settings.primaryTtsSelection, allowOnlineFallback: settings.allowOnlineAudioFallback)
+        }
+    }
+
+    func selectPrimary(_ selection: TtsSelection) { settings.selectPrimaryNarration(selection) }
+    func selectSecondary(_ selection: TtsSelection?) { settings.selectSecondaryNarration(selection) }
+    var primarySelection: TtsSelection { settings.primaryTtsSelection }
+    var secondarySelection: TtsSelection? { settings.secondaryTtsSelection }
+    var allowAutomaticSystemVoiceFallback: Bool {
+        get { settings.allowAutomaticSystemVoiceFallback }
+        set { settings.allowAutomaticSystemVoiceFallback = newValue }
+    }
+    var allowOnlineFallback: Bool {
+        get { settings.allowOnlineAudioFallback }
+        set { settings.allowOnlineAudioFallback = newValue }
+    }
+
+    /// The library helpers (names, details, actions) for one language's snapshot.
+    func libraryState(for language: String) -> SpeechModelLibraryViewState {
+        SpeechModelLibraryViewState(snapshot: snapshots.first { $0.tag == language }?.snapshot)
+    }
+
+    /// The Rust entry behind a row, for details, preview and removal.
+    func entry(forRow row: ModelsByLanguageViewState.Row, in language: String) -> SpeechModelSnapshot.Entry? {
+        entry(for: row, in: language)
+    }
+
+    func isTermsAccepted(for entry: SpeechModelSnapshot.Entry) -> Bool {
+        terms.isAccepted(modelID: entry.identity.modelID, fingerprint: entry.licence.termsFingerprint)
+    }
+
+    func revokeTerms(for entry: SpeechModelSnapshot.Entry) {
+        guard let fingerprint = entry.licence.termsFingerprint else { return }
+        terms.revoke(modelID: entry.identity.modelID, fingerprint: fingerprint)
+        objectWillChange.send()
+    }
+
+    /// Every selection that must keep its model: primary, secondary and each language's choice.
+    var protectedSelections: [TtsSelection] {
+        settings.configuredNarrationSelections + Array(settings.languageModelChoices.values)
+    }
+
+    /// Removes an installed model the client allows (not configured, chosen or in use) and refreshes its language.
+    func remove(_ row: ModelsByLanguageViewState.Row, in language: String) async throws {
+        guard let modelID = row.selection.modelID else { return }
+        try await source.remove(modelID: modelID, configuredSelections: protectedSelections)
+        progress[row.id] = nil
+        if let fresh = try? await source.snapshot(language: language),
+           let index = snapshots.firstIndex(where: { $0.tag == language }) {
+            snapshots[index] = (language, fresh)
+            rebuild()
+        }
+    }
+
+    func auditionChoice(for row: ModelsByLanguageViewState.Row, in language: String) async throws
+        -> (selection: TtsSelection, language: String) {
+        guard let entry = entry(for: row, in: language) else { throw SpeechModelInstallationError.unknownModel(row.id) }
+        return try await source.auditionChoice(for: entry)
+    }
+
+    func cancelDownload(_ row: ModelsByLanguageViewState.Row) async {
+        guard let modelID = row.selection.modelID else { return }
+        await source.cancelInstall(modelID: modelID)
+    }
+
+    private func startDownload(_ row: ModelsByLanguageViewState.Row, language: String, fingerprint: String?) async {
+        guard let modelID = row.selection.modelID else { return }
+        failures[row.id] = nil
+        progress[row.id] = 0
+        let stream = await source.watchInstall(modelID: modelID)
+        watchers[row.id] = Task { [weak self] in
+            for await event in stream {
+                guard let self else { return }
+                await self.apply(event, row: row, language: language)
+                if [.completed, .cancelled, .failed].contains(event.stage) { return }
+            }
+        }
+        do {
+            try await source.install(modelID: modelID, acceptedTermsFingerprint: fingerprint, language: language)
+        } catch {
+            failures[row.id] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            progress[row.id] = nil
+            watchers.removeValue(forKey: row.id)?.cancel()
+        }
+    }
+
+    private func apply(_ event: SpeechModelInstallEvent, row: ModelsByLanguageViewState.Row, language: String) async {
+        switch event.stage {
+        case .completed:
+            progress[row.id] = nil
+            watchers[row.id] = nil
+            // The installed model becomes selectable: refresh its language only.
+            if let fresh = try? await source.snapshot(language: language),
+               let index = snapshots.firstIndex(where: { $0.tag == language }) {
+                snapshots[index] = (language, fresh)
+                rebuild()
+            }
+        case .cancelled:
+            progress[row.id] = nil
+            watchers[row.id] = nil
+        case .failed:
+            progress[row.id] = nil
+            watchers[row.id] = nil
+            failures[row.id] = event.failure.map(SpeechModelLibraryViewState.installFailureMessage)
+                ?? L10n.string("settings.modelInstall.downloadFailed")
+        case .preflight, .downloading, .verifying, .publishing:
+            progress[row.id] = event.bytesTotal > 0 ? min(1, Double(event.bytesCompleted) / Double(event.bytesTotal)) : 0
+        }
+    }
+
+    private func entry(for row: ModelsByLanguageViewState.Row, in language: String) -> SpeechModelSnapshot.Entry? {
+        snapshots.first { $0.tag == language }?.snapshot.entries.first {
+            $0.identity.modelID == row.selection.modelID && $0.identity.provider == row.selection.engine
+        }
+    }
+
+    private func rebuild() {
+        state = .make(
+            languages: snapshots.map { .init(tag: $0.tag, snapshot: $0.snapshot) },
+            choices: settings.languageModelChoices,
+            allowOnlineFallback: settings.allowOnlineAudioFallback,
+            systemVoiceLanguages: systemVoiceLanguages())
+    }
+}

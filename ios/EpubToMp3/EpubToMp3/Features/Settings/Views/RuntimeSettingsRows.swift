@@ -48,7 +48,7 @@ enum RuntimeSettingsRows {
             case .models:
                 let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
-                content.text = L10n.string("settings.voiceModels")
+                content.text = L10n.string("models.title")
                 content.secondaryText = SpeechModelSettingsDisclosure.summary(state: speechModels,
                     primary: settings.ttsPreferences.primary, events: installEvents)
                 content.secondaryTextProperties.numberOfLines = 0

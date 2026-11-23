@@ -159,11 +159,10 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
         await TtsMissingVoiceAlert.openSettings(language: "en-US", snapshot: snapshot, from: container, client: client)
         let sheet = try XCTUnwrap(container.presentedViewController as? UINavigationController,
                                   "The destination must be visible above the reader")
-        let destination = try XCTUnwrap(sheet.topViewController as? SettingsScreenController)
-        XCTAssertFalse(destination === settings)
-        XCTAssertTrue(destination.voiceModelsOnly)
+        let destination = try XCTUnwrap(sheet.topViewController as? ModelsScreenController,
+                                        "The missing-voice alert leads to the Models screen")
+        XCTAssertEqual(destination.title, L10n.string("models.title"))
         XCTAssertNotNil(destination.navigationItem.rightBarButtonItem, "The sheet needs its own way back to the book")
-        XCTAssertEqual(destination.modelEntry(at: IndexPath(row: 0, section: 1))?.identity.modelID, "fixture-english")
         XCTAssertTrue(tabs.selectedViewController !== settingsNavigation, "The covered tab shell is left alone")
         XCTAssertTrue(settingsNavigation.topViewController === settings)
         XCTAssertNil(settings.modelEntry(at: IndexPath(row: 0, section: 1)), "Settings never expands inline")

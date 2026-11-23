@@ -15,6 +15,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let freeString: (UnsafeMutablePointer<CChar>?) -> Void
     private let lastError: () -> UnsafeMutablePointer<CChar>?
     private var modelCatalog = ConverterModelCatalog()
+    private var languageModels = ConverterLanguageModels()
     private var _open: ConverterSessionOpen = { _ in nil }
     private var convertStreamingJobOptionsJSON: ConverterSessionConvertStreamingJobOptionsV1?
     private var jobControlCreate: ConverterJobControlCreate?
@@ -99,6 +100,11 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             installOperationCancel: symbol("converter_tts_model_install_operation_cancel", as: ConverterModelInstallOperationCancel.self),
             installOperationFree: symbol("converter_tts_model_install_operation_free", as: ConverterModelInstallOperationFree.self)
         )
+        languageModels = ConverterLanguageModels(
+            catalogLanguagesJSON: symbol("converter_tts_catalog_languages_json_v1", as: ConverterTtsCatalogLanguagesV1.self),
+            resolveJSON: symbol("converter_tts_resolve_language_model_json_v1", as: ConverterTtsResolveLanguageModelV1.self),
+            bookLanguageJSON: symbol("converter_book_language_json_v1", as: ConverterBookLanguageV1.self),
+            freeString: free, lastError: error)
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
         auditionVoice = symbol("converter_voice_audition_v1", as: ConverterVoiceAudition.self)
@@ -276,6 +282,14 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     }
 
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }
+    func catalogLanguages(platform: String, androidAPI: UInt32 = 0) throws -> [CatalogLanguage] {
+        try languageModels.catalogLanguages(platform: platform, androidAPI: androidAPI)
+    }
+    func resolveLanguageModel(_ request: LanguageModelResolutionRequest) throws -> LanguageModelResolution {
+        try languageModels.resolve(request)
+    }
+    /// Blocking: call off the main actor.
+    func bookLanguage(at url: URL) throws -> BookLanguageAnalysis { try languageModels.bookLanguage(at: url) }
     func speechModelSnapshot(target: SpeechModelLibraryTarget, probeRuntime: Bool = false) throws -> SpeechModelSnapshot {
         try modelCatalog.speechModelSnapshot(target: target, probeRuntime: probeRuntime)
     }

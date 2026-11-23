@@ -100,10 +100,23 @@ actor SpeechModelLibraryClient {
     }
 
     /// A language-specific query does not change study language or global selections.
-    func languageSnapshot(_ language: String) throws -> SpeechModelSnapshot {
+    func languageSnapshot(_ language: String, probeRuntime: Bool = true) throws -> SpeechModelSnapshot {
         if let snapshotOverride { return try snapshotOverride() }
         guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
-        return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: true)
+        return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: probeRuntime)
+    }
+
+    /// The catalog's base languages, for the Models screen.
+    func catalogLanguages() throws -> [CatalogLanguage] {
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        return try adapter.catalogLanguages(platform: LanguageModelResolutionRequest.currentPlatform.lowercased(),
+                                            androidAPI: target.androidAPI)
+    }
+
+    /// Which narration a book language plays with; Rust owns the decision.
+    func resolveLanguageModel(_ request: LanguageModelResolutionRequest) throws -> LanguageModelResolution {
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        return try adapter.resolveLanguageModel(request)
     }
 
     func setStudyLanguage(_ language: String) throws -> SpeechModelSnapshot {

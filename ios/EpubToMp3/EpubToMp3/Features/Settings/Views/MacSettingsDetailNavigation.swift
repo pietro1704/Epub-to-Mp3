@@ -21,7 +21,7 @@ final class MacSettingsDetailNavigation: NSViewController {
         let back = NSButton(title: L10n.string("common.back"), target: self, action: #selector(goBack))
         back.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
         back.setAccessibilityIdentifier("settings.voiceModels.back")
-        let title = NSTextField(labelWithString: L10n.string("settings.voiceModels"))
+        let title = NSTextField(labelWithString: detail.title ?? L10n.string("settings.voiceModels"))
         title.font = .preferredFont(forTextStyle: .headline)
         let header = NSStackView(views: [back, title])
         header.spacing = 12

@@ -37,7 +37,7 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
         defer { fixture.cleanup() }
         let controller = MacSettingsViewController(
             settings: fixture.settings, library: LibraryStore(defaults: fixture.defaults),
-            speechModels: fixture.client
+            speechModels: fixture.client, voiceModelsOnly: true
         )
         controller.loadViewIfNeeded()
         let window = NSWindow(contentViewController: controller)
@@ -46,7 +46,7 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
         if #available(macOS 14.0, *) { NSApp.activate() }
         else { NSApp.activate(ignoringOtherApps: true) }
         defer { window.close() }
-        try MacSpeechModelTestControls.revealModels(in: controller.view)
+        // The reader's voice-model destination opens expanded, so there is nothing to reveal.
         let select = try button("pt_BR-cadu-medium.select", in: controller.view)
 
         select.performClick(nil)
@@ -75,10 +75,10 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
         defer { fixture.cleanup() }
         let controller = MacSettingsViewController(
             settings: fixture.settings, library: LibraryStore(defaults: fixture.defaults),
-            speechModels: fixture.client
+            speechModels: fixture.client, voiceModelsOnly: true
         )
         controller.loadViewIfNeeded()
-        try MacSpeechModelTestControls.revealModels(in: controller.view)
+        // The reader's voice-model destination opens expanded, so there is nothing to reveal.
         let remove = try button("pt_BR-cadu-medium.remove", in: controller.view)
         let selection = fixture.settings.ttsPreferences
         try driveModal(buttonTitle: L10n.string("common.cancel")) { remove.performClick(nil) }

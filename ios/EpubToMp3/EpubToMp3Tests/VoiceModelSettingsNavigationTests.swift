@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class VoiceModelSettingsNavigationTests: XCTestCase {
-    func testVoiceModelsPushTheirOwnDestinationAndReturnWithoutInlineExpansion() throws {
+    func testModelsRowPushesTheModelsScreenAndReturnsWithoutInlineExpansion() throws {
         let suite = "VoiceNavigation.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -20,15 +20,10 @@ final class VoiceModelSettingsNavigationTests: XCTestCase {
         let runtime = SettingsSection.runtime.rawValue
         XCTAssertEqual(root.tableView(root.tableView, numberOfRowsInSection: runtime), 1)
         root.tableView(root.tableView, didSelectRowAt: IndexPath(row: 0, section: runtime))
-        let detail = try XCTUnwrap(navigation.topViewController as? SettingsScreenController)
-        XCTAssertFalse(detail === root)
+        let detail = try XCTUnwrap(navigation.topViewController as? ModelsScreenController,
+                                   "The single Models row opens the Models screen")
         detail.loadViewIfNeeded()
-        XCTAssertEqual(detail.title, L10n.string("settings.voiceModels"))
-        // Runtime rows come first; every further section is a language group or the empty-catalogue row.
-        XCTAssertGreaterThanOrEqual(detail.numberOfSections(in: detail.tableView), 2)
-        XCTAssertEqual(detail.settingsSection(at: 0), .runtime)
-        XCTAssertNil(detail.settingsSection(at: 1))
-        XCTAssertGreaterThan(detail.tableView(detail.tableView, numberOfRowsInSection: 0), 1)
+        XCTAssertEqual(detail.title, L10n.string("models.title"))
         settings.selectSecondaryNarration(nil)
         navigation.popViewController(animated: false)
         XCTAssertTrue(navigation.topViewController === root)
@@ -57,8 +52,9 @@ final class MacVoiceModelSettingsNavigationTests: XCTestCase {
         XCTAssertTrue(root.children.isEmpty)
         models.performClick(nil)
         let detail = try XCTUnwrap(root.children.first as? MacSettingsDetailNavigation)
-        let child = try XCTUnwrap(detail.children.first as? MacSettingsViewController)
-        XCTAssertEqual(child.title, L10n.string("settings.voiceModels"))
+        let child = try XCTUnwrap(detail.children.first as? MacModelsViewController,
+                                  "The single Models button opens the Models screen")
+        XCTAssertEqual(child.title, L10n.string("models.title"))
         let back = try XCTUnwrap(descendants(detail.view).compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "settings.voiceModels.back" })
         back.performClick(nil)
