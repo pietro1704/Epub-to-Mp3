@@ -165,6 +165,9 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeTtsModelInstallOperationFail(handle: Long, kind: String, message: String): Boolean
     external fun nativeTtsModelInstallOperationCancel(handle: Long)
     external fun nativeTtsModelInstallOperationFree(handle: Long)
+    external fun nativeTtsCatalogLanguages(androidApi: Int): String?
+    external fun nativeTtsResolveLanguageModel(requestJson: String): String?
+    external fun nativeBookLanguage(path: String): String?
 
     external fun nativeLastError(): String
 

@@ -384,3 +384,87 @@ mod explicit_model_catalog_jni_tests {
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
+
+/// Base languages with at least one catalog model on Android (contract
+/// `converter_tts_catalog_languages_json_v1`).
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogLanguages(
+    env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    android_api: jint,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogLanguages",
+        std::ptr::null_mut(),
+        || {
+            let value = unsafe {
+                converter_tts_catalog_languages_json_v1(c"android".as_ptr(), android_api.max(0) as u32)
+            };
+            language_json_string(&env, value)
+        },
+    )
+}
+
+/// Resolves the narration for a book language (pure; never downloads).
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsResolveLanguageModel(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    request_json: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsResolveLanguageModel",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let Ok(request) = read_string(&mut env, request_json) else {
+                return std::ptr::null_mut();
+            };
+            let Ok(request) = CString::new(request) else {
+                return std::ptr::null_mut();
+            };
+            let value =
+                unsafe { converter_tts_resolve_language_model_json_v1(request.as_ptr()) };
+            language_json_string(&env, value)
+        },
+    )
+}
+
+/// Language analysis of a book file. Blocking: call off the UI thread.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookLanguage(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    path: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookLanguage",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let Ok(path) = read_string(&mut env, path) else {
+                return std::ptr::null_mut();
+            };
+            let Ok(path) = CString::new(path) else {
+                return std::ptr::null_mut();
+            };
+            let value = unsafe { converter_book_language_json_v1(path.as_ptr()) };
+            language_json_string(&env, value)
+        },
+    )
+}
+
+fn language_json_string(env: &JNIEnv<'_>, value: *mut std::os::raw::c_char) -> jstring {
+    if value.is_null() {
+        return std::ptr::null_mut();
+    }
+    let text = unsafe { CStr::from_ptr(value) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { converter_string_free(value) };
+    env.new_string(text)
+        .map_or(std::ptr::null_mut(), |value| value.into_raw())
+}

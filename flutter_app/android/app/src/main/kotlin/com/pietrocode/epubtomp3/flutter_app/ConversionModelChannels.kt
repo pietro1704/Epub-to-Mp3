@@ -169,6 +169,44 @@ internal class ConversionModelChannels(
                         runInstallOperation(result) { installOperation(operation, handle, call) }
                     }
                 }
+                "ttsCatalogLanguages" -> {
+                    runNative(result) {
+                        val value = nativeTtsCatalogLanguages(Build.VERSION.SDK_INT)
+                        runOnUiThread {
+                            if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                            else result.success(value)
+                        }
+                    }
+                }
+                "ttsResolveLanguageModel" -> {
+                    val request = call.argument<String>("request")
+                    if (request.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "request is required", null)
+                    } else {
+                        runNative(result) {
+                            val value = nativeTtsResolveLanguageModel(request)
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
+                "bookLanguage" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "path is required", null)
+                    } else {
+                        // Blocking (parses the book): runs on the converter executor.
+                        runNative(result) {
+                            val value = nativeBookLanguage(path)
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
                 "piperSynthesize" -> {
                     val text = call.argument<String>("text").orEmpty()
                     val output = call.argument<String>("output").orEmpty()
