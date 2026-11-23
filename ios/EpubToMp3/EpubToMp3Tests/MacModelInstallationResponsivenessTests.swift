@@ -67,7 +67,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         }
         let controller = MacSettingsViewController(
             settings: settings, library: LibraryStore(defaults: defaults),
-            speechModels: speechModels
+            speechModels: speechModels, voiceModelsOnly: true
         )
         let button = try revealFaberInstallButton(in: controller)
         XCTAssertEqual(installer.result().count, 0, "Expanding model settings must not install a model")
@@ -116,7 +116,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         }
         let controller = MacSettingsViewController(
             settings: settings, library: LibraryStore(defaults: defaults),
-            speechModels: speechModels
+            speechModels: speechModels, voiceModelsOnly: true
         )
         let button = try revealFaberInstallButton(in: controller)
         XCTAssertEqual(installer.result().count, 0, "Expanding model settings must not install a model")
@@ -168,7 +168,8 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         defer { installer.release() }
         let speechModels = try makeSpeechModels { installer.install(modelID: $0, root: $1) }
         let controller = MacSettingsViewController(
-            settings: settings, library: LibraryStore(defaults: defaults), speechModels: speechModels
+            settings: settings, library: LibraryStore(defaults: defaults), speechModels: speechModels,
+            voiceModelsOnly: true
         )
         let button = try revealFaberInstallButton(in: controller)
         let cancelled = expectation(description: "The real install confirmation was cancelled")
@@ -206,8 +207,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
             descendants(controller.view).compactMap { $0 as? NSButton }
                 .first { $0.accessibilityIdentifier() == identifier }
         }
-        XCTAssertNil(installButton(), "Model actions must initially remain collapsed")
-        try MacSpeechModelTestControls.revealModels(in: controller.view)
+        // The reader's voice-model destination opens expanded.
         return try XCTUnwrap(installButton(), "The disclosure action must expose Faber installation")
     }
 
