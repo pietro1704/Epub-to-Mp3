@@ -130,6 +130,7 @@ final class PlaybackObservation {
     // MARK: Observers
 
     func attachObservers() {
+        playbackClock.audioOutput.didMountQueue(for: snapshot?.jobId)
         queueSession.observe(time: { [weak self] in self?.observePlaybackTime($0, from: $1) },
             finished: { [weak self] in self?.handleFinishedItem($0) },
             itemChanged: { [weak self] in

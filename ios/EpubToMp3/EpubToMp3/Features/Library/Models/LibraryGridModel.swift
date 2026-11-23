@@ -15,13 +15,25 @@ import Foundation
 struct LibraryGridModel: Equatable {
 
     enum SortMode: String, CaseIterable, Identifiable {
+        case lastPlayed
         case lastOpened
         case title
         case addedDate
         var id: String { rawValue }
 
+        private static let preferenceKey = "library.sortMode.v1"
+
+        static func saved(in defaults: UserDefaults = .standard) -> Self {
+            defaults.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .lastPlayed
+        }
+
+        func save(in defaults: UserDefaults = .standard) {
+            defaults.set(rawValue, forKey: Self.preferenceKey)
+        }
+
         var label: String {
             switch self {
+            case .lastPlayed: return L10n.string("library.lastPlayed")
             case .lastOpened: return L10n.string("library.lastOpened")
             case .title: return L10n.string("library.titleSort")
             case .addedDate: return L10n.string("library.dateAdded")
@@ -38,7 +50,7 @@ struct LibraryGridModel: Equatable {
         books: [BookEntity],
         selectedTag: String? = nil,
         searchQuery: String = "",
-        sortMode: SortMode = .lastOpened
+        sortMode: SortMode = .lastPlayed
     ) {
         self.books = books
         self.selectedTag = selectedTag
@@ -63,6 +75,13 @@ struct LibraryGridModel: Equatable {
             }
         }
         switch sortMode {
+        case .lastPlayed:
+            return base.sorted { lhs, rhs in
+                if lhs.lastPlayedAt != rhs.lastPlayedAt {
+                    return (lhs.lastPlayedAt ?? .distantPast) > (rhs.lastPlayedAt ?? .distantPast)
+                }
+                return lhs.addedAt > rhs.addedAt
+            }
         case .lastOpened:
             return base.sorted {
                 ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt)

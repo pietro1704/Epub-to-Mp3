@@ -10,7 +10,9 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
 
-    private var sortMode: LibraryGridModel.SortMode = .lastOpened
+    private var sortMode = LibraryGridModel.SortMode.saved() {
+        didSet { sortMode.save() }
+    }
     private var selectedTag: String?
     private var searchQuery = ""
     private let columns = LibraryColumnPreference()
@@ -212,20 +214,11 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     }
 
     private func libraryGridModel() -> LibraryGridModel {
-        let mappedSort: LibraryGridModel.SortMode
-        switch sortMode {
-        case .lastOpened:
-            mappedSort = .lastOpened
-        case .title:
-            mappedSort = .title
-        case .addedDate:
-            mappedSort = .addedDate
-        }
         return LibraryGridModel(
             books: library.books,
             selectedTag: selectedTag,
             searchQuery: searchQuery,
-            sortMode: mappedSort
+            sortMode: sortMode
         )
     }
 

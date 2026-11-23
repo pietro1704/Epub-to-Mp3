@@ -89,10 +89,12 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
         let text: String
         let range: NSRange
         let chapterIndex: Int?
+        var bookID: String? = nil
     }
     @Published private(set) var spokenWord: SpokenWord?
     private var activeUtterance: AVSpeechUtterance?
     private var activeChapterIndex: Int?
+    private var activeBookID: String?
     @Published private(set) var state: State = .idle
 
     // Deferred to first use: AVSpeechSynthesizer init loads the TTS
@@ -136,7 +138,7 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
     /// Speak `text` aloud using the best-matching voice for
     /// `languageCode` (BCP-47, e.g. "pt-BR"). Empty text is a no-op.
     /// Unknown language tags fall back to the system default voice.
-    func speak(text: String, languageCode: String? = nil, chapterIndex: Int? = nil) {
+    func speak(text: String, languageCode: String? = nil, chapterIndex: Int? = nil, bookID: String? = nil) {
         guard !text.isEmpty else { return }
         try? sessionConfigurator.configureForSpeech()
         let utterance = AVSpeechUtterance(string: text)
@@ -147,6 +149,7 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
         // AVSpeechSynthesizer pick the system default for the user's
         // locale, which is the safe fallback behaviour.
         spokenWord = nil
+        activeBookID = bookID
         activeChapterIndex = chapterIndex
         activeUtterance = utterance
         synthesizer.speak(utterance)
@@ -184,7 +187,8 @@ extension SpeechFallbackPlayer: AVSpeechSynthesizerDelegate {
         Task { @MainActor [weak self] in
             guard let self, self.activeUtterance.map(ObjectIdentifier.init) == identity, self.state == .speaking,
                   self._synthesizer?.isSpeaking == true, self._synthesizer?.isPaused == false else { return }
-            self.spokenWord = .init(text: text, range: characterRange, chapterIndex: self.activeChapterIndex)
+            self.spokenWord = .init(text: text, range: characterRange, chapterIndex: self.activeChapterIndex,
+                                    bookID: self.activeBookID)
         }
     }
 

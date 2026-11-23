@@ -9,6 +9,50 @@ import AppKit
 @testable import EpubToMp3
 
 extension NativeResponsiveScreenTests {
+
+    func testLibraryReopensWithPlayedBookFirstUnlessAnotherSortWasChosen() throws {
+        let sortKey = "library.sortMode.v1"
+        let previous = UserDefaults.standard.object(forKey: sortKey)
+        defer { restore(previous, key: sortKey, defaults: .standard) }
+        UserDefaults.standard.removeObject(forKey: sortKey)
+
+        let opened = BookEntity(id: "opened", title: "A", bookmark: Data([1]),
+            displayFilename: "a.epub", addedAt: Date(), lastOpenedAt: Date())
+        var played = BookEntity(id: "played", title: "Z", bookmark: Data([2]),
+            displayFilename: "z.epub", addedAt: .distantPast)
+        played.lastPlayedAt = Date(timeIntervalSince1970: 42)
+        defaults.set(try JSONEncoder().encode([opened, played]), forKey: "library.books.v1")
+
+        func firstBookTile() throws -> String? {
+            let library = LibraryStore(defaults: defaults)
+            let bookmarks = BookmarkStore(defaults: defaults, storageKey: "bookmarks")
+            XCTAssertEqual(library.books.count, 2)
+#if os(iOS)
+            let controller = LibraryScreenController(library: library, settings: AppSettings(defaults: defaults),
+                player: AudioPlayer(), playerPresentation: PlayerPresentation(defaults: defaults), bookmarkStore: bookmarks)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            window.rootViewController = controller
+            window.isHidden = false
+            defer { window.isHidden = true; window.rootViewController = nil }
+            window.layoutIfNeeded()
+            let grid = try XCTUnwrap(controller.children.compactMap { $0 as? LibraryGridController }.first)
+            grid.collectionView.layoutIfNeeded()
+            let tile = try XCTUnwrap(grid.collectionView.cellForItem(at: IndexPath(item: 0, section: 0)))
+            return tile.accessibilityLabel
+#else
+            let controller = MacLibraryViewController(library: library, bookmarkStore: bookmarks,
+                onOpenBook: { _ in }, onDownloadBook: { _ in }, onConvertBook: { _ in })
+            controller.loadViewIfNeeded()
+            let grid = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSCollectionView }.first)
+            let tile = controller.collectionView(grid, itemForRepresentedObjectAt: IndexPath(item: 0, section: 0))
+            return tile.view.accessibilityLabel()
+#endif
+        }
+
+        XCTAssertEqual(try firstBookTile(), played.resolvedTitle)
+        LibraryGridModel.SortMode.title.save()
+        XCTAssertEqual(try firstBookTile(), opened.resolvedTitle)
+    }
 #if os(iOS)
     func testLibraryTilesReserveEnoughHeightForAccessibilityMetadata() throws {
         let controller = LibraryGridController(metrics: .init())

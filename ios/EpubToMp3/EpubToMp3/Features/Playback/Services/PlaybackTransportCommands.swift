@@ -173,9 +173,9 @@ final class PlaybackTransportCommands {
     /// snapshot keep it; calling `play(snapshot:)` later cleanly
     /// switches back to MP3 and stops the synthesizer in the same turn
     /// so the user never hears both transports.
-    func playFallbackSpeech(text: String, languageCode: String? = nil, chapterIndex: Int? = nil) {
+    func playFallbackSpeech(text: String, languageCode: String? = nil, chapterIndex: Int? = nil, bookID: String? = nil) {
         guard !text.isEmpty else { return }
-        speechFallback.speak(text: text, languageCode: languageCode, chapterIndex: chapterIndex)
+        speechFallback.speak(text: text, languageCode: languageCode, chapterIndex: chapterIndex, bookID: bookID)
         isUsingSpeechFallback = true
         isPlaying = true
     }
@@ -187,7 +187,8 @@ final class PlaybackTransportCommands {
             actions.play(snapshot, offset, true)
             return .startedAudio
         case .speech(let text):
-            playFallbackSpeech(text: text, languageCode: languageCode, chapterIndex: chapterIndex)
+            playFallbackSpeech(text: text, languageCode: languageCode, chapterIndex: chapterIndex,
+                               bookID: clock.audioOutput.bookID(for: snapshot?.jobId))
             return .startedSpeechFallback
         case .unavailable: return .noOp
         }

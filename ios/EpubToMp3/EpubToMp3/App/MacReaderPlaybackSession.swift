@@ -138,6 +138,8 @@ final class MacReaderPlaybackSession {
                 // The normal empty-snapshot handoff can preserve a live segment queue.
                 // A different voice needs an entirely new queue.
                 if voiceChange != nil { player.stop() }
+                PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: chapterIndex)
+                player.playbackClock.audioOutput.bindReaderJob(pending.jobId, to: book.id)
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 player.isConverting = true
                 if let seek = voiceChange?.seek { player.restoreListeningSeek(seek, jobID: jobID) }
