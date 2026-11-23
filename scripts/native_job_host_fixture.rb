@@ -50,14 +50,21 @@ module NativeJobHostFixture
       NativeJob.const_set(name, value)
     end
     HostLoad.define_singleton_method(:limits) { |*| JSON.parse(ENV.fetch("FIXTURE_LIMITS")) }
+    # Several processes (the holder and every status call) share these files: a plain File.write truncates
+    # first, so a concurrent reader could see it empty. Rename keeps each file whole at every instant.
+    fixture_write = lambda do |file, text|
+      scratch = "#{file}.#{Process.pid}.tmp"
+      File.write(scratch, text)
+      File.rename(scratch, file)
+    end
     HostLoad.define_singleton_method(:sample) do |**|
       path = ENV.fetch("FIXTURE_SAMPLES")
       calls = File.exist?("#{path}.calls") ? Integer(File.read("#{path}.calls")) + 1 : 1
-      File.write("#{path}.calls", calls)
+      fixture_write.call("#{path}.calls", calls.to_s)
       sleep Float(ENV.fetch("FIXTURE_SAMPLE_DELAY", "0")) if calls > Integer(ENV.fetch("FIXTURE_FAST_SAMPLES", "1000000"))
       queue = JSON.parse(File.read(path))
       current = queue.length > 1 ? queue.shift : queue.first
-      File.write(path, JSON.generate(queue))
+      fixture_write.call(path, JSON.generate(queue))
       current
     end
     NativeFlightRecorder.define_singleton_method(:limits) { |*| JSON.parse(ENV.fetch("FIXTURE_FLIGHT")) }

@@ -102,6 +102,14 @@ class NativeLeaseHoldersTest < Minitest::Test
     end
   end
 
+  # The holder and every status call share the fixture's sample queue; a truncating write let one see it empty.
+  def test_concurrent_host_samples_never_find_the_queue_empty
+    samples({ "a" => 1 }, { "a" => 2 })
+    body = "#{STUBS}\n400.times { HostLoad.sample }"
+    pids = Array.new(3) { start(RUBY, "-r", SCRIPT, "-e", body, err: fresh("err")) }
+    pids.each { |pid| assert exit_status(pid).success?, "a sample read found the queue empty or partial" }
+  end
+
   def test_the_linux_listing_reads_one_link_per_open_descriptor
     NativeJob.host_services
     File.write(@lock, "")
