@@ -95,6 +95,7 @@ impl PdfTextIngestion {
                 paragraph_ends,
                 heading_ends: Vec::new(),
                 level: *level,
+                footnotes: Vec::new(),
             });
         }
         Ok(Book {

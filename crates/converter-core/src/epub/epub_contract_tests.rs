@@ -1,5 +1,5 @@
 #[path = "../../tests/support/epub_fixture.rs"]
-mod epub_fixture;
+pub(super) mod epub_fixture;
 
 use super::{first_heading, html_to_text_projection, parse_epub};
 use std::io::Cursor;

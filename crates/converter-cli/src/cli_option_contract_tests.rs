@@ -200,6 +200,7 @@ fn book(chapters: &[(&str, &str)]) -> EmbeddedBookMetadata {
                 text_chars: text.chars().count(),
                 text: (*text).into(),
                 level: 1,
+                footnotes: Vec::new(),
             })
             .collect(),
     }

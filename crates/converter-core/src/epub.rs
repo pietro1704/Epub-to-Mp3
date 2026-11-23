@@ -1,10 +1,12 @@
 mod epub_chapter_content;
+mod epub_footnotes;
 mod epub_library_metadata;
 mod epub_package;
 mod epub_resources;
 use epub_chapter_content::{
     first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_title_for,
 };
+pub use epub_footnotes::Footnote;
 pub use epub_library_metadata::{read_library_metadata, LibraryMetadata};
 use epub_package::{
     normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text,
@@ -78,6 +80,8 @@ pub struct Chapter {
     /// Heading ends on the same unchanged normalized Unicode-scalar axis.
     pub heading_ends: Vec<usize>,
     pub level: u32,
+    /// Plain-text bodies of the notes this chapter links to; empty when none.
+    pub footnotes: Vec<Footnote>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +185,9 @@ fn parse_epub_document<R: Read + Seek>(
     let indices = hierarchy_indices(&toc);
     let levels = toc_levels(&toc);
     let mut chapters = Vec::new();
+    // Notes are optional, so they read from their own budget and never starve the book.
+    let mut footnote_budget = EpubReadBudget::new(limits);
+    let mut footnote_targets = epub_footnotes::FootnoteTargets::default();
     let mut markup_language = None;
     let mut orphan = indices
         .values()
@@ -214,6 +221,13 @@ fn parse_epub_document<R: Read + Seek>(
         };
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
+        let footnotes = epub_footnotes::chapter_footnotes(
+            &html,
+            &path,
+            &mut archive,
+            &mut footnote_budget,
+            &mut footnote_targets,
+        );
         chapters.push(Chapter {
             index,
             name: toc_title
@@ -224,6 +238,7 @@ fn parse_epub_document<R: Read + Seek>(
             paragraph_ends,
             heading_ends,
             level,
+            footnotes,
         });
     }
     let (cover, cover_mime) =
@@ -333,3 +348,7 @@ fn reader_void_element(name: &str) -> bool {
 #[cfg(test)]
 #[path = "epub/epub_contract_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "epub/epub_footnotes_tests.rs"]
+mod footnote_tests;
