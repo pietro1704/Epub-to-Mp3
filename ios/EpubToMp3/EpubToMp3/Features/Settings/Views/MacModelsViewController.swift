@@ -17,6 +17,13 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let audition = VoiceAuditionPresentation()
     private let table = NSTableView()
     private let statusLabel = NSTextField(labelWithString: "")
+    // The narration settings the old voice-models screen carried.
+    private let primaryPopup = NSPopUpButton()
+    private let secondaryPopup = NSPopUpButton()
+    private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private var primaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
+    private var secondaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
     private var items: [Item] = []
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
@@ -50,7 +57,35 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         scroll.hasVerticalScroller = true
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.stringValue = L10n.string("models.loading")
-        let stack = NSStackView(views: [statusLabel, scroll])
+        func label(_ key: String) -> NSTextField { NSTextField(labelWithString: L10n.string(key)) }
+        primaryPopup.target = self
+        primaryPopup.action = #selector(primaryChanged)
+        primaryPopup.setAccessibilityIdentifier("settings.tts.primary")
+        primaryPopup.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
+        secondaryPopup.target = self
+        secondaryPopup.action = #selector(secondaryChanged)
+        secondaryPopup.setAccessibilityIdentifier("settings.tts.secondary")
+        secondaryPopup.setAccessibilityLabel(L10n.string("settings.secondaryVoice"))
+        automaticFallbackButton.title = L10n.string("settings.automaticSystemFallback")
+        automaticFallbackButton.target = self
+        automaticFallbackButton.action = #selector(automaticFallbackChanged)
+        automaticFallbackButton.setAccessibilityIdentifier("settings.tts.automaticSystemFallback")
+        onlineFallbackButton.title = L10n.string("settings.onlineFallback")
+        onlineFallbackButton.target = self
+        onlineFallbackButton.action = #selector(onlineFallbackChanged)
+        onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
+        let narration = NSGridView(views: [
+            [label("settings.audioEngineChoice"), primaryPopup],
+            [label("settings.secondaryVoice"), secondaryPopup],
+            [NSView(), automaticFallbackButton],
+            [NSView(), onlineFallbackButton],
+        ])
+        narration.rowSpacing = 8
+        narration.columnSpacing = 12
+        narration.translatesAutoresizingMaskIntoConstraints = false
+        let narrationBox = NSStackView(views: [narration])
+        narrationBox.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 8, right: 16)
+        let stack = NSStackView(views: [narrationBox, statusLabel, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -93,10 +128,42 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             }
             return result
         }
+        refreshNarration()
         table.reloadData()
         presentPendingTermsIfNeeded()
         presentNewFailures()
     }
+
+    // MARK: narration
+
+    private func refreshNarration() {
+        primaryChoices = model.narrationChoices
+        secondaryChoices = model.secondaryChoices
+        primaryPopup.removeAllItems()
+        primaryPopup.addItems(withTitles: primaryChoices.map(\.title))
+        primaryPopup.selectItem(at: primaryChoices.firstIndex { $0.selection.representsSameRequest(as: model.primarySelection) } ?? -1)
+        secondaryPopup.removeAllItems()
+        secondaryPopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + secondaryChoices.map(\.title))
+        let secondaryIndex = model.secondarySelection.flatMap { selected in
+            secondaryChoices.firstIndex { $0.selection.representsSameRequest(as: selected) }
+        }
+        secondaryPopup.selectItem(at: secondaryIndex.map { $0 + 1 } ?? 0)
+        automaticFallbackButton.state = model.allowAutomaticSystemVoiceFallback ? .on : .off
+        onlineFallbackButton.state = model.allowOnlineFallback ? .on : .off
+    }
+
+    @objc private func primaryChanged() {
+        guard primaryChoices.indices.contains(primaryPopup.indexOfSelectedItem) else { return }
+        model.selectPrimary(primaryChoices[primaryPopup.indexOfSelectedItem].selection)
+    }
+
+    @objc private func secondaryChanged() {
+        let index = secondaryPopup.indexOfSelectedItem - 1
+        model.selectSecondary(secondaryChoices.indices.contains(index) ? secondaryChoices[index].selection : nil)
+    }
+
+    @objc private func automaticFallbackChanged() { model.allowAutomaticSystemVoiceFallback = automaticFallbackButton.state == .on }
+    @objc private func onlineFallbackChanged() { model.allowOnlineFallback = onlineFallbackButton.state == .on }
 
     // MARK: table
 

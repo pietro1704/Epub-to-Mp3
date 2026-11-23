@@ -225,4 +225,27 @@ final class ModelsByLanguageModelTests: XCTestCase {
         let preview = try await model.auditionChoice(for: cadu, in: "pt")
         XCTAssertEqual(preview.selection.modelID, "pt_BR-cadu-medium")
     }
+
+    func testNarrationSettingsLiveOnTheModelsScreen() async throws {
+        let (model, settings, defaults, name) = try make(FakeSource())
+        defer { defaults.removePersistentDomain(forName: name) }
+        await model.load()
+        // Default voice and reserve choices: ready models of every language, the system voice and Edge.
+        let titles = model.narrationChoices.map(\.title)
+        XCTAssertTrue(titles.contains("pt_BR-faber-medium") && titles.contains(L10n.string("settings.systemTts")))
+        XCTAssertFalse(titles.contains("pt_BR-cadu-medium"), "A model that is not downloaded is not offered as the default voice.")
+        model.selectPrimary(.systemDefault)
+        XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
+        XCTAssertFalse(model.secondaryChoices.contains { $0.selection.engine == "edge" }, "Edge needs the online consent")
+        model.allowOnlineFallback = true
+        XCTAssertTrue(settings.allowOnlineAudioFallback)
+        XCTAssertTrue(model.secondaryChoices.contains { $0.selection.engine == "edge" })
+        model.selectSecondary(.edgeDefault)
+        XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
+        model.selectSecondary(nil)
+        XCTAssertNil(settings.secondaryTtsSelection)
+        model.allowAutomaticSystemVoiceFallback = false
+        XCTAssertFalse(settings.allowAutomaticSystemVoiceFallback)
+        XCTAssertEqual(model.title(for: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil)), "pt_BR-faber-medium")
+    }
 }

@@ -136,6 +136,64 @@ final class ModelsByLanguageModel: ObservableObject {
 
     func declinePendingTerms() { pendingTerms = nil }
 
+    struct NarrationChoice: Equatable, Identifiable {
+        let selection: TtsSelection
+        let title: String
+        var id: String { "\(selection.engine):\(selection.modelID ?? ""):\(selection.voice ?? "")" }
+    }
+
+    /// Voices the user may make the default primary or reserve: every ready local
+    /// model of any language, the installed system voice, online Edge, and any
+    /// configured selection that is not in the catalog (kept so it stays visible).
+    var narrationChoices: [NarrationChoice] {
+        var choices: [NarrationChoice] = []
+        func add(_ selection: TtsSelection, _ title: String) {
+            if !choices.contains(where: { $0.selection.representsSameRequest(as: selection) }) {
+                choices.append(NarrationChoice(selection: selection, title: title))
+            }
+        }
+        for section in state.sections {
+            for row in section.rows where row.kind == .local && row.selection.engine == TtsSelection.piperEngine
+                && row.availability == .ready {
+                add(row.selection, row.title)
+            }
+        }
+        add(.systemDefault, L10n.string("settings.systemTts"))
+        add(.edgeDefault, TtsSelection.displayName(forEngine: TtsSelection.edgeEngine) ?? "Edge")
+        for selection in settings.configuredNarrationSelections { add(selection, title(for: selection)) }
+        return choices
+    }
+
+    func title(for selection: TtsSelection) -> String {
+        if selection.engine == TtsSelection.piperEngine, let id = selection.modelID {
+            for section in state.sections {
+                if let row = section.rows.first(where: { $0.selection.modelID == id }) { return row.title }
+            }
+            return id
+        }
+        return TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
+    }
+
+    /// Choices valid as a reserve for the current primary and consent.
+    var secondaryChoices: [NarrationChoice] {
+        narrationChoices.filter {
+            $0.selection.canBeSecondary(to: settings.primaryTtsSelection, allowOnlineFallback: settings.allowOnlineAudioFallback)
+        }
+    }
+
+    func selectPrimary(_ selection: TtsSelection) { settings.selectPrimaryNarration(selection) }
+    func selectSecondary(_ selection: TtsSelection?) { settings.selectSecondaryNarration(selection) }
+    var primarySelection: TtsSelection { settings.primaryTtsSelection }
+    var secondarySelection: TtsSelection? { settings.secondaryTtsSelection }
+    var allowAutomaticSystemVoiceFallback: Bool {
+        get { settings.allowAutomaticSystemVoiceFallback }
+        set { settings.allowAutomaticSystemVoiceFallback = newValue }
+    }
+    var allowOnlineFallback: Bool {
+        get { settings.allowOnlineAudioFallback }
+        set { settings.allowOnlineAudioFallback = newValue }
+    }
+
     /// The library helpers (names, details, actions) for one language's snapshot.
     func libraryState(for language: String) -> SpeechModelLibraryViewState {
         SpeechModelLibraryViewState(snapshot: snapshots.first { $0.tag == language }?.snapshot)

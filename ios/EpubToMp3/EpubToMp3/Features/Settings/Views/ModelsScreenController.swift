@@ -39,6 +39,8 @@ final class ModelsScreenController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Model")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Narration")
+        tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
         tableView.accessibilityIdentifier = "models.table"
         model.objectWillChange
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
@@ -63,7 +65,7 @@ final class ModelsScreenController: UITableViewController {
         if !didFocus, let focus = focusLanguage.map(SpeechPreferences.languageKey),
            let index = groups.firstIndex(where: { $0.language == focus }) {
             didFocus = true
-            tableView.scrollToRow(at: IndexPath(row: 0, section: index), at: .top, animated: false)
+            tableView.scrollToRow(at: IndexPath(row: 0, section: index + 1), at: .top, animated: false)
         }
     }
 
@@ -71,24 +73,34 @@ final class ModelsScreenController: UITableViewController {
 
     // MARK: data source
 
-    override func numberOfSections(in tableView: UITableView) -> Int { groups.count }
+    /// Section 0 holds the narration settings the old voice-models screen carried
+    /// (default voice, reserve voice, system-voice fallback, online consent); the
+    /// model groups follow.
+    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { groups[section].rows.count }
+    override func numberOfSections(in tableView: UITableView) -> Int { groups.count + 1 }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        section == 0 ? NarrationRow.allCases.count : groups[section - 1].rows.count
+    }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        let group = groups[section]
+        if section == 0 { return L10n.string("settings.audioEngine") }
+        let group = groups[section - 1]
         return L10n.string(group.kind == .local ? "models.section.local" : "models.section.online", languageTitle(group.language))
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let group = groups[section]
+        if section == 0 { return L10n.string("settings.audioEngineFooter") }
+        let group = groups[section - 1]
         guard group.kind == .local || group.isFirstOfLanguage,
               model.state.sections.first(where: { $0.language == group.language })?.chosen == nil else { return nil }
         return group.kind == .local ? L10n.string("models.automatic") : nil
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let group = groups[indexPath.section]
+        if indexPath.section == 0 { return narrationCell(NarrationRow(rawValue: indexPath.row)!, at: indexPath) }
+        let group = groups[indexPath.section - 1]
         let row = group.rows[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "Model", for: indexPath)
         var content = cell.defaultContentConfiguration()
@@ -137,11 +149,84 @@ final class ModelsScreenController: UITableViewController {
         raw.isEmpty || raw == "unspecified" ? nil : L10n.string("settings.modelQuality.\(raw)")
     }
 
+    private func narrationCell(_ row: NarrationRow, at indexPath: IndexPath) -> UITableViewCell {
+        switch row {
+        case .primary, .secondary:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Narration", for: indexPath)
+            var content = cell.defaultContentConfiguration()
+            if row == .primary {
+                content.text = L10n.string("settings.audioEngineChoice")
+                content.secondaryText = model.title(for: model.primarySelection)
+                cell.accessibilityIdentifier = "settings.tts.primary"
+            } else {
+                content.text = L10n.string("settings.secondaryVoice")
+                content.secondaryText = model.secondarySelection.map(model.title(for:)) ?? L10n.string("settings.noSecondary")
+                cell.accessibilityIdentifier = "settings.tts.secondary"
+            }
+            content.image = UIImage(systemName: "waveform")
+            cell.contentConfiguration = content
+            cell.accessibilityValue = content.secondaryText
+            cell.accessoryView = nil
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            return cell
+        case .automaticSystemFallback:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+            cell.configure(title: L10n.string("settings.automaticSystemFallback"),
+                           subtitle: L10n.string("settings.automaticSystemFallbackDescription"),
+                           isOn: model.allowAutomaticSystemVoiceFallback,
+                           accessibilityIdentifier: "settings.tts.automaticSystemFallback")
+            cell.onValueChanged = { [weak self] isAllowed in self?.model.allowAutomaticSystemVoiceFallback = isAllowed }
+            return cell
+        case .onlineFallback:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+            cell.configure(title: L10n.string("settings.onlineFallback"),
+                           subtitle: L10n.string("settings.onlineFallbackDescription"),
+                           isOn: model.allowOnlineFallback, accessibilityIdentifier: "settings.tts.onlineConsent")
+            cell.onValueChanged = { [weak self] isAllowed in self?.model.allowOnlineFallback = isAllowed }
+            return cell
+        }
+    }
+
+    private func presentPrimaryChoices(source indexPath: IndexPath) {
+        let alert = UIAlertController(title: L10n.string("settings.audioEngineChoice"),
+                                      message: L10n.string("settings.audioEngineChoiceDescription"), preferredStyle: .actionSheet)
+        for choice in model.narrationChoices {
+            alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
+                self?.model.selectPrimary(choice.selection)
+            })
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: indexPath)
+    }
+
+    private func presentSecondaryChoices(source indexPath: IndexPath) {
+        let alert = UIAlertController(title: L10n.string("settings.secondaryVoice"), message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: L10n.string("settings.noSecondary"), style: .default) { [weak self] _ in
+            self?.model.selectSecondary(nil)
+        })
+        for choice in model.secondaryChoices {
+            alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
+                self?.model.selectSecondary(choice.selection)
+            })
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: indexPath)
+    }
+
     // MARK: actions
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
-        let group = groups[indexPath.section]
+        if indexPath.section == 0 {
+            switch NarrationRow(rawValue: indexPath.row) {
+            case .primary: presentPrimaryChoices(source: indexPath)
+            case .secondary: presentSecondaryChoices(source: indexPath)
+            default: break
+            }
+            return
+        }
+        let group = groups[indexPath.section - 1]
         let row = group.rows[indexPath.row]
         switch row.availability {
         case .ready:
@@ -158,7 +243,8 @@ final class ModelsScreenController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
-        let group = groups[indexPath.section]
+        guard indexPath.section > 0 else { return }
+        let group = groups[indexPath.section - 1]
         presentActions(for: group.rows[indexPath.row], in: group.language, source: indexPath)
     }
 
