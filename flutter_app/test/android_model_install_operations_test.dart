@@ -15,23 +15,34 @@ class _FakeNative {
   String? recoverResult;
   String? failOn;
 
+  /// What the native recover/create return: -1 is "nothing to resume". A real handle is a
+  /// pointer, which is negative as a signed Long on devices with tagged heap pointers.
+  int recoverHandle = -1;
+  int createHandle = 42;
+  int? liveHandle;
+
   Object? handle(MethodCall call) {
     final args = Map<String, Object?>.from(call.arguments as Map);
     final op = args['op'] as String;
     calls.add(op);
     if (failOn == op) {
-      throw PlatformException(code: 'EMBEDDED_CONVERTER_UNAVAILABLE', message: 'native $op failed');
+      throw PlatformException(
+        code: 'EMBEDDED_CONVERTER_UNAVAILABLE',
+        message: 'native $op failed',
+      );
     }
     switch (op) {
       case 'freeBytes':
         return 10 * 1024 * 1024 * 1024;
       case 'recover':
-        return -1;
+        if (recoverHandle != -1) liveHandle = recoverHandle;
+        return recoverHandle;
       case 'create':
         expect(args['availableBytes'], 10 * 1024 * 1024 * 1024);
-        return 42;
+        liveHandle = createHandle;
+        return createHandle;
       case 'plan':
-        expect(args['handle'], 42);
+        expect(args['handle'], liveHandle);
         return jsonEncode({
           'operation_id': 'op',
           'model_id': 'm',
@@ -53,7 +64,9 @@ class _FakeNative {
           'event': _event('preflight'),
         });
       case 'event':
-        return jsonEncode(_event(accepted.length == 2 ? 'completed' : 'downloading'));
+        return jsonEncode(
+          _event(accepted.length == 2 ? 'completed' : 'downloading'),
+        );
       case 'recordProgress':
         downloaded = args['bytes'] as int;
         return null;
@@ -97,11 +110,15 @@ void main() {
 
   setUp(() {
     native = _FakeNative();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'modelInstallOperation');
-      return native.handle(call);
-    });
-    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'modelInstallOperation');
+          return native.handle(call);
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
   });
 
   test('a full install runs the operation through the channel and frees the handle', () async {
@@ -115,26 +132,32 @@ void main() {
 
     expect(events.last.stage, ModelInstallStage.completed);
     expect(native.calls.first, 'freeBytes');
-    expect(native.calls.sublist(1, 3), ['recover', 'create'], reason: 'recover first, then begin');
+    expect(native.calls.sublist(1, 3), [
+      'recover',
+      'create',
+    ], reason: 'recover first, then begin');
     expect(native.calls.where((c) => c == 'accept').length, 2);
     expect(native.calls.where((c) => c == 'recordProgress'), isNotEmpty);
     expect(native.calls, containsAllInOrder(['publish', 'free']));
     expect(native.calls.last, 'free');
   });
 
-  test('a native failure while accepting fails the operation and still frees it', () async {
-    native.failOn = 'accept';
-    final operations = AndroidModelInstallOperations(channel);
-    final events = await ModelInstallRunner(
-      operations: operations,
-      download: _fakeDownload,
-      freeBytes: operations.freeBytes,
-    ).install(modelId: 'm', root: '/models').toList();
+  test(
+    'a native failure while accepting fails the operation and still frees it',
+    () async {
+      native.failOn = 'accept';
+      final operations = AndroidModelInstallOperations(channel);
+      final events = await ModelInstallRunner(
+        operations: operations,
+        download: _fakeDownload,
+        freeBytes: operations.freeBytes,
+      ).install(modelId: 'm', root: '/models').toList();
 
-    expect(native.calls, containsAllInOrder(['accept', 'fail', 'free']));
-    expect(native.calls, isNot(contains('publish')));
-    expect(events.last.stage, isNot(ModelInstallStage.completed));
-  });
+      expect(native.calls, containsAllInOrder(['accept', 'fail', 'free']));
+      expect(native.calls, isNot(contains('publish')));
+      expect(events.last.stage, isNot(ModelInstallStage.completed));
+    },
+  );
 
   test('cancelling reaches the native operation', () async {
     final operations = AndroidModelInstallOperations(channel);
@@ -142,11 +165,18 @@ void main() {
     final events = <ModelInstallEvent>[];
     await for (final event in ModelInstallRunner(
       operations: operations,
-      download: ({required url, required destination, required expectedBytes, required onBytes, required cancellation}) async {
-        token.cancel();
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-        if (cancellation.isCancelled) throw const ModelInstallCancelled();
-      },
+      download:
+          ({
+            required url,
+            required destination,
+            required expectedBytes,
+            required onBytes,
+            required cancellation,
+          }) async {
+            token.cancel();
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+            if (cancellation.isCancelled) throw const ModelInstallCancelled();
+          },
       freeBytes: operations.freeBytes,
     ).install(modelId: 'm', root: '/models', cancellation: token)) {
       events.add(event);
@@ -154,5 +184,46 @@ void main() {
     expect(native.calls, contains('cancel'));
     expect(native.calls, isNot(contains('publish')));
     expect(native.calls.last, 'free');
+  });
+
+  // SM-X620 (Android 14): the native handle is a pointer with a heap tag in the top byte,
+  // so it is negative as a Long. Only 0 is an error and only -1 means "nothing to resume".
+  const tagged = -5476376642457427968; // 0xB4000000_00000000
+
+  test('a native handle that is negative as a Long (tagged pointer) is a live operation', () async {
+    native.createHandle = tagged;
+    final operations = AndroidModelInstallOperations(channel);
+    final events = await ModelInstallRunner(
+      operations: operations,
+      download: _fakeDownload,
+      freeBytes: operations.freeBytes,
+      progressStep: 50,
+    ).install(modelId: 'm', root: '/models').toList();
+
+    expect(events.last.stage, ModelInstallStage.completed);
+    expect(native.calls.where((c) => c == 'create').length, 1);
+    expect(native.calls, containsAllInOrder(['publish', 'free']));
+  });
+
+  test('an interrupted operation recovered with a tagged handle is resumed, never created twice', () async {
+    native.recoverHandle = tagged;
+    final operations = AndroidModelInstallOperations(channel);
+    final events = await ModelInstallRunner(
+      operations: operations,
+      download: _fakeDownload,
+      freeBytes: operations.freeBytes,
+      progressStep: 50,
+    ).install(modelId: 'm', root: '/models').toList();
+
+    expect(events.last.stage, ModelInstallStage.completed);
+    expect(
+      native.calls,
+      isNot(contains('create')),
+      reason: 'the recovered operation is used as is',
+    );
+    expect(
+      native.calls,
+      containsAllInOrder(['recover', 'plan', 'publish', 'free']),
+    );
   });
 }
