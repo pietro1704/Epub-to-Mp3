@@ -68,10 +68,10 @@ final class LibraryGridModelTests: XCTestCase {
         let suite = "library-open-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library")
         let a = make(id: "a", title: "A", addedAt: date(100), lastOpenedAt: date(500))
         let b = make(id: "b", title: "B", addedAt: date(200))
-        library.books = [a, b]
+        defaults.set(try JSONEncoder().encode([a, b]), forKey: "library")
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library")
         func order() -> [String] { LibraryGridModel(books: library.books).arrangedBooks().map(\.id) }
         XCTAssertEqual(order(), ["a", "b"], "A was opened before; B was only added")
         // Reading: opening B for the reader stamps it, with no playback recorded.
