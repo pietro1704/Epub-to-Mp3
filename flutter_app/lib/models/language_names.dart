@@ -2,6 +2,15 @@
 /// model catalog. They do not depend on the app language, which is how language
 /// pickers conventionally list languages. Unknown tags fall back to the tag.
 const _endonyms = <String, String>{
+  'ur': 'اردو',
+  'te': 'తెలుగు',
+  'sq': 'Shqip',
+  'nb': 'Norsk bokmål',
+  'ml': 'മലയാളം',
+  'lv': 'Latviešu',
+  'ku': 'Kurdî',
+  'hy': 'Հայերեն',
+  'eu': 'Euskara',
   'ar': 'العربية',
   'bg': 'Български',
   'ca': 'Català',
