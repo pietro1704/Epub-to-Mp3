@@ -29,6 +29,31 @@ array in the packaged application.
   interruption/privacy semantics. Background permission must not override an
   intentional user pause.
 
+### Growing (still-synthesizing) audio
+
+Prepared local audio keeps the process alive because it renders continuously.
+Growing audio is produced by Rust on its own thread and delivered to the main
+actor segment by segment (`StreamingPlaybackChunkDelivery`); Rust blocks until
+each file-backed segment is accepted. If the player drains the synthesized
+queue while the screen is off, nothing renders, iOS can suspend the app despite
+`UIBackgroundModes=audio`, and synthesis halts until the device wakes
+(reproduced on iPhone 16e, iOS 27.2.1, 2026-11-22). Two bounded mitigations:
+
+- `PlaybackStarvationWindow` (owned by `PlaybackQueueSession`) holds one
+  `beginBackgroundTask` only while the user wants audio, synthesis is still
+  running and the player is not rendering. It ends when rendering resumes, on
+  pause, completion, teardown or system expiry, and is not re-requested after
+  an expiry until audio renders again.
+- Rust may run `StreamingPlaybackChunkDelivery.lookaheadSegments` (12) file-backed
+  segments ahead of the player queue (was 2; hard cap
+  `SegmentBacklog.maximumDeferredSegmentCount`), so a slowdown does not drain
+  the queue immediately.
+
+The background task is a grace period of at most the system allowance, not
+unlimited background computation. If synthesis cannot stay ahead of playback
+while locked, the app will still stall; that requires the physical acceptance
+below.
+
 The metadata repair introduces no additional runtime owner, interface or
 dependency. UI layout and expanded-player controls are separate responsibilities.
 
@@ -51,6 +76,11 @@ continuity. Final physical-device acceptance must verify:
 5. Pause intentionally and repeat background/foreground transitions: playback
    must stay paused. Exercise genuine interruptions and headphone removal.
 6. Confirm there is one playback session and system controls address it.
+
+Growing-audio acceptance: select a never-converted chapter, tap Listen, and
+lock the phone while synthesis is in progress; the lock-screen elapsed time must
+keep advancing in real time through the lock (compare against wall time over
+at least 150 s) without waking the device.
 
 Physical-device acceptance is deferred to the final combined iPhone journey
 requested by Pietro. No metadata assertion substitutes for that journey.

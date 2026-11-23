@@ -14,7 +14,12 @@ final class PlaybackQueueSession: ObservableObject {
     /// AVQueuePlayer advances to the next item. `nil` in snapshot mode.
     @Published private(set) var activeSentenceId: String?
     private let clock: PlaybackClock
-    init(clock: PlaybackClock? = nil) { self.clock = clock ?? PlaybackClock() }
+    /// Keeps the process alive across a short synthesis underrun while locked.
+    let starvation: PlaybackStarvationWindow
+    init(clock: PlaybackClock? = nil) {
+        self.clock = clock ?? PlaybackClock()
+        starvation = PlaybackStarvationWindow()
+    }
     func selectChapter(_ chapter: Int) { currentChapterIndex = chapter }
     func selectSentence(_ sentence: String?) { activeSentenceId = sentence }
     nonisolated static let maximumAhead = 5
@@ -66,6 +71,7 @@ final class PlaybackQueueSession: ObservableObject {
     func clearOwnership() { ownedPlayerItemIDs.removeAll() }
 
     func teardown() {
+        starvation.release()
         clock.audioOutput.clear()
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         timeObserverToken = nil
@@ -83,12 +89,14 @@ final class PlaybackQueueSession: ObservableObject {
     func observe(time: @escaping @MainActor @Sendable (CMTime, AVQueuePlayer) -> Void,
                  finished: @escaping @MainActor @Sendable (AVPlayerItem) -> Void,
                  itemChanged: @escaping @MainActor @Sendable () -> Void,
-                 duration: @escaping @MainActor @Sendable (TimeInterval) -> Void) {
+                 duration: @escaping @MainActor @Sendable (TimeInterval) -> Void,
+                 outputChanged: @escaping @MainActor @Sendable (_ isRendering: Bool) -> Void = { _ in }) {
         guard let player else { return }
         outputObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 guard let self, self.player === player else { return }
                 if player.timeControlStatus != .playing { self.clock.audioOutput.clear() }
+                outputChanged(player.timeControlStatus == .playing)
             }
         }
         if let item = player.currentItem { bindDuration(to: item, in: player, changed: duration) }

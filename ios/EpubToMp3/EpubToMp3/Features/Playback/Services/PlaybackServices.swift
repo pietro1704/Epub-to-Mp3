@@ -89,7 +89,8 @@ final class PlaybackServices {
             state: { [weak authority] in
                 guard let authority else { return .empty }
                 return .init(snapshot: authority.snapshot, isPlaying: authority.isPlaying, isSeeking: authority.isSeeking,
-                             segmentMode: authority.usesSegmentQueue, rate: authority.rate, coverArtData: authority.coverArtData)
+                             segmentMode: authority.usesSegmentQueue, rate: authority.rate, coverArtData: authority.coverArtData,
+                             isAwaitingSynthesis: authority.isConverting)
             }, playing: { [weak authority] in authority?.playbackPlayingChanged($0) },
             paused: { [weak authority] in authority?.playbackPauseOwnershipChanged($0) },
             streamingChapter: { [weak authority] in authority?.playbackStreamingChapterChanged($0) },

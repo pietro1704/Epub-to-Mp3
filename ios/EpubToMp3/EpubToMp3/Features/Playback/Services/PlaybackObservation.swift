@@ -16,6 +16,8 @@ final class PlaybackObservation {
         let segmentMode: Bool
         let rate: PlaybackRate
         let coverArtData: Data?
+        /// True while on-device synthesis may still deliver more audio.
+        var isAwaitingSynthesis = false
         static let empty = State(snapshot: nil, isPlaying: false, isSeeking: false,
                                  segmentMode: false, rate: .x100, coverArtData: nil)
     }
@@ -144,6 +146,12 @@ final class PlaybackObservation {
                 self.durationSeconds = self.isSegmentMode ? self.segments.chapterDuration : duration
                 self.seeking.applyPendingProportionalSeek()
                 self.updateNowPlayingInfo()
+            }, outputChanged: { [weak self] isRendering in
+                guard let self else { return }
+                let state = self.actions.state()
+                self.queueSession.starvation.update(
+                    wantsAudio: state.isPlaying && state.segmentMode,
+                    awaitingSynthesis: state.isAwaitingSynthesis, isRendering: isRendering)
             })
     }
 

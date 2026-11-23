@@ -23,6 +23,13 @@ final class StreamingPlaybackChunkDelivery: @unchecked Sendable {
         }
     }
 
+    /// File-backed segments Rust may run ahead of the player's own queue
+    /// (`PlaybackQueueSession.maximumAhead`). Disk-only and bounded by
+    /// `SegmentBacklog.maximumDeferredSegmentCount`; a deeper cushion lets
+    /// playback outlast a screen-off synthesis slowdown, when an emptied queue
+    /// would let iOS suspend the app.
+    static let lookaheadSegments = 12
+
     private let player: AudioPlayer
 
     init(player: AudioPlayer) {
@@ -51,7 +58,7 @@ final class StreamingPlaybackChunkDelivery: @unchecked Sendable {
                 data: data,
                 chapterIndex: chapterIndex,
                 segmentIndex: chunkIndex,
-                maximumDeferredSegments: 2
+                maximumDeferredSegments: Self.lookaheadSegments
             )
             if accepted { onAccepted() }
             gate.resolve(accepted)
