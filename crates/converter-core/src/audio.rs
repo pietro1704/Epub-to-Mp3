@@ -10,7 +10,7 @@ mod wave_bounds;
 
 pub use audio_archive::{create_archive, validate_archive};
 pub use audio_validation::{probe_duration, probe_sample_rate, validate_audio};
-pub use mp3_assembly::{finalize_mp3, mp3_needs_finalization};
+pub use mp3_assembly::{finalize_mp3, join_mp3_segments, mp3_needs_finalization};
 pub use mp3_metadata::{embed_cover, ChapterMetadata};
 
 use std::io;

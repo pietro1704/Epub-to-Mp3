@@ -134,7 +134,13 @@ pub(super) fn append(
             "Narration pause exceeds segment limit",
         ));
     }
-    bytes.extend(silence);
+    // One stream, one aggregate header: the silence is part of the segment's declared length.
+    *bytes = crate::audio::join_mp3_segments(&[bytes.as_slice(), &silence]).map_err(|error| {
+        TtsFailure::new(
+            FailureKind::InvalidAudio,
+            format!("Narration pause could not join the segment: {error}"),
+        )
+    })?;
     Ok(())
 }
 
@@ -160,6 +166,31 @@ mod tests {
     }
 
     #[test]
+    fn a_paused_segment_is_one_stream_whose_header_counts_every_frame() {
+        // A streamed chunk is played on its own: its Info/Xing header must declare the
+        // speech AND the silence, or Apple decoders report a shorter length than they decode.
+        let directory = tempfile::tempdir().unwrap();
+        let speech = encode_pcm_f32(&vec![0.1; 12_000], 24_000).unwrap();
+        let alone = directory.path().join("speech.mp3");
+        std::fs::write(&alone, &speech).unwrap();
+        let mut paused = speech.clone();
+        append(&mut paused, 310, &context()).unwrap();
+        let path = directory.path().join("paused.mp3");
+        std::fs::write(&path, &paused).unwrap();
+        assert!(
+            !crate::audio::mp3_needs_finalization(&path).unwrap(),
+            "the header must declare the whole segment, not only the speech"
+        );
+        let expected = crate::audio::probe_duration(&alone).unwrap() + 0.310;
+        let declared = crate::audio::probe_duration(&path).unwrap();
+        assert!(
+            (declared - expected).abs() < 0.06,
+            "declared {declared} s, speech + pause {expected} s"
+        );
+        crate::audio::validate_audio(&path, 1).unwrap();
+    }
+
+    #[test]
     fn pause_is_encoded_audio_and_ordinary_text_is_unchanged() {
         let original = encode_pcm_f32(&vec![0.1; 2_400], 24_000).unwrap();
         let mut ordinary = original.clone();
@@ -170,7 +201,11 @@ mod tests {
         let added = crate::pcm::mp3_duration_seconds(&headed).unwrap()
             - crate::pcm::mp3_duration_seconds(&original).unwrap();
         assert!((0.8..0.95).contains(&added), "encoded pause: {added}");
-        assert!(headed.starts_with(&original));
+        // The aggregate header replaces the first frame; the speech frames stay untouched.
+        let header = rusty_mp3::header::FrameHeader::parse(original[..4].try_into().unwrap())
+            .unwrap()
+            .frame_size();
+        assert!(headed[header..].starts_with(&original[header..]));
     }
 
     #[test]
