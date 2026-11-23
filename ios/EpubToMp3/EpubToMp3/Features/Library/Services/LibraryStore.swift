@@ -253,9 +253,18 @@ final class LibraryStore: ObservableObject {
         persist()
     }
 
+    func recordPlayback(of bookID: String, at date: Date = Date()) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }),
+              books[index].lastPlayedAt.map({ $0 < date }) ?? true else { return }
+        books[index].lastPlayedAt = date
+        persist()
+    }
+
     func update(_ book: BookEntity) {
         guard let i = books.firstIndex(where: { $0.id == book.id }) else { return }
-        books[i] = book
+        var updated = book
+        updated.lastPlayedAt = books[i].lastPlayedAt
+        books[i] = updated
         persist()
     }
 
