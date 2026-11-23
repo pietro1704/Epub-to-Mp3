@@ -56,12 +56,17 @@ final class MacReaderPlaybackSession {
               book.fileType.supportsAudioConversion else { return }
         // The book's language is resolved first (analysis off the main thread, cached per book), unless
         // the listener made an explicit per-job selection.
+        let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
         if optionsOverride == nil {
-            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterOverride,
-                pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            // The Play intent (chapter and page) is captured now, not after the asynchronous resolution.
+            let capturedRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
+            // The request is visibly in progress right away (buttons, duplicate Play) while Rust resolves.
+            localPlaybackBookID = book.id
+            isStartingLocalPlayback = true
+            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterIndex,
+                pageRatioOverride: .some(capturedRatio), pdfAnchor: pdfAnchor, voiceChange: voiceChange)
             return
         }
-        let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
         let chapterStart = Int32(exactly: chapterIndex) ?? 0
         let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
         cancel(stopPlayer: false)
@@ -267,6 +272,14 @@ final class MacReaderPlaybackSession {
         languageResolution = token
         Task { [weak self, weak owner] in
             guard let self else { return }
+            var handedOver = false
+            // Not started (superseded, cancelled alert, deallocated owner): the pending state is dropped.
+            defer {
+                if !handedOver, languageResolution == token || languageResolution == nil, localPlaybackGeneration == nil {
+                    localPlaybackBookID = nil
+                    isStartingLocalPlayback = false
+                }
+            }
             let outcome = await LanguageModelPlayback.outcome(
                 for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
             let stillWanted = { [weak self] in
@@ -274,8 +287,9 @@ final class MacReaderPlaybackSession {
                     && UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id
             }
             guard stillWanted(), let owner else { return }
-            languageResolution = nil
             @MainActor func begin(_ options: ConversionOptions) {
+                handedOver = true
+                languageResolution = nil
                 // Explicit options: the resolver is skipped on this second pass.
                 start(owner: owner, optionsOverride: options, chapterOverride: chapterOverride,
                       pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)

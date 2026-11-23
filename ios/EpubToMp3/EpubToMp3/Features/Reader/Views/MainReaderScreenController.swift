@@ -501,18 +501,19 @@ final class MainReaderScreenController: UIViewController {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
-        // The book's language is resolved first (analysis off the main thread, cached per book), unless
-        // the listener made an explicit per-job selection or this is the retry after a recovery.
-        if optionsOverride == nil, recovery == nil, !languageResolved {
-            resolveLanguageModelThenStart(book: book, presentsFullPlayer: presentsFullPlayer, requestedChapter: requestedChapter,
-                requestedRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor)
-            return
-        }
         MiniPlayerDismissal(defaults: sessionDefaults).allowPlayback(bookID: book.id)
         let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         let pageRatio = ReaderListeningStartLocation.pageRatio(bookID: book.id, chapter: priority,
             explicitRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor, defaults: sessionDefaults)
+        // The book's language is resolved first (analysis off the main thread, cached per book), unless
+        // the listener made an explicit per-job selection or this is the retry after a recovery. The Play
+        // intent (chapter and page) is captured now, not after the asynchronous resolution.
+        if optionsOverride == nil, recovery == nil, !languageResolved {
+            resolveLanguageModelThenStart(book: book, presentsFullPlayer: presentsFullPlayer, requestedChapter: priority,
+                requestedRatio: pageRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor)
+            return
+        }
         let catalog = readerController?.playbackChapterCatalog
             ?? LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters.map {
                 (index: $0.zeroBasedEpubIndex, title: $0.displayTitle)
