@@ -19,7 +19,9 @@ class RustBuildCacheTest < Minitest::Test
     cache = steps.last
     assert_equal 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9', cache.fetch('uses')
     options = cache.fetch('with')
-    assert_equal %w[~/.cargo/registry ~/.cargo/git target], options.fetch('path').split
+    assert_equal ['~/.cargo/registry', '~/.cargo/git', "${{ inputs.cache-target == 'true' && 'target' || '' }}"],
+                 options.fetch('path').lines.map(&:strip).reject(&:empty?)
+    assert_equal 'true', action.fetch('inputs').fetch('cache-target').fetch('default')
     key = options.fetch('key')
     prefixes = options.fetch('restore-keys').lines.map(&:strip)
     [key, *prefixes].each do |entry|
@@ -28,10 +30,11 @@ class RustBuildCacheTest < Minitest::Test
       end
     end
     %w[Cargo.toml Cargo.lock .cargo/** mise.toml].each { |input| assert_includes key, "'#{input}'" }
-    assert_includes key, "hashFiles('crates/**/*.rs', 'native/piper-runtime/**/*.rs')"
-    assert_equal 2, prefixes.length
-    assert key.start_with?(prefixes.first), 'Source changes must restore compatible dependency builds'
-    assert prefixes.first.start_with?(prefixes.last), 'Lockfile changes may reuse dependencies within the same toolchain'
+    # Measured in CI run 45231415477: an exact key hit with identical sources still
+    # recompiled every workspace crate, so a source hash only multiplies entries.
+    refute_includes key, "'crates/**/*.rs'"
+    assert_equal 1, prefixes.length
+    assert key.start_with?(prefixes.first), 'Lockfile changes may reuse dependencies within the same toolchain'
     refute cache.key?('if'), 'A hit must never skip validation commands'
   end
 
@@ -70,5 +73,16 @@ class RustBuildCacheTest < Minitest::Test
   def test_codeql_builds_remain_outside_the_uninstrumented_cache
     source = File.read(File.join(ROOT, '.github/workflows/codeql.yml'))
     refute_includes source, './.github/actions/rust-build-cache'
+  end
+
+  def test_audit_keeps_only_registry_downloads_and_rails_jobs_skip_the_mise_cache
+    audit = workflow('rust-dependency-audit.yml').fetch('jobs').fetch('audit').fetch('steps')
+    cache = audit.find { |step| step['uses'] == './.github/actions/rust-build-cache' }
+    assert_equal 'false', cache.fetch('with').fetch('cache-target')
+    mise = lambda do |steps|
+      steps.find { |step| step.fetch('uses', '').start_with?('jdx/mise-action@') }.fetch('with')
+    end
+    assert_equal false, mise.call(workflow('ci.yml').fetch('jobs').fetch('rails-web').fetch('steps')).fetch('cache')
+    assert_equal false, mise.call(workflow('rails-real-model.yml').fetch('jobs').values.first.fetch('steps')).fetch('cache')
   end
 end

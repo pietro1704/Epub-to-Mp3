@@ -212,9 +212,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}-${{ matrix.platform }}
+          key: apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-${{ matrix.platform }}
           restore-keys: |
-            apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}-
             apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh', 'native/vendor/espeak-rs-sys/espeak-ng/cmake/**', 'native/vendor/espeak-rs-sys/espeak-ng/src/sonic/**') }}-
 
       # The embedded Rust library and the Xcode project are built before the

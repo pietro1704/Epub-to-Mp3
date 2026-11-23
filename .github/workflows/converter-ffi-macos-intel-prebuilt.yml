@@ -67,7 +67,7 @@ jobs:
             ~/.cargo/registry
             target/release
             target/espeak-data
-          key: faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs', 'native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
+          key: faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
           restore-keys: |
             faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
 

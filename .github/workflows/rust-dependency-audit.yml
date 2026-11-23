@@ -33,6 +33,9 @@ jobs:
         uses: ./.github/actions/rust-build-cache
         with:
           namespace: dependency-audit
+          # Only the registry is reused: the filtered test and check rebuild
+          # quickly and a 0.4 GB target entry evicts more valuable caches.
+          cache-target: 'false'
       - name: Verify ZIP compatibility in the shared runtime
         run: mise exec -- cargo test --locked -p converter-core --lib epub::tests
       - name: Check the shared runtime

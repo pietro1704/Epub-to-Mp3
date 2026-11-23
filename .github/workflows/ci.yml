@@ -207,7 +207,7 @@ jobs:
             ~/.cargo/git
             target
             native/piper-runtime/target
-          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}
+          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
             rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
             rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-
@@ -277,6 +277,7 @@ jobs:
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install toolchain
         env:
