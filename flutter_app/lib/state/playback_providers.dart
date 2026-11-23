@@ -37,6 +37,16 @@ final playbackRequestProvider = StateProvider<Future<void> Function()?>(
   (ref) => null,
 );
 
+/// Paces local synthesis while the app is backgrounded (see
+/// [BackgroundPacingController]).
+final backgroundPacingProvider = Provider<BackgroundPacingController>((ref) {
+  // Captured now: a provider cannot be read while it is being disposed.
+  final converter = ref.read(embeddedConverterProvider);
+  final controller = BackgroundPacingController(converter: () => converter);
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
 final playbackResumePersistenceProvider = Provider<PlaybackResumePersistence>((
   ref,
 ) {

@@ -22,6 +22,7 @@ module AndroidJniExports
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogLanguages
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsResolveLanguageModel
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookLanguage
+    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeSetBackgroundCpuLimit
   ].freeze
 
   def self.verify!(output, label: 'Android JNI library')

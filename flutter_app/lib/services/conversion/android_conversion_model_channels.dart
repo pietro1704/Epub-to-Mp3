@@ -1,8 +1,19 @@
 part of 'android_converter_channel.dart';
 
 mixin _AndroidConversionModelChannels
-    implements EmbeddedConverter, ManualTtsModelCatalog {
+    implements EmbeddedConverter, ManualTtsModelCatalog, BackgroundPacingCapable {
   MethodChannel get _channel;
+
+  @override
+  Future<void> setBackgroundCpuLimit(int percent) async {
+    try {
+      await _channel.invokeMethod<void>('setBackgroundCpuLimit', {'percent': percent});
+    } on MissingPluginException {
+      // Older platform builds have no pacing entry point.
+    } on PlatformException {
+      // Pacing is best effort; the conversion itself is unaffected.
+    }
+  }
 
   @override
   Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() async {

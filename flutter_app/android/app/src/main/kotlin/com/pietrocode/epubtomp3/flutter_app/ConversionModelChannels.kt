@@ -169,6 +169,20 @@ internal class ConversionModelChannels(
                         runInstallOperation(result) { installOperation(operation, handle, call) }
                     }
                 }
+                "setBackgroundCpuLimit" -> {
+                    // Stores an atomic: answered at once, never queued behind a conversion.
+                    val percent = call.argument<Number>("percent")?.toInt()
+                    if (percent == null) {
+                        result.error("BAD_ARGS", "percent is required", null)
+                    } else {
+                        try {
+                            nativeSetBackgroundCpuLimit(percent)
+                            result.success(null)
+                        } catch (error: UnsatisfiedLinkError) {
+                            result.success(null)
+                        }
+                    }
+                }
                 "ttsCatalogLanguages" -> {
                     runNative(result) {
                         val value = nativeTtsCatalogLanguages(Build.VERSION.SDK_INT)
