@@ -30,6 +30,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private lazy var audioHighlight = ReaderAudioHighlightPresentation(
         document: document, player: player, textView: composition.textView, settings: settings)
 
+    private lazy var narrationPairing = ReaderNarrationPairingPresentation(
+        document: document, player: player, composition: composition)
+
     private func configureNativeReader() {
         composition.configure(isPaginatedMode: isPaginatedMode, textDelegate: annotations,
             scrollDelegate: interaction, gestureDelegate: interaction)
@@ -208,6 +211,8 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         settingsPresentation.applyReaderColors()
         settingsPresentation.observe()
         audioHighlight.observe()
+        narrationPairing.observe()
+        interaction.onViewportChange = { [weak self] in self?.narrationPairing.refresh() }
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }
@@ -222,8 +227,9 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         if parent == nil, isViewLoaded {
             annotations.cancelSearch()
             audioHighlight.stop()
+            narrationPairing.stop()
         }
-        if parent != nil, isViewLoaded { audioHighlight.observe() }
+        if parent != nil, isViewLoaded { audioHighlight.observe(); narrationPairing.observe() }
         super.willMove(toParent: parent)
     }
 
@@ -271,6 +277,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         audioHighlight.clear()
         textPresentation.showChapter(index, preparedRendering: preparedRendering)
         audioHighlight.refresh()
+        narrationPairing.refresh()
     }
 
     override func viewWillDisappear(_ animated: Bool) {

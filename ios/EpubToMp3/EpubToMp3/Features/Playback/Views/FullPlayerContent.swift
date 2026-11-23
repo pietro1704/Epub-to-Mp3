@@ -20,6 +20,7 @@ struct FullPlayerControlActions {
     let nextChapterTapped: Selector
     let tocTapped: Selector
     var coverTapped: Selector? = nil
+    var goToReadingTapped: Selector? = nil
 }
 
 @MainActor
@@ -41,6 +42,7 @@ final class FullPlayerContent {
     let skipForwardButton = UIButton(type: .system)
     let nextChapterButton = UIButton(type: .system)
     let rateButton = UIButton(type: .system)
+    let goToReadingButton = UIButton(type: .system)
     let tocButton = UIButton(type: .system)
     let sleepButton = UIButton(type: .system)
     let airPlayContainer = UIView()
@@ -201,6 +203,28 @@ final class FullPlayerContent {
         rateButton.accessibilityLabel = L10n.string("player.speed")
         rateButton.showsMenuAsPrimaryAction = true
 
+        var goConfig = UIButton.Configuration.filled()
+        goConfig.title = L10n.string("player.goToReading")
+        goConfig.image = UIImage(systemName: "book")
+        goConfig.imagePadding = 6
+        goConfig.cornerStyle = .medium
+        goConfig.contentInsets = .init(top: 8, leading: 12, bottom: 8, trailing: 12)
+        goConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFontMetrics(forTextStyle: .body).scaledFont(
+                for: .systemFont(ofSize: 17, weight: .semibold), maximumPointSize: 20, compatibleWith: traits)
+            return outgoing
+        }
+        goToReadingButton.configuration = goConfig
+        goToReadingButton.translatesAutoresizingMaskIntoConstraints = false
+        goToReadingButton.accessibilityIdentifier = "fullPlayer.goToReading"
+        goToReadingButton.accessibilityLabel = L10n.string("player.goToReading")
+        goToReadingButton.isHidden = true
+        goToReadingButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if let action = actions.goToReadingTapped {
+            goToReadingButton.addTarget(actionTarget, action: action, for: .touchUpInside)
+        }
+
         PlayerTransportPresentation.configureSecondaryButton(tocButton, actionTarget: actionTarget, image: "list.bullet", title: nil, action: actions.tocTapped)
         PlayerTransportPresentation.configureSecondaryButton(sleepButton, actionTarget: actionTarget, image: "moon.zzz", title: nil, action: nil)
         tocButton.accessibilityIdentifier = "fullPlayer.tableOfContents"
@@ -226,7 +250,7 @@ final class FullPlayerContent {
             airPlayHeight,
         ])
 
-        let secondary = UIStackView(arrangedSubviews: [rateButton, UIView(), tocButton, sleepButton, airPlayContainer])
+        let secondary = UIStackView(arrangedSubviews: [rateButton, goToReadingButton, UIView(), tocButton, sleepButton, airPlayContainer])
         secondary.axis = .horizontal
         secondary.alignment = .center
         secondary.spacing = FullPlayerLayoutMetrics.elementSpacing
@@ -274,7 +298,7 @@ final class FullPlayerContent {
             volumeView.heightAnchor.constraint(equalToConstant: 34),
         ])
         let controls = [previousChapterButton, skipBackButton, playPauseButton,
-                        skipForwardButton, nextChapterButton, rateButton, tocButton, sleepButton]
+                        skipForwardButton, nextChapterButton, rateButton, goToReadingButton, tocButton, sleepButton]
         for control in controls {
             NSLayoutConstraint.activate([
                 control.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),

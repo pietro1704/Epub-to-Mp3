@@ -326,6 +326,7 @@
 
 /* === PlayerView === */
 "player.speed" = "Velocidad";
+"player.goToReading" = "Ir a la lectura";
 "player.audiobookFallback" = "Audiolibro";
 
 /* === Reader selection === */

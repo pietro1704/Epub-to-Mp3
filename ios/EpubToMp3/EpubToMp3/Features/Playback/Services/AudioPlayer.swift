@@ -116,6 +116,8 @@ final class AudioPlayer: ObservableObject {
 
     /// Shared only with transport surfaces, separate from structural publication.
     let playbackClock: PlaybackClock
+    /// Published by the reader: true while it shows the narrated passage (see ReaderNarrationPairing).
+    let readerPairing = ReaderNarrationPairing()
 
     @Published private(set) var isUsingSpeechFallback: Bool = false
 
