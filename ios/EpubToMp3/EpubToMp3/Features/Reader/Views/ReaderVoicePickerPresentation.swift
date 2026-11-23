@@ -5,22 +5,38 @@ import UIKit
 enum ReaderVoicePickerPresentation {
     static func present(from reader: UIViewController, anchor: UIBarButtonItem?, request: ReaderVoicePickerRequest) {
         guard reader.presentedViewController == nil else { return }
-        Task { [weak reader, weak anchor] in
+        Task { @MainActor [weak reader, weak anchor] in
             guard let picker = request.picker() else { return }
-            // Only the book's language, only what is ready; the study-language catalog is the fallback.
-            let content = await ReaderModelSwitch.content(picker: picker, request: request)
-            let snapshot = content == nil ? try? await SpeechModelLibraryClient.shared.snapshot() : nil
+            // Only the book's language, only what is ready. The menu opens at once: with the book's models
+            // already listed that is immediate; otherwise it opens with the active voice and fills in when ready.
+            let work = Task { @MainActor in await ReaderModelSwitch.content(picker: picker, request: request) }
+            let ready = await ReaderModelSwitch.firstResult(of: work, within: 0.12)
             guard let reader, reader.viewIfLoaded?.window != nil, reader.presentedViewController == nil else { return }
-            let alert = makeAlert(picker: picker, content: content, catalog: SpeechModelLibraryViewState(snapshot: snapshot),
-                                  settings: request.settings) { [weak reader] in
-                guard let reader, reader.viewIfLoaded?.window != nil, request.currentContext() != nil else { return }
-                presentModels(on: reader, request: request, language: content?.language)
+            @MainActor func alert(_ content: ReaderModelSwitch.Content?) -> UIAlertController {
+                let alert = makeAlert(picker: picker, content: content, catalog: SpeechModelLibraryViewState(snapshot: nil),
+                                      settings: request.settings) { [weak reader] in
+                    guard let reader, reader.viewIfLoaded?.window != nil, request.currentContext() != nil else { return }
+                    presentModels(on: reader, request: request, language: content?.language)
+                }
+                alert.popoverPresentationController?.barButtonItem = anchor
+                alert.popoverPresentationController?.sourceView = reader.view
+                alert.popoverPresentationController?.sourceRect = CGRect(
+                    x: reader.view.bounds.midX, y: reader.view.bounds.minY, width: 1, height: 1)
+                return alert
             }
-            alert.popoverPresentationController?.barButtonItem = anchor
-            alert.popoverPresentationController?.sourceView = reader.view
-            alert.popoverPresentationController?.sourceRect = CGRect(
-                x: reader.view.bounds.midX, y: reader.view.bounds.minY, width: 1, height: 1)
-            reader.present(alert, animated: true)
+            if let ready {
+                reader.present(alert(ready), animated: true)
+                return
+            }
+            let placeholder = alert(nil)
+            reader.present(placeholder, animated: true)
+            guard let full = await work.value else { return }
+            // The listing arrived while the menu is still up: replace it with the complete one.
+            guard reader.presentedViewController === placeholder else { return }
+            placeholder.dismiss(animated: false) { [weak reader] in
+                guard let reader, reader.viewIfLoaded?.window != nil, reader.presentedViewController == nil else { return }
+                reader.present(alert(full), animated: false)
+            }
         }
     }
 
@@ -72,7 +88,9 @@ final class MacReaderVoicePickerPresenter {
             guard let self else { return }
             defer { self.isOpening = false }
             guard let picker = request.picker() else { return }
-            // Only the book's language, only what is ready; the study-language catalog is the fallback.
+            // Only the book's language, only what is ready; the study-language catalog is the fallback. A popup
+            // menu cannot update once it is up, so it waits for the listing, which is cached per book (and
+            // scanned off the main thread) after the first opening.
             let content = await ReaderModelSwitch.content(picker: picker, request: request)
             let snapshot = content == nil ? try? await SpeechModelLibraryClient.shared.snapshot() : nil
             guard let reader, let anchor, anchor.window != nil, reader.presentedViewControllers?.isEmpty != false else { return }

@@ -22,9 +22,16 @@ enum ReaderModelSwitch {
     }
 
     private static var cachedLanguages: [String: String] = [:]
+    private struct Listing { let language: String; let snapshot: SpeechModelSnapshot }
+    private static var listings: [String: Listing] = [:]
+    private static var cachedSystemVoiceLanguages: Set<String>?
 
     /// Test hook: forget everything cached for the menu.
-    static func resetCachesForTesting() { cachedLanguages = [:] }
+    static func resetCachesForTesting() {
+        cachedLanguages = [:]
+        listings = [:]
+        cachedSystemVoiceLanguages = nil
+    }
 
     /// The authoritative language of the book, analyzed once per book by Rust.
     static func bookLanguage(of book: BookEntity, library: LibraryStore) async -> String? {
@@ -38,24 +45,66 @@ enum ReaderModelSwitch {
         return tag
     }
 
-    /// `nil` when the language is unknown: the caller keeps the study-language catalog list.
+    /// Installed system voices are scanned once, off the main thread: asking AVFoundation for them can take
+    /// a noticeable time, and it used to happen on the tap that opens the menu.
+    private static func systemVoices(_ scan: @escaping @Sendable () -> Set<String>) async -> Set<String> {
+        if let cached = cachedSystemVoiceLanguages { return cached }
+        let scanned = await Task.detached(priority: .userInitiated) { scan() }.value
+        cachedSystemVoiceLanguages = scanned
+        return scanned
+    }
+
+    /// `nil` when the language is unknown: the caller keeps the study-language catalog list. Once the book's
+    /// models were listed, the cached listing answers at once and a refresh updates it for the next opening.
     static func content(
         picker: ReaderVoicePicker, request: ReaderVoicePickerRequest,
         source: ModelsByLanguageSource = SpeechModelsSource(),
-        systemVoiceLanguages: @Sendable () -> Set<String> = ModelsByLanguageModel.installedSystemVoiceLanguages,
+        systemVoiceLanguages: @escaping @Sendable () -> Set<String> = ModelsByLanguageModel.installedSystemVoiceLanguages,
         languageOf: ((BookEntity) async -> String?)? = nil
     ) async -> Content? {
         guard let book = request.currentContext()?.book else { return nil }
         let resolved: String?
         if let languageOf { resolved = await languageOf(book) } else { resolved = await bookLanguage(of: book, library: request.library) }
-        guard let tag = resolved,
-              let snapshot = try? await source.snapshot(language: SpeechPreferences.languageKey(tag)) else { return nil }
+        guard let tag = resolved else { return nil }
+        let language = SpeechPreferences.languageKey(tag)
+        let voices = await systemVoices(systemVoiceLanguages)
+        let snapshot: SpeechModelSnapshot
+        if let cached = listings[book.id], cached.language == language {
+            snapshot = cached.snapshot
+            Task { @MainActor in
+                if let fresh = try? await source.snapshot(language: language) { listings[book.id] = Listing(language: language, snapshot: fresh) }
+            }
+        } else {
+            guard let fresh = try? await source.snapshot(language: language) else { return nil }
+            listings[book.id] = Listing(language: language, snapshot: fresh)
+            snapshot = fresh
+        }
         let state = ModelsByLanguageViewState.make(
-            languages: [.init(tag: SpeechPreferences.languageKey(tag), snapshot: snapshot)],
+            languages: [.init(tag: language, snapshot: snapshot)],
             choices: request.settings.languageModelChoices,
             allowOnlineFallback: request.settings.allowOnlineAudioFallback,
-            systemVoiceLanguages: systemVoiceLanguages())
-        return content(language: SpeechPreferences.languageKey(tag), rows: state.sections.first?.rows ?? [], picker: picker)
+            systemVoiceLanguages: voices)
+        return content(language: language, rows: state.sections.first?.rows ?? [], picker: picker)
+    }
+
+    /// The first outcome of `work` within `seconds`; `nil` means it is still running (it keeps going).
+    static func firstResult<T: Sendable>(of work: Task<T, Never>, within seconds: Double) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work.value }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Prepares the menu for the book so its first opening is instant (language, catalogue, installed voices).
+    static func warm(request: ReaderVoicePickerRequest) {
+        guard let picker = request.picker() else { return }
+        Task { @MainActor in _ = await content(picker: picker, request: request) }
     }
 
     /// Pure part: ready rows of the language become the choices; the active voice
