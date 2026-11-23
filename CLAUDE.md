@@ -9,6 +9,9 @@ Current user instructions take precedence over repository defaults.
 Book opening goes directly to the reader, without a Read/Listen/Download landing
 screen. Do not introduce new user-facing screens without Pietro's explicit request.
 
+Never run the iPhone SE (1st generation) Simulator without Pietro's explicit
+permission for that run, and only while he is actively using the Mac.
+
 Apple clients use native Swift (UIKit/AppKit) and embedded Rust
 `converter-core`/`converter-ffi`. Rust owns conversion, provider/model selection,
 progress, cancellation and artifacts. CLI, web and Flutter use Rust binaries,

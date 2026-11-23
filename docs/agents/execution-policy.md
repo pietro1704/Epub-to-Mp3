@@ -53,7 +53,12 @@ source/build inputs match; selecting the app toolchain does not authorize a
 dependency rebuild, runtime download or Simulator execution.
 
 Required reader Simulator acceptance uses iPhone SE (1st generation), iOS 15.2
-and Xcode 26.3, as explicitly selected by Pietro on 2026-11-05. Keep only the
+and Xcode 26.3, as explicitly selected by Pietro on 2026-11-05. Since 2026-11-23,
+any SE1 run (boot, install or test) needs Pietro's explicit permission for that
+run and happens only while he is actively using the Mac, because it can crash
+the host. Without it, record the SE1 part as a question for Pietro and accept
+on macOS meanwhile. The Arch host and the Galaxy A8 stay powered with the Mac and
+are available for Android/Linux checks at any time. Keep only the
 iOS 15.2 and 26.2 runtimes. macOS builds may retain Xcode 16.4 through
 `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`; preserve that installed
 toolchain without changing the global selection.
