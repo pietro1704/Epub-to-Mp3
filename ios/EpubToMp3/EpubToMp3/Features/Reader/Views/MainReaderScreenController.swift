@@ -19,6 +19,7 @@ final class MainReaderScreenController: UIViewController {
         currentBookID: { [weak self] in self?.currentBook?.id }, library: { [weak self] in self?.library },
         reportFailure: { [weak self] in self?.reportListeningFailure($0) })
     private let listeningRecovery = ReaderListeningRecovery()
+    private var languageResolutionTask: Task<Void, Never>?
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
     var onReaderLoadingChanged: ((Bool) -> Void)?
@@ -466,12 +467,47 @@ final class MainReaderScreenController: UIViewController {
             request: request)
     }
 
+    private func resolveLanguageModelThenStart(book: BookEntity, presentsFullPlayer: Bool, requestedChapter: Int?,
+                                               requestedRatio: Double?, voiceChange: ReaderVoiceChange?,
+                                               pdfAnchor: PDFReadingAudioMap.Anchor?) {
+        languageResolutionTask?.cancel()
+        languageResolutionTask = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await LanguageModelPlayback.outcome(
+                for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
+            let isCurrent = { [weak self] in self?.currentBook?.id == book.id && !Task.isCancelled }
+            guard isCurrent() else { return }
+            @MainActor func begin(options: ConversionOptions? = nil, recovery: TtsRecoveryAlert.Choice? = nil) {
+                startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: requestedChapter,
+                               requestedRatio: requestedRatio, recovery: recovery, optionsOverride: options,
+                               voiceChange: voiceChange, pdfAnchor: pdfAnchor, languageResolved: true)
+            }
+            switch outcome {
+            case .useSettings: begin()
+            case let .use(preferences): begin(options: NarrationConversionOptions.current(for: preferences))
+            case let .missing(language):
+                // Never downloads on its own: the recovery alert asks (download, system voice, Models).
+                let error = LanguageModelPlayback.missingModelError(language: language)
+                if let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: isCurrent), isCurrent() {
+                    begin(recovery: choice)
+                }
+            }
+        }
+    }
+
     private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil, recovery: TtsRecoveryAlert.Choice? = nil,
                                 optionsOverride: ConversionOptions? = nil, voiceChange: ReaderVoiceChange? = nil,
-                                pdfAnchor: PDFReadingAudioMap.Anchor? = nil) {
+                                pdfAnchor: PDFReadingAudioMap.Anchor? = nil, languageResolved: Bool = false) {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
+        // A language with a stored model choice is resolved first (off the main thread, cached per
+        // book). Without one, with an explicit per-job selection or after a recovery, nothing changes.
+        if optionsOverride == nil, recovery == nil, !languageResolved, !settings.languageModelChoices.isEmpty {
+            resolveLanguageModelThenStart(book: book, presentsFullPlayer: presentsFullPlayer, requestedChapter: requestedChapter,
+                requestedRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor)
+            return
+        }
         MiniPlayerDismissal(defaults: sessionDefaults).allowPlayback(bookID: book.id)
         let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)

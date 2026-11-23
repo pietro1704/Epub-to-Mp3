@@ -25,7 +25,7 @@ enum TtsRecoveryAlert {
             guard !Task.isCancelled, isCurrent(), let selected else { return nil }
             return Choice(candidate: selected, language: mismatch.language)
             #else
-            return await TtsLanguageDownload.offer(for: mismatch, isCurrent: isCurrent)
+            return await MacTtsMissingVoiceAlert.choose(for: mismatch, isCurrent: isCurrent)
             #endif
         }
         let selected = await select(candidates, suggested: suggested, language: mismatch.language)

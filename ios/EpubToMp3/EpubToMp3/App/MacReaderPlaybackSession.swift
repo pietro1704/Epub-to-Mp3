@@ -54,6 +54,13 @@ final class MacReaderPlaybackSession {
               let book = library.books.first(where: { $0.id == bookID }),
               // Comics are read visually; there is no text to narrate (matches iOS reader listening).
               book.fileType.supportsAudioConversion else { return }
+        // A language with a stored model choice is resolved first (off the main thread, cached per
+        // book). Without one, or with an explicit per-job selection, nothing changes.
+        if optionsOverride == nil, !settings.languageModelChoices.isEmpty {
+            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterOverride,
+                pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            return
+        }
         let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
         let chapterStart = Int32(exactly: chapterIndex) ?? 0
         let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
@@ -247,6 +254,42 @@ final class MacReaderPlaybackSession {
                 alert.informativeText = AppErrorReporter.message(error, context: "Reader listening")
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
+            }
+        }
+    }
+
+    private var languageResolution: UUID?
+
+    private func resolveLanguageModelThenStart(book: BookEntity, owner: AnyObject, chapterOverride: Int?,
+                                               pageRatioOverride: Double??, pdfAnchor: PDFReadingAudioMap.Anchor?,
+                                               voiceChange: ReaderVoiceChange?) {
+        let token = UUID()
+        languageResolution = token
+        Task { [weak self, weak owner] in
+            guard let self else { return }
+            let outcome = await LanguageModelPlayback.outcome(
+                for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
+            let stillWanted = { [weak self] in
+                self?.languageResolution == token
+                    && UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id
+            }
+            guard stillWanted(), let owner else { return }
+            languageResolution = nil
+            @MainActor func begin(_ options: ConversionOptions) {
+                // Explicit options: the resolver is skipped on this second pass.
+                start(owner: owner, optionsOverride: options, chapterOverride: chapterOverride,
+                      pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            }
+            let saved = NarrationConversionOptions.current(for: settings.ttsPreferences)
+            switch outcome {
+            case .useSettings: begin(saved)
+            case let .use(preferences): begin(NarrationConversionOptions.current(for: preferences))
+            case let .missing(language):
+                // Never downloads on its own: the recovery alert asks (download, system voice, Models).
+                let error = LanguageModelPlayback.missingModelError(language: language)
+                if let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: stillWanted), stillWanted() {
+                    begin(saved.recovering(with: choice.candidate, language: choice.language))
+                }
             }
         }
     }

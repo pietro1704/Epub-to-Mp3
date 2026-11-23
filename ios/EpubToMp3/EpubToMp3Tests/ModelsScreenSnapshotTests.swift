@@ -65,5 +65,25 @@ final class ModelsScreenSnapshotTests: XCTestCase {
     }
 
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+
+    /// The macOS missing-model alert (same text and buttons as iOS), light and dark.
+    func testRenderMissingModelAlert() async throws {
+        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
+            ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let alert = MacTtsMissingVoiceAlert.makeAlert(language: "pt-BR", recommended: nil, systemAvailable: true)
+            alert.window.appearance = NSAppearance(named: appearance)
+            alert.window.isReleasedWhenClosed = false
+            alert.layout()
+            alert.window.center()
+            alert.window.orderFront(nil)
+            for _ in 0..<20 { try await Task.sleep(nanoseconds: 50_000_000) }
+            let png = try windowPNG(alert.window)
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("missing-model-alert-\(name).png"))
+            alert.window.close()
+        }
+    }
 }
 #endif
