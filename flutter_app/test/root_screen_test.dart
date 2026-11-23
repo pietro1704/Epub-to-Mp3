@@ -166,7 +166,7 @@ void main() {
       await t.tap(find.text('Settings').last);
       await t.pumpAndSettle();
 
-      expect(find.text('Primary narration'), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings-models-row')), findsOneWidget);
     });
   });
 }

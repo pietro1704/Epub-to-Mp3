@@ -10,6 +10,7 @@ import '../models/tts_preferences.dart';
 import '../services/conversion/model_install/model_install_models.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
 import '../state/providers.dart';
+import 'settings_screen.dart' show InstalledNarrationModelsCard, VoiceSelectionSettings;
 
 /// Narration models grouped by book language. The user picks, per language,
 /// which model plays books in it (or Automatic); Rust resolves the rest at job
@@ -251,44 +252,70 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     final allowOnline = ref.watch(settingsProvider).ttsPreferences.allowOnlineFallback;
     return Scaffold(
       appBar: AppBar(title: Text(t.modelsTitle)),
-      body: FutureBuilder<_ModelsData>(
-        future: _data,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done && !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(t.modelsLoadFailed, textAlign: TextAlign.center),
-              ),
-            );
-          }
-          final data = snapshot.requireData;
-          if (data.languages.isEmpty) {
-            return Center(child: Text(t.modelsEmpty));
-          }
-          return ListView(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(t.modelsSubtitle, style: Theme.of(context).textTheme.bodyMedium),
-              ),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: Text(
-                    _error!,
-                    key: const ValueKey('models-error'),
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+      // Default/reserve voice and the online consent live here, as on the
+      // Apple Models screen (Settings keeps a single row). They stay available
+      // even when the language catalog cannot be loaded.
+      body: ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: VoiceSelectionSettings(),
+          ),
+          FutureBuilder<_ModelsData>(
+            future: _data,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done &&
+                  !snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(t.modelsLoadFailed, textAlign: TextAlign.center),
+                );
+              }
+              final data = snapshot.requireData;
+              if (data.languages.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(child: Text(t.modelsEmpty)),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      t.modelsSubtitle,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
-                ),
-              for (final language in data.languages)
-                _languageSection(language, data, choices, allowOnline, t),
-            ],
-          );
-        },
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      child: Text(
+                        _error!,
+                        key: const ValueKey('models-error'),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  for (final language in data.languages)
+                    _languageSection(language, data, choices, allowOnline, t),
+                ],
+              );
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: InstalledNarrationModelsCard(),
+          ),
+        ],
       ),
     );
   }

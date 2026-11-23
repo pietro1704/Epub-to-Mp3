@@ -89,6 +89,10 @@ Future<(_ModelsConverter, SharedPreferences)> _pump(
     final controller = fake.events;
     if (controller != null && !controller.isClosed) unawaited(controller.close());
   });
+  // The screen now also hosts the narration settings, so it needs room.
+  tester.view.physicalSize = const Size(1000, 3200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -204,7 +208,7 @@ void main() {
     await _settle(tester);
     final online = find.byKey(const ValueKey('model-pt-edge-pt'));
     expect(find.text('Online'), findsOneWidget);
-    expect(find.textContaining('Allow online fallback'), findsOneWidget);
+    expect(find.textContaining('Allow online fallback'), findsWidgets);
     await tester.tap(online);
     await _settle(tester);
     expect(_stored(prefs).choiceFor('pt'), isNull, reason: 'no consent, no choice');
