@@ -12,9 +12,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<List<int>> _inkRows(WidgetTester tester, GlobalKey boundary) async {
-  final render = boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+  final render =
+      boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
   final image = (await tester.runAsync(() => render.toImage()))!;
-  final data = (await tester.runAsync(() => image.toByteData(format: ui.ImageByteFormat.rawRgba)))!;
+  final data = (await tester.runAsync(
+    () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+  ))!;
   final width = image.width;
   final rows = <int>[];
   for (var y = 0; y < image.height; y++) {
@@ -44,38 +47,148 @@ List<int> _lineHeights(List<int> rows) {
 }
 
 void main() {
-  for (final lineHeight in [1.4, 1.6, 1.85]) {
-    testWidgets('every page shows whole lines only (line height $lineHeight)', (tester) async {
+  _fractionalViewport();
+  for (final surfaceHeight in [
+    333.0,
+    347.0,
+    359.0,
+    361.0,
+    372.0,
+    389.0,
+    401.0,
+    417.0,
+    590.0,
+  ]) {
+    const lineHeight = 1.6;
+    testWidgets(
+      'every page shows whole lines only (surface height $surfaceHeight)',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+        final settings = MirrorAppSettings(
+          await SharedPreferences.getInstance(),
+        );
+        final paragraphs = List.generate(
+          30,
+          (i) =>
+              'Esta é a frase número ${i + 1} do capítulo em HTML, com texto suficiente para quebrar em várias linhas.',
+        );
+        final boundary = GlobalKey();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              backgroundColor: Colors.white,
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: RepaintBoundary(
+                  key: boundary,
+                  child: SizedBox(
+                    width: 400,
+                    height: surfaceHeight,
+                    child: RichReaderSurface(
+                      chapter: FulltextChapter(
+                        index: 0,
+                        text: paragraphs.join('\n'),
+                        html: paragraphs.map((p) => '<p>$p</p>').join(),
+                      ),
+                      settings: settings,
+                      background: Colors.white,
+                      foreground: Colors.black,
+                      bodyStyle: TextStyle(
+                        fontSize: 16,
+                        height: lineHeight,
+                        fontFamily: 'Ahem',
+                        color: Colors.black,
+                      ),
+                      headingStyle: const TextStyle(
+                        fontSize: 24,
+                        fontFamily: 'Ahem',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        var pages = 0;
+        for (var page = 0; page < 40; page++) {
+          // The page indicator ("n / m") is ink too: only look above it.
+          final rows = (await _inkRows(
+            tester,
+            boundary,
+          )).where((y) => y < surfaceHeight - 28).toList();
+          final heights = _lineHeights(rows);
+          expect(
+            heights,
+            isNotEmpty,
+            reason: 'page $page (surface $surfaceHeight) is blank',
+          );
+          // Ahem draws every glyph as a full square, so a whole line has the full height
+          // of the tallest run on the page; a cut line is shorter.
+          final whole = heights.reduce((a, b) => a > b ? a : b);
+          expect(
+            heights.where((h) => h != whole),
+            isEmpty,
+            reason: 'page $page has a line drawn cut: ink run heights $heights',
+          );
+          pages++;
+          final before =
+              (tester
+                      .widget<SingleChildScrollView>(
+                        find.byKey(const ValueKey('rich-reader-viewport')),
+                      )
+                      .controller!)
+                  .offset;
+          await tester.tapAt(
+            const Offset(560, 100),
+          ); // the right edge turns the page
+          await tester.pumpAndSettle();
+          final after =
+              (tester
+                      .widget<SingleChildScrollView>(
+                        find.byKey(const ValueKey('rich-reader-viewport')),
+                      )
+                      .controller!)
+                  .offset;
+          if (after == before) break;
+        }
+        expect(pages, greaterThan(3));
+      },
+    );
+  }
+}
+
+void _fractionalViewport() {
+  testWidgets(
+    'the page viewport has a whole-pixel height (no half-pixel leak of the next line)',
+    (tester) async {
       SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
       final settings = MirrorAppSettings(await SharedPreferences.getInstance());
       final paragraphs = List.generate(
-        30,
-        (i) => 'Esta é a frase número ${i + 1} do capítulo em HTML, com texto suficiente para quebrar em várias linhas.',
+        20,
+        (i) =>
+            'Frase número ${i + 1} para paginar o capítulo em várias páginas.',
       );
-      final boundary = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            backgroundColor: Colors.white,
             body: Align(
               alignment: Alignment.topCenter,
-              child: RepaintBoundary(
-                key: boundary,
-                child: SizedBox(
-                  width: 400,
-                  height: 360,
-                  child: RichReaderSurface(
-                    chapter: FulltextChapter(
-                      index: 0,
-                      text: paragraphs.join('\n'),
-                      html: paragraphs.map((p) => '<p>$p</p>').join(),
-                    ),
-                    settings: settings,
-                    background: Colors.white,
-                    foreground: Colors.black,
-                    bodyStyle: TextStyle(fontSize: 20, height: lineHeight, fontFamily: 'Ahem', color: Colors.black),
-                    headingStyle: const TextStyle(fontSize: 24, fontFamily: 'Ahem'),
+              child: SizedBox(
+                width: 400,
+                height: 361.5,
+                child: RichReaderSurface(
+                  chapter: FulltextChapter(
+                    index: 0,
+                    text: paragraphs.join('\n'),
+                    html: paragraphs.map((p) => '<p>$p</p>').join(),
                   ),
+                  settings: settings,
+                  background: Colors.white,
+                  foreground: Colors.black,
+                  bodyStyle: const TextStyle(fontSize: 16, height: 1.6),
+                  headingStyle: const TextStyle(fontSize: 24),
                 ),
               ),
             ),
@@ -83,28 +196,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      var pages = 0;
-      for (var page = 0; page < 40; page++) {
-        // The page indicator ("n / m") is ink too: only look above it.
-        final rows = (await _inkRows(tester, boundary)).where((y) => y < 360 - 28).toList();
-        final heights = _lineHeights(rows);
-        expect(heights, isNotEmpty);
-        // Ahem draws every glyph as a full square, so a whole line has the full height
-        // of the tallest run on the page; a cut line is shorter.
-        final whole = heights.reduce((a, b) => a > b ? a : b);
-        expect(
-          heights.where((h) => h != whole),
-          isEmpty,
-          reason: 'page $page has a line drawn cut: ink run heights $heights',
-        );
-        pages++;
-        final before = (tester.widget<SingleChildScrollView>(find.byKey(const ValueKey('rich-reader-viewport'))).controller!).offset;
-        await tester.tapAt(const Offset(560, 100)); // the right edge turns the page
-        await tester.pumpAndSettle();
-        final after = (tester.widget<SingleChildScrollView>(find.byKey(const ValueKey('rich-reader-viewport'))).controller!).offset;
-        if (after == before) break;
-      }
-      expect(pages, greaterThan(3));
-    });
-  }
+      final height = tester
+          .getSize(find.byKey(const ValueKey('rich-reader-viewport')))
+          .height;
+      expect(height % 1, 0, reason: 'viewport height $height');
+    },
+  );
 }
