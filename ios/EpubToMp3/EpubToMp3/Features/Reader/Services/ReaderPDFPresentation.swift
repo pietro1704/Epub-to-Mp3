@@ -235,6 +235,7 @@ final class ReaderPDFPresentation {
         switch ReaderTapAction.resolve(point: point, in: view.bounds, isPaginated: settings?.readerLayout == .paginated) {
         case .toggleChrome: onToggleChrome?()
         case .turnPage(let forward): turnPage(forward: forward)
+        case .scrollScreen: break // PDF has no scrolling fallback; edge taps only exist in paginated mode
         case .none: break
         }
     }

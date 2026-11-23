@@ -87,15 +87,37 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
         switch ReaderTapAction.resolve(
             point: pointInView,
             in: composition.view.bounds,
-            isPaginated: textPresentation.isPaginatedMode
+            isPaginated: textPresentation.isPaginatedMode,
+            scrollsScreenOnEdgeTap: textPresentation.isScrollingFallback
         ) {
         case .toggleChrome:
             toggleChromeVisibility()
         case let .turnPage(forward):
             navigatePage(forward: forward)
+        case let .scrollScreen(forward):
+            scrollScreen(forward: forward)
         case .none:
             return
         }
+    }
+
+    /// Edge tap in a chapter that fell back from pages to scrolling: move one screen (a line of overlap keeps the
+    /// place), and at either end go to the neighbouring chapter like a page turn would.
+    func scrollScreen(forward: Bool) {
+        guard canNavigateReader else { return }
+        let viewport = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
+        guard viewport > 1 else { return }
+        let maximum = max(0, scrollView.contentSize.height + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
+        let current = scrollView.contentOffset.y
+        let step = viewport * 0.9
+        if forward {
+            if current >= maximum - 0.5 { navigateScrollChapter(forward: true); return }
+            scrollView.setContentOffset(CGPoint(x: 0, y: min(maximum, current + step)), animated: false)
+        } else {
+            if current <= 0.5 { navigateScrollChapter(forward: false); return }
+            scrollView.setContentOffset(CGPoint(x: 0, y: max(0, current - step)), animated: false)
+        }
+        readingPosition.persistReadingProgress()
     }
 
     func turnPageLeft() { turnPage(forward: false) }

@@ -26,6 +26,21 @@ final class ReaderTapActionTests: XCTestCase {
         )
     }
 
+    /// A paginated book whose chapter fell back to scrolling (a fragment taller than a page) must never leave the
+    /// edge columns dead: left/right taps scroll a screen. A reader that chose scrolling keeps its edges inert.
+    func testEdgeTapsInAChapterThatFellBackFromPaginatedScrollAScreen() {
+        let left = CGPoint(x: 20, y: 380), right = CGPoint(x: 370, y: 380)
+        XCTAssertEqual(ReaderTapAction.resolve(point: left, in: readerBounds, isPaginated: false,
+                                               scrollsScreenOnEdgeTap: true), .scrollScreen(forward: false))
+        XCTAssertEqual(ReaderTapAction.resolve(point: right, in: readerBounds, isPaginated: false,
+                                               scrollsScreenOnEdgeTap: true), .scrollScreen(forward: true))
+        XCTAssertEqual(ReaderTapAction.resolve(point: CGPoint(x: 195, y: 380), in: readerBounds, isPaginated: false,
+                                               scrollsScreenOnEdgeTap: true), .toggleChrome)
+        XCTAssertEqual(ReaderTapAction.resolve(point: left, in: readerBounds, isPaginated: false), .none)
+        XCTAssertEqual(ReaderTapAction.resolve(point: left, in: readerBounds, isPaginated: true,
+                                               scrollsScreenOnEdgeTap: true), .turnPage(forward: false))
+    }
+
     func testCenterTapAlwaysTogglesReaderChrome() {
         for y in [20, 380, 740] {
             XCTAssertEqual(

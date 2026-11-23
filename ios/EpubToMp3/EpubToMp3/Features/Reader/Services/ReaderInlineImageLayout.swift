@@ -14,7 +14,8 @@ import AppKit
 enum ReaderInlineImageLayout {
     static func fitting(
         _ source: NSAttributedString,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        maximumHeight: CGFloat? = nil
     ) -> NSAttributedString? {
         guard source.length > 0, maximumWidth > 0 else { return nil }
 
@@ -31,7 +32,9 @@ enum ReaderInlineImageLayout {
             let imageSize = image.size
             guard imageSize.width > 0, imageSize.height > 0 else { return }
 
-            let scale = min(1, maximumWidth / imageSize.width)
+            // Taller than a page, an image cannot be paginated: cap it to the usable page height as well.
+            let heightScale = maximumHeight.map { $0 > 0 ? $0 / imageSize.height : 1 } ?? 1
+            let scale = min(1, maximumWidth / imageSize.width, heightScale)
             let size = CGSize(
                 width: imageSize.width * scale,
                 height: imageSize.height * scale

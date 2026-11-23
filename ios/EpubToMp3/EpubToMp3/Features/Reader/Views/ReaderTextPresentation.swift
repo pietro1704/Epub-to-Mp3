@@ -31,10 +31,16 @@ final class ReaderTextPresentation {
     var lastRenderedGeometry: (margin: Double, layout: ReaderLayout, showsNumbers: Bool)?
     var uiTestPageNumber: Int?
     private var needsTextLayoutRefresh = false
-    private var lastInlineImageViewportWidth: CGFloat?
+    private struct FitKey: Equatable { let width: CGFloat; let height: CGFloat? }
+    private var lastInlineImageFit: FitKey?
 
     var isPaginatedMode: Bool {
         settings.readerLayout == .paginated && !forcesScrollingForOversizedFragment
+    }
+
+    /// The user chose pages but this chapter had to be presented as a continuous scroll.
+    var isScrollingFallback: Bool {
+        settings.readerLayout == .paginated && forcesScrollingForOversizedFragment
     }
 
     var hasMeasuredTextLayout: Bool {
@@ -136,13 +142,22 @@ final class ReaderTextPresentation {
         )
         let displayScale = composition.view.window?.screen.scale ?? UIScreen.main.scale
         let viewportWidth = (availableWidth * displayScale).rounded() / displayScale
-        guard lastInlineImageViewportWidth != viewportWidth else { return }
-        lastInlineImageViewportWidth = viewportWidth
+        // A page holds one image at most this tall (with room for its line); only paginated layout needs the cap.
+        let inset = composition.textView.textContainerInset
+        let usablePage = composition.scrollView.bounds.height - inset.top - inset.bottom
+        let maximumHeight: CGFloat? = settings.readerLayout == .paginated && usablePage > 1
+            ? (usablePage * 0.9 * displayScale).rounded(.down) / displayScale : nil
+        let fitKey = FitKey(width: viewportWidth, height: maximumHeight)
+        guard lastInlineImageFit != fitKey else { return }
+        lastInlineImageFit = fitKey
         guard let fitted = ReaderInlineImageLayout.fitting(
             composition.textView.attributedText,
-            maximumWidth: viewportWidth
+            maximumWidth: viewportWidth,
+            maximumHeight: maximumHeight
         ) else { return }
         composition.textView.attributedText = fitted
+        // Resized images can make a chapter paginable that was measured while they were still too tall.
+        forcesScrollingForOversizedFragment = false
         requestTextLayoutRefresh()
     }
 
@@ -173,7 +188,7 @@ final class ReaderTextPresentation {
         // The fallback belongs to a single measured chapter and viewport.
         // A new chapter must always be allowed to attempt canonical paging.
         forcesScrollingForOversizedFragment = false
-        lastInlineImageViewportWidth = nil
+        lastInlineImageFit = nil
         let epubIndex = ReaderPlaybackAnchor.epubIndex(
             forReaderPosition: index,
             in: document.fulltext?.chapters ?? []
