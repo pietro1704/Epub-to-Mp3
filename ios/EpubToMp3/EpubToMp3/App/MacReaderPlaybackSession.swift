@@ -8,15 +8,26 @@ final class MacReaderPlaybackSession {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
-    private let makePlaybackControl: @MainActor () throws -> ConverterPlaybackControl
-    private(set) var localPlaybackBookID: String?
-    private(set) var isStartingLocalPlayback = false
-    private(set) var localPlaybackGeneration: String?
-    private var requestedPDFPosition: (chapter: Int, offset: Int)?
-    private var requestedVoice: TtsSelection?
-    private(set) var startingVoicePosition: ReaderVoiceChange?
-    private var localPlaybackChapters: [JobSnapshot.Chapter] = []
-    private(set) var localPlaybackControl: ConverterPlaybackControl?
+    private let makePlaybackControl: (@MainActor () throws -> ConverterPlaybackControl)?
+    private let recovery = ReaderListeningRecovery()
+    private weak var owner: AnyObject?
+
+    private lazy var listening = ReaderListeningSession(
+        player: player, playerPresentation: playerPresentation, conversionExecutor: conversionExecutor,
+        currentBookID: { [weak player] in player?.location.readingBookID },
+        openBook: { [library] id in try await library.openBookFileAsync(id: id) },
+        recordConversion: { [library] jobID, bookID in library.recordConversion(jobId: jobID, for: bookID) },
+        reportFailure: { [weak self] error in self?.reportFailure(error) },
+        chapterDelivery: .playbackWindow,
+        bindPlayback: { [weak player] bookID, chapter in
+            guard let player else { return }
+            PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: chapter, defaults: player.location.defaults)
+        }, makePlaybackControl: makePlaybackControl
+    )
+
+    var localPlaybackBookID: String? { listening.listeningBookID }
+    var localPlaybackGeneration: String? { listening.listeningJobID }
+    var startingVoicePosition: ReaderVoiceChange? { listening.startingVoicePosition }
 
     init(settings: AppSettings, library: LibraryStore, player: AudioPlayer,
          playerPresentation: PlayerPresentation,
@@ -27,16 +38,16 @@ final class MacReaderPlaybackSession {
         self.player = player
         self.playerPresentation = playerPresentation
         self.conversionExecutor = conversionExecutor
-        self.makePlaybackControl = makePlaybackControl ?? { try RustConversionCoordinator.makePlaybackControl() }
+        self.makePlaybackControl = makePlaybackControl
     }
+
+    func observePlayback() { listening.observePlayback() }
 
     func voicePickerRequest(bookID: String, owner: AnyObject,
                             isCurrent: @escaping @MainActor () -> Bool) -> ReaderVoicePickerRequest {
         ReaderVoicePickerRequest(settings: settings, library: library, player: player, currentContext: { [weak self] in
             guard let self, isCurrent(), let book = library.books.first(where: { $0.id == bookID }) else { return nil }
-            guard localPlaybackBookID == bookID else { return .init(book: book) }
-            return .init(book: book, jobID: localPlaybackGeneration, requestedVoice: requestedVoice,
-                startingPosition: startingVoicePosition, pdfPosition: requestedPDFPosition)
+            return listening.voicePickerContext(for: book)
         }) { [weak self, weak owner] target, options in
             guard let self, let owner else { return }
             start(owner: owner, optionsOverride: options, chapterOverride: target.chapter,
@@ -52,182 +63,34 @@ final class MacReaderPlaybackSession {
         let location = player.location
         guard let bookID = location.readingBookID,
               let book = library.books.first(where: { $0.id == bookID }),
-              // Comics are read visually; there is no text to narrate (matches iOS reader listening).
               book.fileType.supportsAudioConversion else { return }
-        // The book's language is resolved first (analysis off the main thread, cached per book), unless
-        // the listener made an explicit per-job selection.
-        let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride
+        let chapter = pdfAnchor?.chapterIndex ?? chapterOverride
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, location: location)
+        let pageRatio = pdfAnchor == nil ? (pageRatioOverride ?? location.pageRatio) : nil
+        // The book's language is resolved first (analysis off the main thread, cached per book), unless the
+        // listener made an explicit per-job selection. The Play intent (chapter and page) was captured above,
+        // before the asynchronous resolution; a newer request supersedes this one (languageResolution token).
         if optionsOverride == nil {
-            // The Play intent (chapter and page) is captured now, not after the asynchronous resolution.
-            let capturedRatio = pageRatioOverride ?? location.pageRatio
-            // The request is visibly in progress right away (buttons, duplicate Play) while Rust resolves.
-            localPlaybackBookID = book.id
-            isStartingLocalPlayback = true
-            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapterIndex,
-                pageRatioOverride: .some(capturedRatio), pdfAnchor: pdfAnchor, voiceChange: voiceChange)
+            resolveLanguageModelThenStart(book: book, owner: owner, chapterOverride: chapter,
+                pageRatioOverride: .some(pageRatio), pdfAnchor: pdfAnchor, voiceChange: voiceChange)
             return
         }
-        let chapterStart = Int32(exactly: chapterIndex) ?? 0
-        let pageRatio = pageRatioOverride ?? (location.pageRatio)
-        cancel(stopPlayer: false)
-        let jobID = UUID().uuidString
-        localPlaybackGeneration = jobID
-        localPlaybackBookID = bookID
-        isStartingLocalPlayback = true
-        let conversionOptions = optionsOverride ?? NarrationConversionOptions.current(for: settings.ttsPreferences)
-        requestedPDFPosition = (voiceChange?.sourceScalarOffset ?? pdfAnchor?.sourceScalarOffset)
-            .map { (Int(chapterStart), $0) }
-        requestedVoice = conversionOptions.ttsPreferences?.primary
-        startingVoicePosition = voiceChange ?? .init(chapter: Int(chapterStart), pageRatio: pageRatio,
-            seek: nil, autoplay: true, sourceScalarOffset: pdfAnchor?.sourceScalarOffset)
-        let previousJobID = player.snapshot?.jobId
-        Task { [weak self, owner] in
-            guard let self else { return }
-            defer { withExtendedLifetime(owner) {} }
-            defer {
-                if localPlaybackGeneration == jobID {
-                    localPlaybackGeneration = nil
-                    localPlaybackBookID = nil
-                    localPlaybackControl = nil
-                    isStartingLocalPlayback = false
-                    startingVoicePosition = nil
-                    requestedVoice = nil
-                    requestedPDFPosition = nil
-                }
-            }
-            do {
-                let url = try await library.openBookFileAsync(id: book.id)
-                guard localPlaybackGeneration == jobID, localPlaybackBookID == book.id else { return }
-                if voiceChange != nil {
-                    guard location.readingBookID == book.id,
-                          player.snapshot?.jobId == previousJobID else { return }
-                }
-                localPlaybackChapters.removeAll()
-                let playbackControl = try makePlaybackControl()
-                playbackControl.trackPlayback(player)
-                playbackControl.updatePlaybackWindow(
-                    currentChapter: Int(chapterStart),
-                    chaptersAhead: 1
-                )
-                if let sourceOffset = voiceChange?.sourceScalarOffset ?? pdfAnchor?.sourceScalarOffset {
-                    playbackControl.startFromPage(sourceScalarOffset: sourceOffset)
-                } else if let pageRatio {
-                    playbackControl.startFromPage(ratio: pageRatio)
-                }
-                localPlaybackControl = playbackControl
-                let pending = JobSnapshot.listeningPending(
-                    jobID: jobID, bookTitle: book.resolvedTitle, bookAuthor: book.author, chapters: []
-                )
-                // The normal empty-snapshot handoff can preserve a live segment queue.
-                // A different voice needs an entirely new queue.
-                if voiceChange != nil { player.stop() }
-                PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: chapterIndex, defaults: location.defaults)
-                player.playbackClock.audioOutput.bindReaderJob(pending.jobId, to: book.id)
-                player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
-                player.isConverting = true
-                if let seek = voiceChange?.seek { player.restoreListeningSeek(seek, jobID: jobID) }
-                else if voiceChange?.autoplay != false { player.resume() }
-                if voiceChange?.seek != nil { startingVoicePosition = nil }
-                let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
-                isStartingLocalPlayback = false
-                let result = try await conversionExecutor(
-                    url, jobID, chapterStart, -1, playbackControl, conversionOptions,
-                    { [weak self] event in
-                        guard let self,
-                              self.localPlaybackGeneration == jobID, event.jobId == jobID,
-                              event.state == "running",
-                              let snapshot = self.player.snapshot,
-                              snapshot.jobId == jobID else { return }
-                        self.player.updateSnapshot(event.updating(snapshot))
-                    },
-                    { [weak self] event in
-                        guard let self, self.localPlaybackGeneration == jobID, event.jobId == jobID,
-                              self.player.snapshot?.jobId == jobID else { return }
-                        guard playbackControl.acceptsChunks(forChapter: event.chapterIndex) else { return }
-                        self.startingVoicePosition = nil
-                        let firstPlayableChapter = self.localPlaybackChapters.isEmpty
-                        let chapter = event.playableChapter
-                        if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
-                            self.localPlaybackChapters[existing] = chapter
-                        } else {
-                            self.localPlaybackChapters.append(chapter)
-                        }
-                        self.localPlaybackChapters.sort { $0.index < $1.index }
-                        self.player.updateSnapshot(
-                            event.snapshot(chapters: self.localPlaybackChapters, preserving: self.player.snapshot)
-                        )
-                        if firstPlayableChapter, voiceChange == nil {
-                            self.playerPresentation.showFullPlayer()
-                        }
-                    },
-                    { chapterIndex, chunkIndex, data in
-                        return chunkDelivery.enqueue(
-                            data,
-                            chapterIndex: chapterIndex,
-                            chunkIndex: chunkIndex,
-                            isCurrent: { [weak self] in
-                                guard let self else { return false }
-                                return self.localPlaybackGeneration == jobID
-                                    && self.player.snapshot?.jobId == jobID
-                                    && playbackControl.acceptsChunks(forChapter: chapterIndex)
-                            },
-                            onAccepted: { [weak self] in
-                                guard let self, self.localPlaybackGeneration == jobID else { return }
-                                self.startingVoicePosition = nil
-                            }
-                        )
-                    }
-                )
-                guard localPlaybackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
-                let snapshot = try result.snapshot()
-                guard result.jobID == jobID, snapshot.jobId == jobID else {
-                    throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")
-                }
-                library.recordConversion(jobId: result.jobID, for: book.id)
-                self.player.finishStreaming(snapshot: snapshot)
-                if voiceChange == nil { self.playerPresentation.showFullPlayer() }
-            } catch {
-                guard localPlaybackGeneration == jobID else { return }
-                if voiceChange != nil,
-                   location.readingBookID != bookID { return }
-                localPlaybackControl?.cancel()
-                if let current = player.snapshot, current.jobId == jobID {
-                    player.finishStreaming(snapshot: current.failed(error: error.localizedDescription))
-                }
-                if BookLanguageUncertain.decode(error) != nil {
-                    let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
-                        self?.localPlaybackGeneration == jobID
-                            && location.readingBookID == bookID
-                    })
-                    if recovered {
-                        self.start(owner: owner, optionsOverride: conversionOptions,
-                                   chapterOverride: Int(chapterStart), pageRatioOverride: .some(pageRatio),
-                                   pdfAnchor: pdfAnchor, voiceChange: voiceChange)
-                    }
-                    return
-                }
-                if TtsLanguageMismatch.decode(error) != nil {
-                    let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
-                        self?.localPlaybackGeneration == jobID
-                            && location.readingBookID == bookID
-                    })
-                    if let choice {
-                        self.start(owner: owner,
-                                   optionsOverride: conversionOptions.recovering(with: choice.candidate, language: choice.language),
-                                   chapterOverride: voiceChange == nil ? nil : Int(chapterStart),
-                                   pageRatioOverride: voiceChange == nil ? nil : .some(pageRatio),
-                                   pdfAnchor: pdfAnchor, voiceChange: voiceChange)
-                    }
-                    return
-                }
-                let alert = NSAlert()
-                alert.messageText = L10n.string("bookDetail.listenStart")
-                alert.informativeText = AppErrorReporter.message(error, context: "Reader listening")
-                alert.addButton(withTitle: L10n.string("common.ok"))
-                alert.runModal()
-            }
+        let options = optionsOverride ?? NarrationConversionOptions.current(for: settings.ttsPreferences)
+        self.owner = owner
+        recovery.begin { [weak self, weak owner] choice in
+            guard let self, let owner, player.location.readingBookID == book.id else { return }
+            let recovered = choice.map { options.recovering(with: $0.candidate, language: $0.language) } ?? options
+            start(owner: owner, optionsOverride: recovered, chapterOverride: chapter,
+                  pageRatioOverride: .some(pageRatio), pdfAnchor: pdfAnchor, voiceChange: voiceChange)
         }
+        let chapters = LocalFulltextCache.inMemoryPayload(bookId: bookID)?.chapters ?? []
+        let showsPlayer = voiceChange == nil
+        observePlayback()
+        listening.start(book: book, priority: chapter, pageRatio: pageRatio, catalog: [],
+                        conversionOptions: options, presentsFullPlayer: showsPlayer,
+                        chapterEstimates: ChapterPlaybackTimeline.estimates(for: chapters),
+                        voiceChange: voiceChange, pdfAnchor: pdfAnchor, owner: owner,
+                        showsPlayerOnCompletion: showsPlayer)
     }
 
     private var languageResolution: UUID?
@@ -239,19 +102,10 @@ final class MacReaderPlaybackSession {
         languageResolution = token
         Task { [weak self, weak owner] in
             guard let self else { return }
-            var handedOver = false
-            // Not started (superseded, cancelled alert, deallocated owner): the pending state is dropped.
-            defer {
-                if !handedOver, languageResolution == token || languageResolution == nil, localPlaybackGeneration == nil {
-                    localPlaybackBookID = nil
-                    isStartingLocalPlayback = false
-                }
-            }
             let outcome = await LanguageModelPlayback.outcome(
                 for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
             let stillWanted = { [weak self] in
-                self?.languageResolution == token
-                    && self?.player.location.readingBookID == book.id
+                self?.languageResolution == token && self?.player.location.readingBookID == book.id
             }
             guard stillWanted(), let owner else { return }
             if case .missing = outcome {} else {
@@ -263,7 +117,6 @@ final class MacReaderPlaybackSession {
                 }
             }
             @MainActor func begin(_ options: ConversionOptions) {
-                handedOver = true
                 languageResolution = nil
                 // Explicit options: the resolver is skipped on this second pass.
                 start(owner: owner, optionsOverride: options, chapterOverride: chapterOverride,
@@ -283,25 +136,36 @@ final class MacReaderPlaybackSession {
         }
     }
 
-    /// Invalidate before cancellation so retiring callbacks cannot touch a replacement session.
     func cancel(ifReplacingBook incomingBookID: String? = nil, stopPlayer: Bool = true) {
-        guard localPlaybackGeneration != nil,
-              incomingBookID == nil || incomingBookID != localPlaybackBookID else { return }
-        localPlaybackGeneration = nil
-        localPlaybackBookID = nil
-        isStartingLocalPlayback = false
-        startingVoicePosition = nil
-        requestedVoice = nil
-        requestedPDFPosition = nil
-        let retiring = localPlaybackControl
-        localPlaybackControl = nil
-        localPlaybackChapters.removeAll()
-        retiring?.cancel()
+        guard incomingBookID == nil || incomingBookID != listening.listeningBookID else { return }
+        recovery.invalidate()
+        languageResolution = nil
+        guard listening.listeningJobID != nil else { return }
+        listening.cancel()
         if stopPlayer {
             player.stop()
             player.clearConversionState()
         }
     }
 
+    private func reportFailure(_ error: Error) {
+        let location = player.location
+        let snapshotID = player.snapshot?.jobId
+        let controller = owner as? NSViewController
+        let window = (controller?.isViewLoaded == true ? controller?.view.window : nil)
+            ?? NSApplication.shared.keyWindow
+        recovery.report(error, bookID: location.readingBookID, isVisible: { [weak window] in window?.isVisible == true },
+            currentBookID: { [weak player] in
+                guard let player, player.snapshot?.jobId == snapshotID else { return nil }
+                return player.location.readingBookID
+            }) { error in
+                guard let window else { return }
+                let alert = NSAlert()
+                alert.messageText = L10n.string("bookDetail.listenStart")
+                alert.informativeText = AppErrorReporter.message(error, context: "Reader listening")
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.beginSheetModal(for: window)
+            }
+    }
 }
 #endif

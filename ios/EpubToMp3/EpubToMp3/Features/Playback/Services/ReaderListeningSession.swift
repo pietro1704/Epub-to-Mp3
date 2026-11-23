@@ -1,10 +1,14 @@
-#if os(iOS)
 import Combine
-import UIKit
+import Foundation
 
 /// Owns one requested listening job, its playback window and stale-callback rejection.
 @MainActor
 final class ReaderListeningSession {
+    enum ChapterDelivery {
+        case requestedChapter
+        case playbackWindow
+    }
+
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
@@ -12,15 +16,18 @@ final class ReaderListeningSession {
     private let openBook: (String) async throws -> URL
     private let recordConversion: (String, String) -> Void
     private let reportFailure: (Error) -> Void
+    private let chapterDelivery: ChapterDelivery
+    private let bindPlayback: (String, Int) -> Void
     private let makePlaybackControl: @MainActor () throws -> ConverterPlaybackControl
     private var cancellables: Set<AnyCancellable> = []
     private var task: Task<Void, Never>?
-    private var listeningJobID: String?
+    private(set) var listeningJobID: String?
     private var pendingRestartJobID: String?
     private(set) var listeningBookID: String?
     private var listeningPlaybackControl: ConverterPlaybackControl?
     private var listeningChapters: [JobSnapshot.Chapter] = []
     private var hasDeliveredListeningChapter = false
+    private var hasPublishedChapter = false
     private var requestedPDFPosition: (chapter: Int, offset: Int)?
     private(set) var requestedVoice: TtsSelection?
     private var voiceChangeInPreparation: ReaderVoiceChange?
@@ -48,6 +55,8 @@ final class ReaderListeningSession {
          openBook: @escaping (String) async throws -> URL,
          recordConversion: @escaping (String, String) -> Void,
          reportFailure: @escaping (Error) -> Void,
+         chapterDelivery: ChapterDelivery = .requestedChapter,
+         bindPlayback: @escaping (String, Int) -> Void = { _, _ in },
          makePlaybackControl: (@MainActor () throws -> ConverterPlaybackControl)? = nil) {
         self.player = player
         self.playerPresentation = playerPresentation
@@ -56,6 +65,8 @@ final class ReaderListeningSession {
         self.openBook = openBook
         self.recordConversion = recordConversion
         self.reportFailure = reportFailure
+        self.chapterDelivery = chapterDelivery
+        self.bindPlayback = bindPlayback
         self.makePlaybackControl = makePlaybackControl ?? { try RustConversionCoordinator.makePlaybackControl() }
     }
 
@@ -150,7 +161,8 @@ final class ReaderListeningSession {
                     // A text suffix has no measured absolute audio-time origin.
                     // Resolve a timeline seek from chapter start, carrying its
                     // exact seconds and current pause intent into the new job.
-                    if self.requestedPage?.chapter == navigation.chapterIndex,
+                    if self.requestedPDFPosition == nil,
+                       self.requestedPage?.chapter == navigation.chapterIndex,
                        (self.requestedPage?.ratio ?? 0) > 0 {
                         self.restartListening?(navigation.chapterIndex, 0, request)
                         return
@@ -184,6 +196,7 @@ final class ReaderListeningSession {
         listeningPlaybackControl = nil
         listeningChapters.removeAll()
         hasDeliveredListeningChapter = false
+        hasPublishedChapter = false
         voiceChangeInPreparation = nil
         retiringPlayerJobID = nil
         requestedVoice = nil
@@ -198,7 +211,8 @@ final class ReaderListeningSession {
                catalog: [(index: Int, title: String)], conversionOptions: ConversionOptions,
                presentsFullPlayer: Bool, chapterEstimates: [Int: TimeInterval] = [:],
                pendingSeek: PendingPlaybackSeek.ChapterRequest? = nil,
-               voiceChange: ReaderVoiceChange? = nil, pdfAnchor: PDFReadingAudioMap.Anchor? = nil) {
+               voiceChange: ReaderVoiceChange? = nil, pdfAnchor: PDFReadingAudioMap.Anchor? = nil,
+               owner: AnyObject? = nil, showsPlayerOnCompletion: Bool = false) {
         cancel()
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
         // The playback control schedules only the active chapter and one ahead.
@@ -216,21 +230,21 @@ final class ReaderListeningSession {
         voiceChangeInPreparation = voiceChange
         self.chapterEstimates = chapterEstimates
         requestedPage = (priority, pageRatio ?? 0)
-        restartListening = { [weak self] chapter, ratio, request in
+        restartListening = { [weak self, weak owner] chapter, ratio, request in
             guard let self else { return }
             let estimates = self.chapterEstimates
             self.start(book: book, priority: chapter, pageRatio: ratio, catalog: catalog,
                 conversionOptions: conversionOptions, presentsFullPlayer: presentsFullPlayer,
-                chapterEstimates: estimates, pendingSeek: request)
+                chapterEstimates: estimates, pendingSeek: request, owner: owner)
         }
         listeningChapters = catalog.map {
             JobSnapshot.Chapter(index: $0.index, name: $0.title, status: "pending",
                 downloadUrl: nil, chars: nil, charsProcessed: nil, progressRatio: nil,
                 durationSeconds: nil, startedAt: nil, completedAt: nil)
         }
-        hasDeliveredListeningChapter = false
-        task = Task { [weak self] in
+        task = Task { [weak self, owner] in
             guard let self else { return }
+            defer { withExtendedLifetime(owner) {} }
             var installedPending = false
             defer {
                 if self.listeningJobID == jobID {
@@ -242,8 +256,9 @@ final class ReaderListeningSession {
                 }
             }
             do {
+                guard listeningJobID == jobID, !Task.isCancelled else { return }
                 let url = try await openBook(book.id)
-                guard listeningJobID == jobID, currentBookID() == book.id,
+                guard listeningJobID == jobID, !Task.isCancelled, currentBookID() == book.id,
                       player.snapshot?.jobId == previousPlayerJob else { return }
                 let carriedSeek: PendingPlaybackSeek.ChapterRequest?
                 if let pendingSeek {
@@ -289,6 +304,7 @@ final class ReaderListeningSession {
                     player.persistResumePoint(force: true)
                 }
                 player.stop()
+                bindPlayback(book.id, priority)
                 player.playbackClock.audioOutput.bindReaderJob(pending.jobId, to: book.id)
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 updateChapterEstimates(self.chapterEstimates, for: book.id)
@@ -303,30 +319,15 @@ final class ReaderListeningSession {
                     url, jobID, chapterStart, chapterEnd, playbackControl,
                     conversionOptions,
                     { [weak self] event in
-                        guard let self, self.listeningJobID == jobID, event.jobId == jobID,
-                              let current = self.player.snapshot, current.jobId == jobID else { return }
+                        guard let self, event.jobId == jobID,
+                              self.ownsInstalledJob(jobID), let current = self.player.snapshot else { return }
+                        if self.chapterDelivery == .playbackWindow, event.state != "running" { return }
                         self.player.updateSnapshot(event.updating(current))
                     },
                     { [weak self] event in
-                        guard let self, self.listeningJobID == jobID,
-                              self.player.snapshot?.jobId == jobID, event.jobId == jobID,
-                              event.chapterIndex >= priority, event.audioPath.isFileURL,
-                              FileManager.default.isReadableFile(atPath: event.audioPath.path) else { return }
-                        guard self.hasDeliveredListeningChapter || self.currentBookID() == book.id else {
-                            self.player.pause()
-                            return
-                        }
-                        let chapter = event.playableChapter
-                        if let index = self.listeningChapters.firstIndex(where: { $0.index == chapter.index }) {
-                            self.listeningChapters[index] = chapter
-                        } else { self.listeningChapters.append(chapter) }
-                        self.listeningChapters.sort { $0.index < $1.index }
-                        guard self.listeningChapters.contains(where: { $0.index == priority && $0.downloadUrl != nil }) else { return }
-                        self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters, preserving: self.player.snapshot))
-                        if !self.hasDeliveredListeningChapter {
-                            self.hasDeliveredListeningChapter = true
-                            if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
-                        }
+                        guard let self, event.jobId == jobID, self.ownsInstalledJob(jobID) else { return }
+                        self.publishChapter(event, bookID: book.id, priority: priority,
+                                            presentsFullPlayer: presentsFullPlayer)
                     },
                     { [weak self] chapterIndex, chunkIndex, data in
                         guard let self else { return false }
@@ -337,48 +338,81 @@ final class ReaderListeningSession {
                             buffersAudio: true,
                             isCurrent: { [weak self] in
                                 guard let self else { return false }
-                                return self.listeningJobID == jobID
-                                    && self.player.snapshot?.jobId == jobID
-                                    && self.listeningPlaybackControl?.acceptsChunks(forChapter: chapterIndex) == true
+                                return self.ownsInstalledJob(jobID)
+                                    && (self.hasDeliveredListeningChapter || self.currentBookID() == book.id)
+                                    && playbackControl.acceptsChunks(forChapter: chapterIndex)
                             },
                             onAccepted: { [weak self] in
-                                guard let self, self.listeningJobID == jobID else { return }
+                                guard let self, self.ownsInstalledJob(jobID) else { return }
                                 self.hasDeliveredListeningChapter = true
                             }
                         )
                     }
                 )
-                guard listeningJobID == jobID else { return }
+                guard ownsInstalledJob(jobID) else { return }
                 let snapshot = try result.snapshot()
                 guard result.jobID == jobID, snapshot.jobId == jobID else {
                     throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")
                 }
-                let indices = snapshot.playableChapters.map(\.index)
-                guard indices.first == priority, indices == indices.sorted(), Set(indices).count == indices.count else {
-                    throw EmbeddedConverterError.conversionFailed("Conversion did not preserve the requested chapter order.")
+                if chapterDelivery == .requestedChapter {
+                    let indices = snapshot.playableChapters.map(\.index)
+                    guard indices.first == priority, indices == indices.sorted(), Set(indices).count == indices.count else {
+                        throw EmbeddedConverterError.conversionFailed("Conversion did not preserve the requested chapter order.")
+                    }
                 }
                 recordConversion(result.jobID, book.id)
-                guard listeningJobID == jobID, player.snapshot?.jobId == jobID else { return }
-                if !hasDeliveredListeningChapter, currentBookID() != book.id {
-                    player.pause()
-                }
+                guard ownsInstalledJob(jobID) else { return }
+                let showsCurrentBook = currentBookID() == book.id
+                if !hasDeliveredListeningChapter, !showsCurrentBook { player.pause() }
                 player.finishStreaming(snapshot: snapshot)
-            } catch let error as StoragePressureError {
-                guard listeningJobID == jobID else { return }
-                guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
-                if !installedPending, let pendingSeek { concludeFailedRestart(error, previousJobID: pendingSeek.jobID) }
-                concludeFailedListening(error, jobID: jobID)
-                guard currentBookID() == book.id else { return }
-                reportFailure(error)
+                if showsCurrentBook, showsPlayerOnCompletion { playerPresentation.showFullPlayer() }
             } catch {
                 guard listeningJobID == jobID else { return }
                 guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
+                listeningPlaybackControl?.cancel()
                 if !installedPending, let pendingSeek { concludeFailedRestart(error, previousJobID: pendingSeek.jobID) }
                 concludeFailedListening(error, jobID: jobID)
                 guard currentBookID() == book.id else { return }
                 reportFailure(error)
             }
         }
+    }
+
+    private func ownsInstalledJob(_ jobID: String) -> Bool {
+        listeningJobID == jobID && player.snapshot?.jobId == jobID
+    }
+
+    private func publishChapter(_ event: RustConversionCoordinator.ChapterCompletionEvent,
+                                bookID: String, priority: Int, presentsFullPlayer: Bool) {
+        switch chapterDelivery {
+        case .requestedChapter:
+            guard event.chapterIndex >= priority, event.audioPath.isFileURL,
+                  FileManager.default.isReadableFile(atPath: event.audioPath.path) else { return }
+        case .playbackWindow:
+            guard listeningPlaybackControl?.acceptsChunks(forChapter: event.chapterIndex) == true else { return }
+        }
+        guard hasDeliveredListeningChapter || currentBookID() == bookID else {
+            player.pause()
+            return
+        }
+
+        let chapter = event.playableChapter
+        if let index = listeningChapters.firstIndex(where: { $0.index == chapter.index }) {
+            listeningChapters[index] = chapter
+        } else {
+            listeningChapters.append(chapter)
+        }
+        listeningChapters.sort { $0.index < $1.index }
+        if chapterDelivery == .requestedChapter,
+           !listeningChapters.contains(where: { $0.index == priority && $0.downloadUrl != nil }) { return }
+
+        player.updateSnapshot(event.snapshot(chapters: listeningChapters, preserving: player.snapshot))
+        let firstPresentation = chapterDelivery == .playbackWindow ? !hasPublishedChapter : !hasDeliveredListeningChapter
+        if presentsFullPlayer, firstPresentation, currentBookID() == bookID {
+            playerPresentation.showFullPlayer()
+        }
+        hasPublishedChapter = true
+        hasDeliveredListeningChapter = true
     }
 
     func updateChapterEstimates(_ estimates: [Int: TimeInterval], for bookID: String) {
@@ -404,4 +438,3 @@ final class ReaderListeningSession {
         player.finishStreaming(snapshot: current.failed(error: error.localizedDescription))
     }
 }
-#endif
