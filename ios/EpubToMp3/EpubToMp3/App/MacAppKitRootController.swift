@@ -235,6 +235,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             controllers[destination] = controller
         }
         if let current = detailController {
+            (current as? MacReaderViewController)?.cancelBookOpen()
             current.view.removeFromSuperview()
             current.removeFromParent()
         }
@@ -289,6 +290,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         )
         reader.setBook(bookID)
         if let current = detailController {
+            (current as? MacReaderViewController)?.cancelBookOpen()
             current.view.removeFromSuperview()
             current.removeFromParent()
         }

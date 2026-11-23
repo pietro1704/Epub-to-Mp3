@@ -213,17 +213,8 @@ final class ReaderPreparedPresentation {
 
     func attachHydratedCatalog(_ payload: EbookFulltext, loadingID: UUID) -> Bool {
         guard let snapshot = document.activePreparedChapter,
-              snapshot.bookID == document.book.id,
-              snapshot.chapterOrdinal == document.selectedChapter,
-              snapshot.chapterCount == payload.chapters.count,
-              snapshot.title == payload.bookTitle,
-              snapshot.author == payload.bookAuthor,
-              snapshot.toc == payload.toc,
-              zip(snapshot.catalogChapters ?? [], payload.chapters).allSatisfy({
-                  $0.index == $1.index && $0.name == $1.name && $0.contentKind == $1.contentKind
-              }),
-              payload.chapters.indices.contains(document.selectedChapter),
-              snapshot.chapter == payload.chapters[document.selectedChapter] else { return false }
+              snapshot.matchesCatalog(payload, bookID: document.book.id,
+                                      chapterOrdinal: document.selectedChapter) else { return false }
         guard isCurrentLoad(loadingID, bookID: document.book.id) else { return true }
         document.fulltext = payload
         document.activePreparedChapter = nil

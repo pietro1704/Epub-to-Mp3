@@ -96,6 +96,20 @@ final class MacReaderPDFViewportTests: XCTestCase {
         }
     }
 
+    func testImportedPDFOpensOverCollidingWarmTextCache() async throws {
+        let source = try PdfFixture.createSinglePage(title: "PDF wins over the text cache")
+        defer { try? FileManager.default.removeItem(at: source) }
+        try await withImportedPDF(source, prepareBook: { book in
+            let payload = EbookFulltext(jobId: book.id, bookTitle: book.title, bookAuthor: nil,
+                chapters: [.init(index: 1, name: "Wrong format", text: "A same-key EPUB cache must not hide the PDF.",
+                    html: nil, css: nil, charCount: nil, segments: nil)])
+            LocalFulltextCache.save(payload, bookId: book.id)
+            XCTAssertNotNil(LocalFulltextCache.inMemoryPayload(bookId: book.id))
+        }) { _, pdf, _, _ in
+            XCTAssertTrue(pdf.document?.page(at: 0)?.string?.contains("PDF wins over the text cache") == true)
+        }
+    }
+
     func testTextPDFStartsFromClickedTextAndVisiblePageThroughNativeReaderActions() async throws {
         let source = try PdfFixture.createMultiPage(pages: [
             (heading: "First page", body: "Earlier text must not start when listening on another page."),
@@ -156,6 +170,7 @@ final class MacReaderPDFViewportTests: XCTestCase {
         _ source: URL,
         onListen: @escaping () -> Void = {},
         onPlayPDF: @escaping (PDFReadingAudioMap.Anchor) -> Void = { _ in },
+        prepareBook: (BookEntity) -> Void = { _ in },
         body: (MacReaderViewController, MacReaderPDFView, NSWindow, AudioPlayer) throws -> Void
     ) async throws {
         let activationPolicy = NSApp.activationPolicy()
@@ -181,6 +196,7 @@ final class MacReaderPDFViewportTests: XCTestCase {
             defaults.removePersistentDomain(forName: id)
             try? FileManager.default.removeItem(at: root)
         }
+        prepareBook(book)
         UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library,
             settings: AppSettings(defaults: defaults), player: player,
