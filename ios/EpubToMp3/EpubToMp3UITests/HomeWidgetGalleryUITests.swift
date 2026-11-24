@@ -21,7 +21,23 @@ final class HomeWidgetGalleryUITests: XCTestCase {
         }
 
         let icon = springboard.icons.matching(NSPredicate(format: "label CONTAINS[c] %@", "EpubToMp3")).firstMatch
-        for _ in 0..<3 where !icon.isHittable { springboard.swipeLeft() }
+        // Measured 2026-11-24 on the 16e: after Home the icon sits on Home Screen page 2 and is visible, but
+        // `isHittable` is false until the Home animation settles; swiping before that walked past it into the App
+        // Library. Wait first, then look on the neighbouring pages (back first, then forward).
+        func isHittableSoon(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool {
+            let end = Date().addingTimeInterval(timeout)
+            while Date() < end {
+                if element.exists && element.isHittable { return true }
+                usleep(250_000)
+            }
+            return false
+        }
+        if !isHittableSoon(icon) {
+            for _ in 0..<2 where !icon.isHittable { springboard.swipeRight(); _ = isHittableSoon(icon, timeout: 2) }
+        }
+        if !icon.isHittable {
+            for _ in 0..<4 where !icon.isHittable { springboard.swipeLeft(); _ = isHittableSoon(icon, timeout: 2) }
+        }
         // Diagnostics for a supervised run: which icons SpringBoard really exposes (page, label, hittable).
         let report = springboard.icons.allElementsBoundByIndex.map { "\($0.label) hittable=\($0.isHittable)" }.joined(separator: "\n")
         print("SpringBoard icons:\n\(report)")
