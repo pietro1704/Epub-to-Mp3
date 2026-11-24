@@ -1,0 +1,106 @@
+name: iOS Simulator UIKit tests
+
+# Runs the iOS-only XCTest cases (UIKit controllers, UIAlertController/UIMenu, #if os(iOS))
+# on a booted iOS Simulator. macOS tests and an iOS compile do not execute this code
+# (#1353 crashed on the first tap although both were green).
+on:
+  workflow_call:
+    inputs:
+      tests:
+        description: Comma-separated EpubToMp3Tests classes; empty runs the default UIKit selection
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Comma-separated EpubToMp3Tests classes; empty runs the default UIKit selection
+        type: string
+        default: ''
+  push:
+    branches: [ci/ios-simulator-tests]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+jobs:
+  ios-simulator:
+    name: iOS Simulator UIKit tests
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      MISE_ENABLE_TOOLS: rust,ruby
+      # UIKit tests need no Piper/ONNX Runtime; skipping them keeps the Simulator Rust build small.
+      CONVERTER_FFI_ENABLE_PIPER: '0'
+      TEST_CLASSES: ${{ inputs.tests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: 2026.11.3
+          cache: false
+          install: false
+      - run: mise install
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+      - run: mise exec -- rustup target add aarch64-apple-ios-sim
+      - uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: ffi-ios-sim-nopiper
+      - name: Install the project generator
+        run: brew install xcodegen
+      - name: Build converter-ffi for the Simulator (no Piper)
+        run: mise run converter-ffi:ios-simulator
+      - name: Generate the project
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+      - name: Pick and boot an iPhone Simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          xcrun simctl list devicetypes runtimes | head -30
+          udid="$(xcrun simctl list devices available -j | ruby -rjson -e '
+            d = JSON.parse(STDIN.read)["devices"]
+            hit = d.select { |k, _| k.include?("iOS") }.sort_by { |k, _| k[/iOS-([\d-]+)/, 1].split("-").map(&:to_i) }.reverse
+                   .flat_map { |_, v| v }.find { |x| x["name"].start_with?("iPhone") && x["isAvailable"] }
+            abort "No iPhone Simulator" unless hit
+            puts hit["udid"]')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+      - name: Run iOS XCTest on the Simulator
+        working-directory: ios/EpubToMp3
+        run: |
+          set -euo pipefail
+          default='ModelsScreenAlertTests,LocalAudioSettingsScreenControllerTests,TocScreenControllerTests,IOSMainReaderControllerTests,IOSAppShellTests,ModelsByLanguageTests,VoiceModelSettingsNavigationTests,PlatformSettingsCellTests,ReaderContentsSheetTests,ReaderChromeOverlayTests,FullPlayerFittingTests,SettingsStorageActionTests'
+          classes="${TEST_CLASSES:-$default}"
+          only=()
+          IFS=',' read -ra names <<< "$classes"
+          for name in "${names[@]}"; do only+=("-only-testing:EpubToMp3Tests/${name// /}"); done
+          mkdir -p ../../.reports/ios-simulator
+          set -o pipefail
+          xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath .build/ios-sim -jobs 3 -parallel-testing-enabled NO \
+            -resultBundlePath ../../.reports/ios-simulator/result.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            CONVERTER_FFI_ENABLE_PIPER=0 \
+            "${only[@]}" 2>&1 | tee ../../.reports/ios-simulator/test.log || true
+          grep -E "Test Suite 'Selected tests'|Executed [0-9]+ tests" ../../.reports/ios-simulator/test.log | tail -3
+          grep -q "\*\* TEST SUCCEEDED \*\*" ../../.reports/ios-simulator/test.log
+      - name: Shut the Simulator down
+        if: always()
+        run: xcrun simctl shutdown all || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ios-simulator-tests
+          path: .reports/ios-simulator/
+          if-no-files-found: warn
+          retention-days: 7
