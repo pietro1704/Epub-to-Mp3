@@ -304,8 +304,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             child: Icon(
               Icons.headphones,
               size: 80,
-              color: Theme.of(context).colorScheme.primary
-                  .withValues(alpha: 0.5),
+              // The accent itself: at half opacity over its own tint it is 2.0:1 in the dark theme.
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
         ),
