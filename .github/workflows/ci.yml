@@ -222,8 +222,18 @@ jobs:
             rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-
       # Rust audio runs in process; the only test that requires ffmpeg runs in
       # native-fallback.yml, which installs it there.
+      - name: Identify the runner image for the apt package cache
+        id: apt-image
+        run: echo "image=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Restore downloaded apt packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-image.outputs.image }}-espeak-data
       - name: Install eSpeak-NG phoneme data
         timeout-minutes: 8
+        env:
+          CI_APT_ARCHIVES: ${{ runner.temp }}/apt-archives
         run: |
           set -euo pipefail
           bash scripts/ci_apt_install.sh espeak-ng-data
@@ -232,6 +242,12 @@ jobs:
           test -f "$phoneme_table"
           data_directory="${phoneme_table%/phontab}"
           echo "PIPER_ESPEAKNG_DATA_DIRECTORY=${data_directory%/espeak-ng-data}" >> "$GITHUB_ENV"
+      - name: Save downloaded apt packages on master
+        if: github.ref == 'refs/heads/master' && success()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-image.outputs.image }}-espeak-data
       - name: Run migration build gate
         if: inputs.full_validation == true
         run: mise run migration:build-and-gate

@@ -105,8 +105,18 @@ jobs:
           version: 2026.11.3
           cache: false
           install: false
+      - name: Identify the runner image for the apt package cache
+        id: apt-image
+        run: echo "image=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Cache downloaded apt packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-image.outputs.image }}-clang-build
       - name: Install host build prerequisites
         timeout-minutes: 8
+        env:
+          CI_APT_ARCHIVES: ${{ runner.temp }}/apt-archives
         run: bash scripts/ci_apt_install.sh clang libclang-dev cmake pkg-config
       - run: mise install
       # Same identity as ci.yml android-jvm, which restores this entry on PRs.

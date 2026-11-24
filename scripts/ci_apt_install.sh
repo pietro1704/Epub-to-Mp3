@@ -8,6 +8,10 @@
 # update + install run up to CI_APT_ATTEMPTS (3) times, each bounded by
 # CI_APT_ATTEMPT_TIMEOUT seconds (150), so one hung mirror request costs one
 # attempt instead of the job. APT's signature validation is never weakened.
+#
+# CI_APT_ARCHIVES=<dir> (opt-in) points apt's package archive at a directory that
+# a workflow persists with actions/cache: .deb files already there are reused and
+# partial downloads survive between attempts. Unset keeps apt's default cache.
 set -euo pipefail
 
 recommends=(--no-install-recommends)
@@ -20,6 +24,18 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 attempts="${CI_APT_ATTEMPTS:-3}"
 limit="${CI_APT_ATTEMPT_TIMEOUT:-150}"
+
+if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
+  mkdir -p "$CI_APT_ARCHIVES/partial"
+  # The runner user owns the tree so actions/cache can restore and save it; apt's
+  # sandbox user must be able to write partial downloads.
+  chmod 0755 "$CI_APT_ARCHIVES"
+  chmod 0777 "$CI_APT_ARCHIVES/partial"
+  export CI_APT_ARCHIVES
+  # apt runs as root, so hand the tree back to the runner user on exit; otherwise
+  # actions/cache cannot read root-owned partial/ and lock entries when saving.
+  trap 'sudo chown -R "$(id -u):$(id -g)" "$CI_APT_ARCHIVES" 2>/dev/null || true' EXIT
+fi
 
 missing=()
 for package in "$@"; do
@@ -40,6 +56,13 @@ for (( n = 1; n <= attempts; n++ )); do
     set -euo pipefail
     flag=$1; shift
     options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+    if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
+      options+=(-o "Dir::Cache::Archives=$CI_APT_ARCHIVES" -o APT::Keep-Downloaded-Packages=true)
+      # The runner workspace is not traversable by the _apt user, which only
+      # produced an unsandboxed warning; download as root explicitly. Signature
+      # validation of the downloaded packages is unchanged.
+      options+=(-o APT::Sandbox::User=root)
+    fi
     sudo apt-get "${options[@]}" -o APT::Update::Error-Mode=any update
     sudo apt-get "${options[@]}" install -y ${flag:+"$flag"} "$@"
   ' _ "${recommends[*]:-}" "${missing[@]}" || status=$?
