@@ -39,7 +39,11 @@ struct LanguageModelResolutionRequest: Encodable, Sendable, Equatable {
 
 struct LanguageModelResolution: Decodable, Sendable, Equatable {
     enum Status: String, Decodable, Sendable { case selected, systemFallback = "system_fallback", missingModel = "missing_model" }
-    enum Source: String, Decodable, Sendable { case perLanguage = "per_language", primary, automatic, system }
+    enum Source: String, Decodable, Sendable {
+        /// The listener's own voice for this book (R2 `book_voice`).
+        case bookVoice = "book_voice"
+        case perLanguage = "per_language", primary, automatic, system
+    }
 
     struct Suggested: Decodable, Sendable, Equatable {
         let modelID: String
@@ -63,6 +67,26 @@ struct LanguageModelResolution: Decodable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case status, selection, source, reasons, missing
         case bookLanguage = "book_language"
+    }
+
+    init(bookLanguage: String, status: Status, selection: TtsSelection?, source: Source?, reasons: [String], missing: Missing?) {
+        self.bookLanguage = bookLanguage
+        self.status = status
+        self.selection = selection
+        self.source = source
+        self.reasons = reasons
+        self.missing = missing
+    }
+
+    /// A `source` this build does not know (a newer Rust) reads as none instead of failing the whole resolution.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bookLanguage = try container.decode(String.self, forKey: .bookLanguage)
+        status = try container.decode(Status.self, forKey: .status)
+        selection = try container.decodeIfPresent(TtsSelection.self, forKey: .selection)
+        source = (try? container.decodeIfPresent(Source.self, forKey: .source)) ?? nil
+        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
+        missing = try container.decodeIfPresent(Missing.self, forKey: .missing)
     }
 }
 
