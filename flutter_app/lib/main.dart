@@ -199,6 +199,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
       final bookmarks = ref.read(bookmarkStoreProvider);
       bookmarks.pruneOrphans(library.books.map((b) => b.id));
     });
+    ref.watch(remoteButtonModeSyncProvider);
     return MaterialApp(
       onGenerateTitle: (ctx) => AppLocalizations.of(ctx)!.appTitle,
       theme: AppTheme.forBrightness(Brightness.light),

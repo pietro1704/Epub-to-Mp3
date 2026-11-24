@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 
+import '../../models/app_settings.dart' show RemoteButtonMode;
 import 'audio_player_service.dart';
 import 'widget_playback_snapshot.dart';
 
@@ -63,10 +64,7 @@ class BackgroundAudioMetadataMapper {
 /// [AudioPlayerInterface], preserving the desktop/iOS implementation and its
 /// fake test double.
 class BackgroundAudioHandler extends BaseAudioHandler {
-  BackgroundAudioHandler(
-    this.player, {
-    this._snapshotStore,
-  }) {
+  BackgroundAudioHandler(this.player, {this._snapshotStore}) {
     _changes = player.stateChanges.listen((_) => _publishState());
     _publishState();
   }
@@ -77,6 +75,16 @@ class BackgroundAudioHandler extends BaseAudioHandler {
   bool _disposed = false;
   String? _lastMetadataId;
   BackgroundAudioMetadata? _metadata;
+
+  RemoteButtonMode _remoteButtonMode = RemoteButtonMode.chapter;
+
+  /// What the external next/previous buttons do; the published controls follow it.
+  RemoteButtonMode get remoteButtonMode => _remoteButtonMode;
+  set remoteButtonMode(RemoteButtonMode mode) {
+    if (_remoteButtonMode == mode) return;
+    _remoteButtonMode = mode;
+    _publishState();
+  }
 
   Future<void> setMetadata(BackgroundAudioMetadata metadata) async {
     _metadata = metadata;
@@ -119,13 +127,22 @@ class BackgroundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToNext() async {
-    player.nextChapter();
+    // Head units that only know track commands still get the user's choice (REMOTE-BUTTON-MODE).
+    if (_remoteButtonMode == RemoteButtonMode.seconds) {
+      player.skipForward();
+    } else {
+      player.nextChapter();
+    }
     _publishState();
   }
 
   @override
   Future<void> skipToPrevious() async {
-    player.previousChapter();
+    if (_remoteButtonMode == RemoteButtonMode.seconds) {
+      player.skipBackward();
+    } else {
+      player.previousChapter();
+    }
     _publishState();
   }
 
@@ -157,10 +174,16 @@ class BackgroundAudioHandler extends BaseAudioHandler {
             : mediaItem.value?.duration);
     final state = PlaybackState(
       controls: [
-        MediaControl.skipToPrevious,
+        if (_remoteButtonMode == RemoteButtonMode.seconds)
+          MediaControl.rewind
+        else
+          MediaControl.skipToPrevious,
         player.isPlaying ? MediaControl.pause : MediaControl.play,
         MediaControl.stop,
-        MediaControl.skipToNext,
+        if (_remoteButtonMode == RemoteButtonMode.seconds)
+          MediaControl.fastForward
+        else
+          MediaControl.skipToNext,
       ],
       systemActions: const {
         MediaAction.seek,

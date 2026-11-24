@@ -1042,6 +1042,30 @@ abstract class AppLocalizations {
   /// **'Skip backward'**
   String get seekBackwardInterval;
 
+  /// No description provided for @remoteButtonModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Next and previous buttons'**
+  String get remoteButtonModeTitle;
+
+  /// No description provided for @remoteButtonModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'What the buttons of your car, headphones and lock screen do.'**
+  String get remoteButtonModeDescription;
+
+  /// No description provided for @remoteButtonModeChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter'**
+  String get remoteButtonModeChapter;
+
+  /// No description provided for @remoteButtonModeSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip seconds'**
+  String get remoteButtonModeSeconds;
+
   /// No description provided for @ttsShowLowQuality.
   ///
   /// In en, this message translates to:
