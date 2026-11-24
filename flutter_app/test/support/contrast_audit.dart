@@ -53,10 +53,13 @@ class AuditHost extends StatelessWidget {
       RepaintBoundary(key: boundaryKey, child: child);
 }
 
+/// [within] limits the audit to the texts under it (e.g. a dialog: what is behind a modal barrier
+/// is dimmed and not meant to be read).
 Future<List<ContrastFinding>> auditContrast(
   WidgetTester tester,
-  GlobalKey boundaryKey,
-) async {
+  GlobalKey boundaryKey, {
+  Finder? within,
+}) async {
   final boundary =
       boundaryKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
   final image = await tester.runAsync(() => boundary.toImage(pixelRatio: 1));
@@ -102,7 +105,10 @@ Future<List<ContrastFinding>> auditContrast(
 
   final findings = <ContrastFinding>[];
   final seen = <String>{};
-  for (final element in find.byType(RichText).evaluate()) {
+  final scope = within == null
+      ? find.byType(RichText)
+      : find.descendant(of: within, matching: find.byType(RichText));
+  for (final element in scope.evaluate()) {
     final paragraph = element.renderObject;
     if (paragraph is! RenderParagraph ||
         !paragraph.hasSize ||
