@@ -117,8 +117,13 @@ final class ReaderListeningSession {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] navigation in
                 guard let self,
-                      navigation.jobID == self.listeningJobID || navigation.jobID == self.pendingRestartJobID,
-                      let request = self.player.pendingListeningSeek(for: navigation) else { return }
+                      navigation.jobID == self.listeningJobID || navigation.jobID == self.pendingRestartJobID else { return }
+                // A chapter request (next / previous, a contents pick) carries no listening seek; it still makes its
+                // chapter the top priority of the streaming job.
+                if navigation.jobID == self.listeningJobID, let control = self.listeningPlaybackControl {
+                    StreamingSeekPriority.apply(navigation, to: control)
+                }
+                guard let request = self.player.pendingListeningSeek(for: navigation) else { return }
                 if navigation.jobID == self.pendingRestartJobID {
                     switch navigation.target {
                     case .chapterTime: self.restartListening?(navigation.chapterIndex, 0, request)
@@ -336,7 +341,7 @@ final class ReaderListeningSession {
                                 guard let self else { return false }
                                 return self.listeningJobID == jobID
                                     && self.player.snapshot?.jobId == jobID
-                                    && self.listeningPlaybackControl?.contains(chapterIndex: chapterIndex) == true
+                                    && self.listeningPlaybackControl?.acceptsChunks(forChapter: chapterIndex) == true
                             },
                             onAccepted: { [weak self] in
                                 guard let self, self.listeningJobID == jobID else { return }

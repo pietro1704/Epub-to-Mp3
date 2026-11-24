@@ -28,6 +28,7 @@ final class ConverterPlaybackControl: @unchecked Sendable {
     private let prioritizeChapter: ConverterJobControlPrioritize
     private let setPlaybackWindow: ConverterJobControlWindow
     private let chapterIsInPlaybackWindow: ConverterJobControlWindowContains
+    private let chapterIsPreempted: ConverterJobControlWindowContains?
 
     init(
         rawHandle: UnsafeMutableRawPointer,
@@ -36,6 +37,7 @@ final class ConverterPlaybackControl: @unchecked Sendable {
         prioritize: @escaping ConverterJobControlPrioritize,
         setWindow: @escaping ConverterJobControlWindow,
         windowContains: @escaping ConverterJobControlWindowContains,
+        chapterIsPreempted: ConverterJobControlWindowContains? = nil,
         listeningPosition: ConverterJobControlJSON? = nil,
         playbackFeedback: ConverterJobControlJSON? = nil,
         listeningGeneration: ConverterJobControlGeneration? = nil
@@ -46,6 +48,7 @@ final class ConverterPlaybackControl: @unchecked Sendable {
         prioritizeChapter = prioritize
         setPlaybackWindow = setWindow
         chapterIsInPlaybackWindow = windowContains
+        self.chapterIsPreempted = chapterIsPreempted
         self.listeningPosition = listeningPosition
         self.playbackFeedback = playbackFeedback
         self.listeningGeneration = listeningGeneration
@@ -80,6 +83,19 @@ final class ConverterPlaybackControl: @unchecked Sendable {
         guard !cancellationRequested else { return false }
         guard let position = corePosition(chapterIndex) else { return false }
         return chapterIsInPlaybackWindow(rawHandle, position)
+    }
+
+    /// True while the core has preempted `chapterIndex` for a listener seek: its in-flight chunks must be dropped
+    /// (its finished segments stay cached and it resumes after the target).
+    func isPreempted(chapterIndex: Int) -> Bool {
+        cancellationLock.lock(); defer { cancellationLock.unlock() }
+        guard !cancellationRequested, let chapterIsPreempted, let position = corePosition(chapterIndex) else { return false }
+        return chapterIsPreempted(rawHandle, position)
+    }
+
+    /// Whether a delivered chunk or chapter event of `chapterIndex` is still wanted by the listener.
+    func acceptsChunks(forChapter chapterIndex: Int) -> Bool {
+        !isCancellationRequested && !isPreempted(chapterIndex: chapterIndex)
     }
 
     func installReaderChapterMap(_ map: ReaderConversionChapterMap) {

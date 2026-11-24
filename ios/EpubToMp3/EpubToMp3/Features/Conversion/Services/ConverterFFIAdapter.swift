@@ -26,6 +26,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var jobControlPrioritize: ConverterJobControlPrioritize?
     private var jobControlWindow: ConverterJobControlWindow?
     private var jobControlWindowContains: ConverterJobControlWindowContains?
+    /// Additive (STREAM-SEEK-PRIORITY): absent in an older library, where nothing is ever preempted.
+    private var jobControlPreempted: ConverterJobControlWindowContains?
     private var jobControlListeningPosition: ConverterJobControlJSON?
     private var jobControlPlaybackFeedback: ConverterJobControlJSON?
     private var jobControlListeningGeneration: ConverterJobControlGeneration?
@@ -120,6 +122,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         jobControlPrioritize = symbol("converter_job_control_prioritize", as: ConverterJobControlPrioritize.self)
         jobControlWindow = symbol("converter_job_control_set_playback_window", as: ConverterJobControlWindow.self)
         jobControlWindowContains = symbol("converter_job_control_chapter_is_in_playback_window", as: ConverterJobControlWindowContains.self)
+        jobControlPreempted = symbol("converter_job_control_chapter_is_preempted", as: ConverterJobControlWindowContains.self)
         jobControlListeningPosition = symbol("converter_job_control_set_listening_position_json_v2", as: ConverterJobControlJSON.self)
         jobControlPlaybackFeedback = symbol("converter_job_control_playback_feedback_json_v2", as: ConverterJobControlJSON.self)
         jobControlListeningGeneration = symbol("converter_job_control_listening_generation_v2", as: ConverterJobControlGeneration.self)
@@ -190,6 +193,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             cancel: jobControlCancel, prioritize: jobControlPrioritize,
             setWindow: jobControlWindow,
             windowContains: jobControlWindowContains,
+            chapterIsPreempted: jobControlPreempted,
             listeningPosition: jobControlListeningPosition,
             playbackFeedback: jobControlPlaybackFeedback,
             listeningGeneration: jobControlListeningGeneration
