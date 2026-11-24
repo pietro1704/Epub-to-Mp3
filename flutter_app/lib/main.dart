@@ -203,6 +203,8 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
       onGenerateTitle: (ctx) => AppLocalizations.of(ctx)!.appTitle,
       theme: AppTheme.forBrightness(Brightness.light),
       darkTheme: AppTheme.forBrightness(Brightness.dark),
+      highContrastTheme: AppTheme.forBrightness(Brightness.light, highContrast: true),
+      highContrastDarkTheme: AppTheme.forBrightness(Brightness.dark, highContrast: true),
       themeMode: ReaderThemeColors.themeMode(settings.readerTheme),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
