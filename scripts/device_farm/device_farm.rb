@@ -56,6 +56,10 @@ module DeviceFarm
 
   # Anything that could erase the app, its models, books or preferences is refused outright.
   def self.safe!(command)
+    # The one removal the farm may do: its own verification build, so a personal device never keeps a
+    # second EpubToMp3 app. Never the user's app (a different package) and never anything else.
+    return command if command == ['uninstall', PACKAGE] && PACKAGE.end_with?('.verification')
+
     text = Array(command).join(' ')
     FORBIDDEN.each { |pattern| raise Forbidden, "refused (destructive): #{text}" if text.match?(pattern) }
     raise Forbidden, "refused (personal files or media player): #{text}" if text.match?(PERSONAL) && !read_only?(command)
@@ -226,7 +230,7 @@ module DeviceFarm
   # needs an installed model and a book fixture and is driven by the regression suite).
   def self.soak(serial, minutes: 10)
     adb(serial, 'logcat', '-c', timeout: 20)
-    adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1', timeout: 30)
+    adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.MONKEY', '1', timeout: 30)
     sleep 8
     pid_before, = adb(serial, 'shell', 'pidof', PACKAGE, timeout: 20)
     adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_HOME', timeout: 20)
@@ -267,6 +271,20 @@ module DeviceFarm
     [ok, out.lines.last.to_s.strip]
   end
 
+  # Devices that are a person's own: the test build is removed after each round (the tablet keeps
+  # it, without a launcher icon).
+  PERSONAL_DEVICES = (ENV['DEVICE_FARM_PERSONAL'] || '52008714b40355ad').split(',').freeze
+
+  def self.uninstall_after_round?(serial)
+    names = aliases(serial)
+    PERSONAL_DEVICES.any? { |personal| names.include?(personal) || aliases(personal).include?(serial) }
+  end
+
+  def self.remove_test_app(serial)
+    close_app(serial)
+    adb(serial, 'uninstall', PACKAGE, timeout: 60)
+  end
+
   def self.installed?(serial)
     out, = adb(serial, 'shell', 'pm', 'list', 'packages', PACKAGE, timeout: 30)
     out.lines.any? { |line| line.strip == "package:#{PACKAGE}" }
@@ -299,7 +317,7 @@ module DeviceFarm
     # One argument: the device's shell must not split the command at `&&` outside run-as.
     adb(serial, 'shell', "run-as #{PACKAGE} sh -c 'mkdir -p files && echo #{shard} > files/farm_shard'", timeout: 30)
     adb(serial, 'logcat', '-c', timeout: 20)
-    adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1', timeout: 30)
+    adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.MONKEY', '1', timeout: 30)
     verdict = nil
     logcat = +''
     deadline = Time.now + minutes * 60
@@ -359,6 +377,7 @@ module DeviceFarm
       results.concat(threads.map(&:value))
     end
     results.each { |result| result.log = save_failure(result) unless result.ok }
+    devices.each { |serial| remove_test_app(serial) if uninstall_after_round?(serial) }
     { at: Time.now.utc.iso8601, devices: report, results: results.map(&:to_h) }
   end
 

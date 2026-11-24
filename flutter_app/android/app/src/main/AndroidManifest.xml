@@ -33,7 +33,7 @@
               />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="${launcherCategory}" />
             </intent-filter>
             <intent-filter android:label="EpubToMp3 deep links">
                 <action android:name="android.intent.action.VIEW" />
