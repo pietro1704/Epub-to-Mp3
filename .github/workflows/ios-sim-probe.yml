@@ -7,12 +7,10 @@ permissions:
   contents: read
 jobs:
   probe:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-26]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -20,11 +18,14 @@ jobs:
       - run: brew install xcodegen
       - working-directory: ios/EpubToMp3
         run: |
-          sw_vers -productVersion; ls -d /Applications/Xcode*; xcode-select -p
-          xcodegen generate
-          for x in /Applications/Xcode_*.app; do
-            case "$x" in *beta*|*Beta*|*16.[0-3]*|*15*) continue;; esac
-            echo "== $x"
-            DEVELOPER_DIR=$x/Contents/Developer xcodebuild -version | head -1
-            DEVELOPER_DIR=$x/Contents/Developer xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim"
-          done
+          show() { xcodegen generate >/dev/null; xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim" | cut -c1-120; }
+          cp project.yml /tmp/project.orig
+          echo "== v1 drop ARCHS sdk line"
+          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig > project.yml; show
+          echo "== v2 drop ONLY_ACTIVE_ARCH sim line too"
+          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig | grep -v 'ONLY_ACTIVE_ARCH\[sdk' > project.yml; show
+          echo "== v3 drop macosx from SUPPORTED_PLATFORMS"
+          sed 's/iphoneos iphonesimulator macosx/iphoneos iphonesimulator/' /tmp/project.orig > project.yml; show
+          echo "== v4 SDKROOT-free: drop DEVELOPMENT_TEAM"
+          grep -v 'DEVELOPMENT_TEAM' /tmp/project.orig > project.yml; show
+          cp /tmp/project.orig project.yml
