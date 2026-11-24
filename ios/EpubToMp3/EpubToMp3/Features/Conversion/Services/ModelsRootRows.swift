@@ -36,7 +36,26 @@ enum ModelsRootRows {
         var resolution: (String) -> LanguageModelResolution? = { _ in nil }
     }
 
+    /// System languages first, then the library's, then the languages with a choice or an installed voice;
+    /// each base language once, in that order.
     static func rows(_ input: Input) -> [Row] {
-        []
+        var order: [String] = []
+        var reasons: [String: Reasons] = [:]
+        func add(_ tag: String, _ reason: Reasons) {
+            let key = SpeechPreferences.languageKey(tag.trimmingCharacters(in: .whitespaces))
+            guard !key.isEmpty else { return }
+            if reasons[key] == nil { order.append(key) }
+            reasons[key, default: []].formUnion(reason)
+        }
+        input.systemLanguages.forEach { add($0, .system) }
+        input.bookLanguages.forEach { add($0, .book) }
+        input.choices.keys.sorted().forEach { add($0, .choice) }
+        input.installedLanguages.forEach { add($0, .installed) }
+        return order.map { language in
+            let resolution = input.resolution(language)
+            let why = reasons[language] ?? []
+            return Row(language: language, reasons: why, resolution: resolution,
+                       needsVoice: why.contains(.book) && resolution?.status == .missingModel)
+        }
     }
 }
