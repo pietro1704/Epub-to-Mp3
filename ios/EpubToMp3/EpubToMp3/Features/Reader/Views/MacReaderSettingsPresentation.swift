@@ -7,11 +7,41 @@ import Combine
 final class MacReaderSettingsPresentation: NSObject {
     private let settings: AppSettings
     private let settingsPopover: NSPopover
+    private let bookPreferences: BookReadingPreferencesStore
 
-    init(settings: AppSettings, popover: NSPopover) {
+    init(settings: AppSettings, popover: NSPopover, bookPreferences: BookReadingPreferencesStore = .shared) {
         self.settings = settings
         settingsPopover = popover
+        self.bookPreferences = bookPreferences
         super.init()
+    }
+
+    /// Builds the popover content without showing it.
+    func prepareForTesting() { configureSettingsPopover() }
+
+    /// The mode on top (default for every book, or this book only) and, with a book open, the choice to keep
+    /// these settings for this book only.
+    private func scopeViews() -> [NSView] {
+        let mode = NSTextField(labelWithString: L10n.string(settings.readingPreferenceModeTitleKey))
+        mode.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+        mode.setAccessibilityIdentifier("readerSettings.scope.mode")
+        guard settings.isInBookScope else { return [mode] }
+        let hint = NSTextField(wrappingLabelWithString: L10n.string(settings.readingPreferenceModeHintKey))
+        hint.font = .preferredFont(forTextStyle: .caption1)
+        hint.textColor = .readableSecondaryLabel
+        hint.preferredMaxLayoutWidth = 230
+        let bookOnly = NSButton(checkboxWithTitle: L10n.string("readerSettings.scope.toggle"), target: self,
+                                action: #selector(scopeChanged(_:)))
+        bookOnly.state = settings.isBookSpecific ? .on : .off
+        bookOnly.setAccessibilityIdentifier("readerSettings.scope.bookOnly")
+        return [mode, hint, bookOnly]
+    }
+
+    @objc private func scopeChanged(_ sender: NSButton) {
+        if sender.state == .on { settings.useOnlyForThisBook(store: bookPreferences) }
+        else { settings.useDefaultForThisBook(store: bookPreferences) }
+        // The controls show the values of the new mode.
+        configureSettingsPopover()
     }
 
     private func configureSettingsPopover() {
@@ -58,7 +88,7 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = NSStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
