@@ -40,6 +40,9 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+        // The launcher category of the main activity. The device-verification build replaces it
+        // (below) so a test build never shows a second EpubToMp3 icon next to the user's app.
+        manifestPlaceholders["launcherCategory"] = "android.intent.category.LAUNCHER"
     }
 
     buildTypes {
@@ -47,6 +50,8 @@ android {
             // Keep device verification separate when the installed app has another signer.
             if (providers.environmentVariable("EPUB2MP3_ANDROID_VERIFICATION").orNull == "1") {
                 applicationIdSuffix = ".verification"
+                // No launcher icon: the farm starts it through the MONKEY category (`monkey -p`) or `am start`.
+                manifestPlaceholders["launcherCategory"] = "android.intent.category.MONKEY"
             }
         }
         release {

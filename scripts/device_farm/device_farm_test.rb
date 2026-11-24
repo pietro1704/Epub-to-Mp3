@@ -156,4 +156,32 @@ class DeviceFarmTest < Minitest::Test
     assert_equal 1, lines.size
     assert_includes lines.first, 'FATAL EXCEPTION'
   end
+
+  def test_the_test_build_has_no_launcher_icon_and_the_app_is_started_without_the_launcher_category
+    manifest = File.read(File.expand_path('../../flutter_app/android/app/src/main/AndroidManifest.xml', __dir__))
+    gradle = File.read(File.expand_path('../../flutter_app/android/app/build.gradle.kts', __dir__))
+    refute_includes manifest, 'android:name="android.intent.category.LAUNCHER"', 'the category is a manifest placeholder'
+    assert_includes manifest, '${launcherCategory}'
+    assert_match(/manifestPlaceholders\["launcherCategory"\]\s*=\s*"android.intent.category.LAUNCHER"/, gradle)
+    verification = gradle[/getByName\("debug"\).*?\n        \}/m]
+    assert_match(/EPUB2MP3_ANDROID_VERIFICATION/, verification)
+    assert_match(/manifestPlaceholders\["launcherCategory"\]\s*=\s*"android.intent.category.MONKEY"/, verification)
+    source = File.read(File.expand_path('device_farm.rb', __dir__))
+    refute_match(/'-c', 'android.intent.category.LAUNCHER'/, source, 'the farm starts the test build through the MONKEY category')
+  end
+
+  def test_only_the_verification_app_may_be_uninstalled_and_nothing_else
+    assert DeviceFarm::PACKAGE.end_with?('.verification')
+    assert_equal ['uninstall', DeviceFarm::PACKAGE], DeviceFarm.safe!(['uninstall', DeviceFarm::PACKAGE])
+    ['com.pietrocode.epubtomp3.flutter_app', 'org.videolan.vlc', 'com.android.chrome'].each do |package|
+      assert_raises(DeviceFarm::Forbidden, package) { DeviceFarm.safe!(['uninstall', package]) }
+    end
+    assert_raises(DeviceFarm::Forbidden) { DeviceFarm.safe!(['shell', 'pm', 'uninstall', DeviceFarm::PACKAGE]) }
+  end
+
+  def test_a_personal_device_is_cleaned_up_after_each_round_and_the_tablet_keeps_the_hidden_app
+    assert DeviceFarm.uninstall_after_round?('52008714b40355ad')
+    assert DeviceFarm.uninstall_after_round?('192.168.0.178:5555'), 'either name of the A8'
+    refute DeviceFarm.uninstall_after_round?('192.168.0.130:46183')
+  end
 end
