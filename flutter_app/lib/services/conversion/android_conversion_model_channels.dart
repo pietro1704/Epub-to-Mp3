@@ -1,7 +1,7 @@
 part of 'android_converter_channel.dart';
 
 mixin _AndroidConversionModelChannels
-    implements EmbeddedConverter, ManualTtsModelCatalog, BackgroundPacingCapable {
+    implements EmbeddedConverter, ManualTtsModelCatalog, BackgroundPacingCapable, NarrationPlanCapable {
   MethodChannel get _channel;
 
   @override
@@ -22,6 +22,23 @@ mixin _AndroidConversionModelChannels
       throw EmbeddedConverterUnavailable('empty TTS catalog languages');
     }
     return TtsCatalogLanguage.parseAll(value);
+  }
+
+  /// The native library of an Android build exports the plan with the build itself; a platform
+  /// build that predates it answers with an error and the caller keeps the per-language resolver.
+  @override
+  bool get supportsNarrationPlan => true;
+
+  @override
+  Future<NarrationPlan> bookNarrationPlan(NarrationPlanRequest request) async {
+    final value = await _channel.invokeMethod<String>(
+      'bookNarrationPlan',
+      {'request': jsonEncode(request.toJson())},
+    );
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty narration plan');
+    }
+    return NarrationPlan.parse(value);
   }
 
   @override

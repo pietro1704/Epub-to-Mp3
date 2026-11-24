@@ -167,6 +167,7 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeTtsModelInstallOperationFree(handle: Long)
     external fun nativeTtsCatalogLanguages(androidApi: Int): String?
     external fun nativeTtsResolveLanguageModel(requestJson: String): String?
+    external fun nativeBookNarrationPlan(requestJson: String): String?
     external fun nativeBookLanguage(path: String): String?
     external fun nativeSetBackgroundCpuLimit(percent: Int)
 
