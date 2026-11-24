@@ -381,6 +381,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     configured: base,
     choices: ref.read(languageModelChoicesProvider),
     correctedLanguage: ref.read(bookLanguageCorrectionsProvider).decision(widget.bookId).bookLanguage,
+    // The voice the listener chose for this book reads its main language (Rust: source book_voice).
+    bookVoice: ref.read(bookVoiceProvider(widget.bookId)),
     // Fresh at each job start: the cached list may predate an install.
     installedModelIds: () {
       ref.invalidate(installedNarrationModelIdsProvider);

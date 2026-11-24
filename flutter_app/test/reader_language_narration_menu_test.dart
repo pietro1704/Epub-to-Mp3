@@ -168,7 +168,7 @@ void main() {
     expect(_labels(tester).any((l) => l.startsWith('Edge')), isTrue);
   });
 
-  testWidgets('choosing keeps the language choice in step with the switch', (tester) async {
+  testWidgets('choosing sets the voice of this book and leaves the language choice alone', (tester) async {
     final changes = <TtsSelection>[];
     final container = await _pump(tester, language: 'en', changes: changes);
     await _open(tester);
@@ -177,7 +177,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(changes.single.modelId, 'en_US-ljspeech-medium');
-    expect(container.read(languageModelChoicesProvider).choiceFor('en')?.modelId, 'en_US-ljspeech-medium');
+    expect(container.read(bookVoiceProvider('book-1'))?.modelId, 'en_US-ljspeech-medium');
+    expect(container.read(languageModelChoicesProvider).choiceFor('en'), isNull, reason: 'the language voice is Models\' to set');
     expect(container.read(languageModelChoicesProvider).choiceFor('pt'), isNull);
   });
 

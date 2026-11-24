@@ -603,6 +603,9 @@ class AppLocalizationsPt extends AppLocalizations {
       'Não foi possível preparar este modelo de narração.';
 
   @override
+  String get readerBookVoiceTitle => 'Voz para este livro';
+
+  @override
   String get readerNarrationModel => 'Modelo de narração';
 
   @override

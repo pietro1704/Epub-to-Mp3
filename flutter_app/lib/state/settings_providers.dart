@@ -157,6 +157,27 @@ class BookReadingOverridesNotifier extends StateNotifier<ReadingOverrides> {
   }
 }
 
+/// The voice chosen for one book (null = the voice of its language).
+final bookVoiceProvider = StateNotifierProvider.family<BookVoiceNotifier, TtsSelection?, String>(
+  (ref, bookId) => BookVoiceNotifier(BookVoices(ref.watch(sharedPrefsProvider)), bookId),
+);
+
+class BookVoiceNotifier extends StateNotifier<TtsSelection?> {
+  BookVoiceNotifier(this._store, this._bookId) : super(_store.voiceFor(_bookId));
+  final BookVoices _store;
+  final String _bookId;
+
+  Future<void> choose(TtsSelection selection) async {
+    state = selection;
+    await _store.set(_bookId, selection);
+  }
+
+  Future<void> clear() async {
+    state = null;
+    await _store.clear(_bookId);
+  }
+}
+
 final bookReadingOverridesProvider =
     StateNotifierProvider.family<BookReadingOverridesNotifier, ReadingOverrides, String>(
       (ref, bookId) => BookReadingOverridesNotifier(ref.watch(sharedPrefsProvider), bookId),

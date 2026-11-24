@@ -215,6 +215,7 @@
   "fallbackChapterName": "Capítulo {number}",
   "ttsShowLowQuality": "Mostrar modelos de calidad baja",
   "ttsManualModelUnavailable": "No se pudo preparar este modelo de narración.",
+  "readerBookVoiceTitle": "Voz para este libro",
   "readerNarrationModel": "Modelo de narración",
   "readerFootnotes": "Notas al pie",
   "openReaderAtPlayback": "Abrir en el lector",

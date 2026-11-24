@@ -602,6 +602,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not prepare this narration model.';
 
   @override
+  String get readerBookVoiceTitle => 'Voice for this book';
+
+  @override
   String get readerNarrationModel => 'Narration model';
 
   @override

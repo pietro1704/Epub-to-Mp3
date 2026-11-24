@@ -200,6 +200,7 @@ class ReaderMenuEntry {
 /// model is saved before [onChanged] runs; choosing the active model does
 /// nothing.
 const Object _openModels = 'open-models';
+const Object _useDefault = 'use-default-voice';
 
 class ReaderNarrationMenu extends ConsumerWidget {
   const ReaderNarrationMenu({
@@ -242,7 +243,13 @@ class ReaderNarrationMenu extends ConsumerWidget {
         const <String>{};
     final recommended =
         catalog?.recommendedPreferences ?? const TtsPreferences.appDefaults();
-    final preferences = settings.configuredTtsPreferences ?? recommended;
+    final globalPreferences = settings.configuredTtsPreferences ?? recommended;
+    // With a book open, the picker is the voice of THIS book: the one it has, else the voice of
+    // its language, else the saved default. Nothing global is changed from here.
+    final bookVoice = bookId == null ? null : ref.watch(bookVoiceProvider(bookId!));
+    final preferences = bookVoice == null
+        ? globalPreferences
+        : globalPreferences.withPrimary(bookVoice);
     final language = bookId == null
         ? null
         : ref.watch(readerBookLanguageProvider(bookId!)).asData?.value;
@@ -294,17 +301,28 @@ class ReaderNarrationMenu extends ConsumerWidget {
           value.onSelected();
           return;
         }
+        if (value == _useDefault) {
+          final sentence = await currentSentence?.call();
+          await ref.read(bookVoiceProvider(bookId!).notifier).clear();
+          // The narration restarts with the voice it falls back to (the language's, resolved by Rust).
+          await onChanged?.call(globalPreferences.primary, sentence);
+          return;
+        }
         final selected = choices[value as int];
         if (selected.representsSameRequest(preferences.primary)) return;
         final sentence = await currentSentence?.call();
-        await ref
-            .read(settingsProvider.notifier)
-            .setTtsPreferences(preferences.withPrimary(selected));
-        // The language's persisted choice follows the live switch.
-        if (language != null) {
-          ref
-              .read(languageModelChoicesProvider.notifier)
-              .choose(language, selected);
+        if (bookId != null) {
+          await ref.read(bookVoiceProvider(bookId!).notifier).choose(selected);
+        } else {
+          await ref
+              .read(settingsProvider.notifier)
+              .setTtsPreferences(preferences.withPrimary(selected));
+          // The language's persisted choice follows the live switch.
+          if (language != null) {
+            ref
+                .read(languageModelChoicesProvider.notifier)
+                .choose(language, selected);
+          }
         }
         await onChanged?.call(selected, sentence);
       },
@@ -324,7 +342,7 @@ class ReaderNarrationMenu extends ConsumerWidget {
         if (entries.isNotEmpty) const PopupMenuDivider(),
         PopupMenuItem<Object>(
           enabled: false,
-          child: _MenuNote(t.readerNarrationModel),
+          child: _MenuNote(bookId == null ? t.readerNarrationModel : t.readerBookVoiceTitle),
         ),
         for (var index = 0; index < choices.length; index++)
           CheckedPopupMenuItem<Object>(
@@ -333,6 +351,14 @@ class ReaderNarrationMenu extends ConsumerWidget {
             checked: choices[index].representsSameRequest(preferences.primary),
             child: Text(ttsSelectionLabel(t, choices[index])),
           ),
+        if (bookVoice != null) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem<Object>(
+            key: const ValueKey('reader-menu-use-default-voice'),
+            value: _useDefault,
+            child: Text(t.readingUseDefault),
+          ),
+        ],
         if (onlyActive) ...[
           const PopupMenuDivider(),
           PopupMenuItem<Object>(
