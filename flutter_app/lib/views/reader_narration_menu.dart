@@ -323,7 +323,7 @@ class ReaderNarrationMenu extends ConsumerWidget {
         if (entries.isNotEmpty) const PopupMenuDivider(),
         PopupMenuItem<Object>(
           enabled: false,
-          child: Text(t.readerNarrationModel),
+          child: _MenuNote(t.readerNarrationModel),
         ),
         for (var index = 0; index < choices.length; index++)
           CheckedPopupMenuItem<Object>(
@@ -337,7 +337,7 @@ class ReaderNarrationMenu extends ConsumerWidget {
           PopupMenuItem<Object>(
             enabled: false,
             key: const ValueKey('narration-missing'),
-            child: Text(t.modelsMissingTitle(languageEndonym(language!))),
+            child: _MenuNote(t.modelsMissingTitle(languageEndonym(language!))),
           ),
           PopupMenuItem<Object>(
             key: const ValueKey('reader-menu-open-models'),
@@ -348,4 +348,17 @@ class ReaderNarrationMenu extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// A section label or note inside a popup menu. It is not actionable, so the item is disabled, but
+/// it is information: its text keeps the secondary text colour (the disabled colour measured 2.3:1).
+class _MenuNote extends StatelessWidget {
+  const _MenuNote(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+  );
 }
