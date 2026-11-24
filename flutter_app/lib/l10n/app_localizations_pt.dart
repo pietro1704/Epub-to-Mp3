@@ -332,6 +332,37 @@ class AppLocalizationsPt extends AppLocalizations {
   String get bookLanguageMenu => 'Idioma do livro';
 
   @override
+  String get bookLanguageAnalyzing => 'Analisando o livro…';
+
+  @override
+  String bookLanguageSummaryMain(String language, int percent) {
+    return '$language $percent%';
+  }
+
+  @override
+  String bookLanguageSummaryMainOnly(String language) {
+    return '$language';
+  }
+
+  @override
+  String bookLanguageSummaryWritten(String languages) {
+    return 'Também escrito em $languages';
+  }
+
+  @override
+  String bookLanguageSummaryQuoted(String languages) {
+    return 'Citações em $languages';
+  }
+
+  @override
+  String bookLanguageConflict(String declared, String detected) {
+    return 'O arquivo diz $declared; o texto está em $detected.';
+  }
+
+  @override
+  String get bookLanguageDetectedSection => 'Neste livro';
+
+  @override
   String get sortLibrary => 'Ordenar biblioteca';
 
   @override
