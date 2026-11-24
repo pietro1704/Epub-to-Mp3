@@ -84,7 +84,7 @@ jobs:
                 path.match?(/\Ascripts\/(?:native_[a-z_]+|test_native_[a-z_]+|mac_build_budget|test_mac_build_budget|test_device_workflow_entrypoint|ios_simulator_smoke)\.(?:rb|swift)\z/)
               gate_script = %w[scripts/fetch_onnxruntime_macos.rb scripts/prepare_onnxruntime_macos.rb scripts/capture_native_test_metadata.rb].include?(path)
               scopes['native_host'] ||= native_host
-              scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || native_host || gate_script || path.start_with?('ios/EpubToMp3/')
+              scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || native_host || gate_script || path.start_with?('ios/EpubToMp3/') || path == '.github/workflows/ios-simulator-tests.yml'
               scopes['lockfile'] ||= path == 'Cargo.lock' || path.end_with?('Cargo.toml') || path == '.github/workflows/rust-dependency-audit.yml'
             end
           end
@@ -548,6 +548,16 @@ jobs:
       contents: read
       actions: read
 
+  # iOS-only UIKit code (#if os(iOS), alerts, menus) runs on a real iOS Simulator; macOS tests and an
+  # iOS compile do not execute it. Unlike apple-app it also runs in the integrated post-merge run.
+  ios-simulator:
+    name: iOS Simulator UIKit tests
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
+    uses: ./.github/workflows/ios-simulator-tests.yml
+    permissions:
+      contents: read
+
   # Checks that used to break master after the merge: they run on the pull request
   # when it touches their area, and are skipped in the integrated post-merge run
   # because Post-merge validation runs the same workflows as its own jobs.
@@ -577,7 +587,7 @@ jobs:
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, rust, flutter, android-jvm, apple-app, rails-web, jni-contracts, rails-browser, rust-audit]
+    needs: [changes, production-packaging-guard, rust, flutter, android-jvm, apple-app, ios-simulator, rails-web, jni-contracts, rails-browser, rust-audit]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -594,7 +604,7 @@ jobs:
           abort 'Missing validation mode' unless %w[true false].include?(integrated)
           %w[changes production-packaging-guard].each { |job| abort "Required job failed: #{job}" unless needs.fetch(job).fetch('result') == 'success' }
           scopes = needs.fetch('changes').fetch('outputs')
-          { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'apple-app' => 'apple', 'rails-web' => 'rails',
+          { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'apple-app' => 'apple', 'ios-simulator' => 'apple', 'rails-web' => 'rails',
             'jni-contracts' => 'rust', 'rails-browser' => 'rails', 'rust-audit' => 'lockfile' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
