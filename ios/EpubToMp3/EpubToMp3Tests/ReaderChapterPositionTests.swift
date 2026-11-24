@@ -112,7 +112,7 @@ final class ReaderChapterPositionTests: XCTestCase {
 }
 
 @MainActor
-private final class PositionFixture {
+final class PositionFixture {
     let id = "ReaderPosition-\(UUID().uuidString)"
     let defaults: UserDefaults
     let player: AudioPlayer
