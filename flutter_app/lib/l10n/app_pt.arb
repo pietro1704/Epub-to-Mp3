@@ -236,6 +236,7 @@
   "modelsNeedsVoice": "Um livro da sua biblioteca precisa de uma voz para este idioma",
   "@modelsSizeMb": {"placeholders": {"size": {"type": "int"}}},
   "modelsSizeMb": "{size} MB",
+  "modelsFallbackSection": "Vozes de reserva",
   "modelsAutomatic": "Automático",
   "modelsAutomaticDesc": "Usa o melhor modelo instalado para o livro",
   "modelsLocalSection": "Neste dispositivo",

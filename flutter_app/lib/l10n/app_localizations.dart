@@ -1318,6 +1318,12 @@ abstract class AppLocalizations {
   /// **'{size} MB'**
   String modelsSizeMb(int size);
 
+  /// No description provided for @modelsFallbackSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Fallback voices'**
+  String get modelsFallbackSection;
+
   /// No description provided for @modelsAutomatic.
   ///
   /// In en, this message translates to:

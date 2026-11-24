@@ -466,6 +466,37 @@ void main() {
     expect(_stored(prefs).choiceFor('pt')?.engine, 'system');
   });
 
+  testWidgets('the global primary and reserve menus are gone: only the two fallbacks remain', (tester) async {
+    await _pump(tester);
+    await tester.pageBack();
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('narration-primary-row')), findsNothing);
+    expect(find.byKey(const ValueKey('narration-secondary-row')), findsNothing);
+    expect(find.byKey(const ValueKey('tts-use-recommended-defaults')), findsNothing);
+    expect(find.text('Fallback voices'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tts-automatic-system-fallback')), findsOneWidget);
+    expect(find.textContaining('Allow online fallback'), findsWidgets);
+  });
+
+  testWidgets('opening Models moves a specific global primary voice to its language, once', (tester) async {
+    const preferences = TtsPreferences(
+      primary: TtsSelection.faber,
+      secondary: TtsSelection.system,
+      policyVersion: 2,
+    );
+    final (_, prefs) = await _pump(
+      tester,
+      prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
+    );
+    await _settle(tester);
+    expect(_stored(prefs).choiceFor('pt')?.modelId, 'pt_BR-faber-medium');
+    final saved = TtsPreferences.fromJson(
+      Map<String, dynamic>.from(jsonDecode(prefs.getString('ttsPreferences')!) as Map),
+    );
+    expect(saved.primary.representsSameRequest(TtsSelection.automaticPiper), isTrue);
+    expect(saved.secondary?.engine, 'system');
+  });
+
   testWidgets(
     'an unavailable converter shows a message instead of an empty screen',
     (tester) async {

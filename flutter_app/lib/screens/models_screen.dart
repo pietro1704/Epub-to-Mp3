@@ -7,6 +7,7 @@ import '../models/language_names.dart';
 import '../models/language_order.dart' show systemLocalesProvider;
 import '../models/tts_preferences.dart';
 import '../state/providers.dart';
+import '../services/playback/global_voice_migration.dart';
 import 'models_language_screen.dart';
 import 'models_languages_screen.dart';
 import 'settings_screen.dart'
@@ -31,10 +32,31 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _migrateGlobalVoice());
     if (widget.initialLanguage != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _openLanguage(widget.initialLanguage!);
       });
+    }
+  }
+
+  /// The old global primary voice becomes a per-language choice, once.
+  Future<void> _migrateGlobalVoice() async {
+    try {
+      final data = await loadModelsData(ref);
+      if (!mounted) return;
+      await migrateGlobalVoiceToLanguageChoices(
+        prefs: ref.read(sharedPrefsProvider),
+        configured: ref.read(settingsProvider).configuredTtsPreferences,
+        models: data.models,
+        choiceFor: (language) => ref.read(languageModelChoicesProvider).choiceFor(language),
+        choose: (language, selection) =>
+            ref.read(languageModelChoicesProvider.notifier).choose(language, selection),
+        savePreferences: (preferences) =>
+            ref.read(settingsProvider.notifier).setTtsPreferences(preferences),
+      );
+    } catch (_) {
+      // The catalog is unavailable: the migration runs at a later visit.
     }
   }
 
