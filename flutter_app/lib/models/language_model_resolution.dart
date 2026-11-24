@@ -11,16 +11,21 @@ class TtsCatalogLanguage {
     required this.tag,
     required this.modelCount,
     this.routingTags = const [],
+    this.popularityRank,
   });
 
   final String tag;
   final int modelCount;
   final List<String> routingTags;
 
+  /// Position in Rust's shared popularity list (1 = most popular); null when not ranked.
+  final int? popularityRank;
+
   factory TtsCatalogLanguage.fromJson(Map<String, dynamic> json) =>
       TtsCatalogLanguage(
         tag: json['tag'] as String,
         modelCount: (json['model_count'] as num?)?.toInt() ?? 0,
+        popularityRank: (json['popularity_rank'] as num?)?.toInt(),
         routingTags: [
           for (final tag in (json['routing_tags'] as List?) ?? const [])
             tag as String,

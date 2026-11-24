@@ -1168,6 +1168,30 @@ abstract class AppLocalizations {
   /// **'Choose the narration for each book language'**
   String get modelsSubtitle;
 
+  /// No description provided for @modelsLanguagesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Languages'**
+  String get modelsLanguagesTitle;
+
+  /// No description provided for @modelsSystemLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'System languages'**
+  String get modelsSystemLanguages;
+
+  /// No description provided for @modelsPopularLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'Most popular'**
+  String get modelsPopularLanguages;
+
+  /// No description provided for @modelsOtherLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'All languages'**
+  String get modelsOtherLanguages;
+
   /// No description provided for @modelsAutomatic.
   ///
   /// In en, this message translates to:

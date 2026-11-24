@@ -597,6 +597,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get modelsSubtitle => 'Escolha a narração de cada idioma de livro';
 
   @override
+  String get modelsLanguagesTitle => 'Idiomas';
+
+  @override
+  String get modelsSystemLanguages => 'Idiomas do sistema';
+
+  @override
+  String get modelsPopularLanguages => 'Mais populares';
+
+  @override
+  String get modelsOtherLanguages => 'Todos os idiomas';
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override
