@@ -130,6 +130,7 @@ Future<(_ModelsConverter, SharedPreferences)> _pump(
         sharedPrefsProvider.overrideWithValue(prefs),
         embeddedConverterProvider.overrideWithValue(fake),
         ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+        systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -191,6 +192,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(fake),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -424,6 +426,7 @@ void main() {
               UnavailableEmbeddedConverter(),
             ),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -451,6 +454,7 @@ void main() {
           sharedPrefsProvider.overrideWithValue(prefs),
           embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
           ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+          systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -487,6 +491,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(fake),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
             // The system asks for Icelandic first, then Portuguese.
             systemLocalesProvider.overrideWithValue(const [
               Locale('is'),
@@ -548,6 +553,7 @@ void _languagesRowIsFirstTest() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../models/language_model_choices.dart';
 import '../models/language_names.dart';
+import '../models/language_order.dart' show systemLocalesProvider;
 import '../models/tts_preferences.dart';
 import '../state/providers.dart';
 import 'models_language_screen.dart';
@@ -53,7 +54,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
           ),
         )
         .then((_) {
-          if (mounted) setState(() => _rows = _loadRows());
+          if (!mounted) return;
+          final next = _loadRows();
+          setState(() {
+            _rows = next;
+          });
         });
   }
 

@@ -37,7 +37,9 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
 
   void _reload() {
     final next = loadModelsData(ref);
-    setState(() => _data = next);
+    setState(() {
+      _data = next;
+    });
   }
 
   static bool _isOnline(Map<String, dynamic> model) => model['engine'] == 'edge';
