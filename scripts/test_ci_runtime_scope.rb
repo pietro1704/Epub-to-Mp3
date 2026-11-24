@@ -36,16 +36,30 @@ class CiRuntimeScopeTest < Minitest::Test
     FileUtils.remove_entry(@root)
   end
 
-  def scope(paths, full: false, base: 'a' * 40, event: 'pull_request', git_exit: '0')
+  def scope(paths, full: false, base: 'a' * 40, event: 'pull_request', git_exit: '0', evidence_scope: nil)
     script = @workflow.fetch('jobs').fetch('changes').fetch('steps').find { |step| step['id'] == 'scope' }.fetch('run')
     output = File.join(@root, 'output')
     File.write(output, '')
     _, err, status = Open3.capture3({ 'PATH' => "#{@root}:#{ENV.fetch('PATH')}", 'FULL_VALIDATION' => full.to_s,
-      'EVENT_NAME' => event, 'BASE_SHA' => base, 'GITHUB_OUTPUT' => output,
+      'EVENT_NAME' => event, 'BASE_SHA' => base, 'EVIDENCE_SCOPE' => evidence_scope.to_s, 'GITHUB_OUTPUT' => output,
       'FIXTURE_PATHS' => paths.join("\n"), 'FIXTURE_GIT_EXIT' => git_exit }, RbConfig.ruby, '-e', script)
     outputs = File.readlines(output, chomp: true).to_h { |line| line.split('=', 2) }
     contracts = outputs.delete('contracts')
     [outputs, status, err, contracts]
+  end
+
+  def test_manual_branch_evidence_scope_selects_exactly_the_named_runtime_without_a_diff
+    result, status, err, = scope([], event: 'workflow_dispatch', base: '', git_exit: '1', evidence_scope: 'rust')
+    assert status.success?, err
+    assert_equal ['rust'], result.select { |_, value| value == 'true' }.keys
+    result, status, err, = scope([], event: 'workflow_dispatch', base: '', git_exit: '1', evidence_scope: 'apple')
+    assert status.success?, err
+    assert_equal %w[apple native_host], result.select { |_, value| value == 'true' }.keys.sort
+    result, status, = scope([], event: 'workflow_dispatch', base: '', git_exit: '1', evidence_scope: 'all')
+    assert status.success?
+    assert result.values.all?('true')
+    _, status, = scope([], event: 'workflow_dispatch', base: '', evidence_scope: 'bogus')
+    refute status.success?
   end
 
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging

@@ -127,6 +127,14 @@ PRs with passing gates merge through the normal workflow. On Pietro's return,
 the coordinator reconciles the board, merged PRs and pending questions in one
 report.
 
+## CI-first builds
+
+Neither machine is the build farm. Both push the branch and run
+`scripts/ci_branch_evidence.sh <branch> [scope] [filter]` (bash and `gh` only)
+for build, unit, Simulator, Rust, Flutter and Windows evidence; Arch keeps local
+Linux/Android device and visible-app checks. Hand back the run URL, not a local
+build log. See [execution policy](execution-policy.md).
+
 ## Ownership
 
 | Surface | Editing and verification owner | Required evidence |
