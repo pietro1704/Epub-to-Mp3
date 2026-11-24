@@ -34,7 +34,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # Manual evidence runs of different scopes on one branch may run side by side.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.scope || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
