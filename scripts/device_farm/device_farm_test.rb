@@ -148,4 +148,12 @@ class DeviceFarmTest < Minitest::Test
       %w[shell pm list packages org.videolan.vlc]
     ].each { |args| assert_equal args, DeviceFarm.safe!(args) }
   end
+
+  def test_logcat_with_bytes_that_are_not_utf8_is_still_searched
+    logcat = "11-24 08:59:44.170  1  1 I tag: caf\xE9 \xFF\n11-24 08:59:44.171  1  1 E AndroidRuntime: FATAL EXCEPTION: main\n".b.force_encoding('UTF-8')
+    refute logcat.valid_encoding?
+    lines = DeviceFarm.crash_lines(logcat)
+    assert_equal 1, lines.size
+    assert_includes lines.first, 'FATAL EXCEPTION'
+  end
 end
