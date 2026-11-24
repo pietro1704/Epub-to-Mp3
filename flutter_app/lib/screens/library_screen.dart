@@ -21,6 +21,7 @@ import '../state/providers.dart';
 import '../views/tag_editor_sheet.dart';
 import '../services/playback/playback_recency_recorder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'library_columns.dart';
 
 part 'library_book_tile.dart';
 part 'library_filter_controls.dart';
@@ -89,6 +90,9 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late _SortMode _sortMode = _savedSortMode(ref.read(sharedPrefsProvider));
+  late int? _requestedColumns = readRequestedColumns(
+    ref.read(sharedPrefsProvider).get(libraryColumnsPreferenceKey),
+  );
   String? _selectedTag;
   String _searchQuery = '';
 
@@ -366,6 +370,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ],
             ),
           ),
+          Semantics(
+            label: t.libraryColumns,
+            child: PopupMenuButton<int>(
+              icon: const Icon(Icons.view_column_outlined),
+              tooltip: t.libraryColumns,
+              onSelected: (count) {
+                ref
+                    .read(sharedPrefsProvider)
+                    .setInt(libraryColumnsPreferenceKey, count);
+                setState(() => _requestedColumns = count);
+              },
+              itemBuilder: (_) => [
+                for (final count in libraryColumnChoices) _columnItem(count),
+              ],
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: t.addBook,
@@ -390,6 +410,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   child: books.isEmpty
                       ? Center(child: Text(t.noResults))
                       : _BookGrid(
+                          requestedColumns: _requestedColumns,
                           books: books,
                           onTap: (book) => _openInReader(ref, book),
                           onLongPress: (book) =>
@@ -409,6 +430,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         },
       },
       child: Focus(autofocus: true, child: library),
+    );
+  }
+
+  PopupMenuItem<int> _columnItem(int count) {
+    return PopupMenuItem(
+      value: count,
+      child: Row(
+        children: [
+          if (_requestedColumns == count)
+            Icon(
+              Icons.check,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            )
+          else
+            const SizedBox(width: 18),
+          const SizedBox(width: 8),
+          Text('$count'),
+        ],
+      ),
     );
   }
 
