@@ -25,6 +25,9 @@ pub struct ResolutionRequest {
     /// One optional explicit choice per base language tag (`pt`, `en`, ...).
     #[serde(default)]
     pub per_language_choices: BTreeMap<String, TtsSelection>,
+    /// The voice the listener set for this one book, if any (additive; decides before the language's choice).
+    #[serde(default)]
+    pub book_voice: Option<TtsSelection>,
     /// The user's default primary narration, if any.
     #[serde(default)]
     pub primary: Option<TtsSelection>,
@@ -56,6 +59,8 @@ pub enum Status {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
+    /// The listener's own voice for this book.
+    BookVoice,
     PerLanguage,
     Primary,
     Automatic,
@@ -182,7 +187,13 @@ pub fn resolve(request: &ResolutionRequest) -> Resolution {
     };
     let mut reasons = Vec::new();
     let mut chosen = None;
-    if let Some(choice) = request.per_language_choices.get(&context.language) {
+    if let Some(voice) = &request.book_voice {
+        match context.usable(voice, true) {
+            Ok(()) => chosen = Some((voice.clone(), Source::BookVoice)),
+            Err(reason) => reasons.push(format!("book_voice:{reason}")),
+        }
+    }
+    if let (None, Some(choice)) = (&chosen, request.per_language_choices.get(&context.language)) {
         match context.usable(choice, true) {
             Ok(()) => chosen = Some((choice.clone(), Source::PerLanguage)),
             Err(reason) => reasons.push(format!("per_language_choice:{reason}")),

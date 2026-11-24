@@ -63,6 +63,37 @@ pub unsafe extern "C" fn converter_tts_resolve_language_model_json_v1(
     )
 }
 
+/// The narration plan of one book before any audio: the language decision (user correction, whole-book profile,
+/// sampled consensus), the main language's voice (the listener's own book voice first), the voice of each other
+/// language of the profile, and what to tell the listener when a voice is missing. Pure; never downloads.
+/// The request carries the book's `analysis` and `profile` (from `converter_book_language_json_v1`).
+#[no_mangle]
+pub unsafe extern "C" fn converter_book_narration_plan_json_v1(
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard(
+        "converter_book_narration_plan_json_v1",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let request: converter_core::narration_plan::PlanRequest =
+                match c_string(request_json, "narration plan request")
+                    .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
+                {
+                    Ok(value) => value,
+                    Err(error) => return fail(error),
+                };
+            if request.schema_version != converter_core::narration_plan::SCHEMA_VERSION {
+                return fail(format!(
+                    "unsupported narration plan request schema {}",
+                    request.schema_version
+                ));
+            }
+            json_string(&converter_core::narration_plan::plan(&request))
+        },
+    )
+}
+
 fn json_string<T: serde::Serialize>(value: &T) -> *mut c_char {
     match serde_json::to_string(value) {
         Ok(text) => CString::new(text).map_or_else(

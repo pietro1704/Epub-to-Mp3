@@ -280,4 +280,19 @@ final class LanguageModelPlaybackTests: XCTestCase {
         let unknown = try analysis(languages: ["fr-FR"], confirmed: nil, declared: "pt", primary: nil)
         XCTAssertNil(unknown.resolvedLanguage(userCorrection: nil), "Neither languages.first nor the declared tag decides")
     }
+
+    func testTheResolutionDecodesTheBookVoiceSourceAndToleratesASourceThisBuildDoesNotKnow() throws {
+        func decode(_ source: String) throws -> LanguageModelResolution {
+            try JSONDecoder().decode(LanguageModelResolution.self, from: Data("""
+                {"book_language":"pt-BR","status":"selected","source":"\(source)","reasons":["book_voice:model_not_installed"],
+                 "selection":{"engine":"piper","model_id":"pt_BR-faber-medium"}}
+                """.utf8))
+        }
+        XCTAssertEqual(try decode("book_voice").source, .bookVoice)
+        XCTAssertEqual(try decode("per_language").source, .perLanguage)
+        let future = try decode("a_source_added_by_a_newer_rust")
+        XCTAssertNil(future.source, "An unknown source must not fail the resolution")
+        XCTAssertEqual(future.status, .selected)
+        XCTAssertEqual(future.selection?.modelID, "pt_BR-faber-medium")
+    }
 }
