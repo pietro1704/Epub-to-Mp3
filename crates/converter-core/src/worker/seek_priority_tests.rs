@@ -205,3 +205,127 @@ fn a_listening_seek_to_another_chapter_preempts_the_chapter_in_progress() {
     );
     assert_target_follows_the_seek_within_one_segment(&texts, seek_call);
 }
+
+/// A worker whose provider records when each segment starts and takes `delay` per segment;
+/// `streaming` makes it a playback request (chunks are published).
+fn timed_worker(
+    root: &Path,
+    starts: Arc<Mutex<Vec<std::time::Instant>>>,
+    delay: std::time::Duration,
+    first_chunk: Option<Arc<Mutex<Option<std::time::Instant>>>>,
+) -> (ConversionWorker, ConversionRequest) {
+    use crate::tts_session::*;
+    struct Provider {
+        starts: Arc<Mutex<Vec<std::time::Instant>>>,
+        delay: std::time::Duration,
+    }
+    struct Session {
+        identity: ResolvedIdentity,
+        starts: Arc<Mutex<Vec<std::time::Instant>>>,
+        delay: std::time::Duration,
+    }
+    impl TtsProvider for Provider {
+        fn descriptor(&self) -> ProviderDescriptor {
+            let mut descriptor = builtin_descriptors()[2].clone();
+            descriptor.provider = "timed-fixture".into();
+            descriptor.runtime = "wav-fixture".into();
+            descriptor.revision = "test-1".into();
+            descriptor
+        }
+        fn prepare(&self, selection: &SessionSelection, _: &str) -> Result<Box<dyn TtsSession>, TtsFailure> {
+            Ok(Box::new(Session {
+                identity: ResolvedIdentity {
+                    selection: selection.clone(),
+                    runtime_revision: "test-1".into(),
+                    artifacts: Default::default(),
+                    reusable: true,
+                },
+                starts: self.starts.clone(),
+                delay: self.delay,
+            }))
+        }
+    }
+    impl TtsSession for Session {
+        fn identity(&self) -> &ResolvedIdentity {
+            &self.identity
+        }
+        fn synthesize(&mut self, _: &str, context: &SynthesisContext<'_>, sink: &mut AudioSink) -> Result<(), TtsFailure> {
+            context.check()?;
+            self.starts.lock().unwrap().push(std::time::Instant::now());
+            std::thread::sleep(self.delay);
+            sink.write(&test_system_wav())
+        }
+    }
+    let input = root.join("timed.epub");
+    multi_chapter_book(&input, &[vec!["Primeiro paragrafo do livro.".into(), "Segundo paragrafo do livro.".into()]]);
+    let mut registry = TtsRegistry::default();
+    registry.register(Arc::new(Provider { starts, delay })).unwrap();
+    let config = AppConfig::from_paths(crate::paths::resolve_paths_from(Vec::<(String, String)>::new(), root.to_owned()));
+    let mut worker = ConversionWorker::new(config).unwrap().with_tts_registry(registry);
+    if let Some(first_chunk) = first_chunk {
+        worker = worker.with_streaming_chunks(Arc::new(move |_, _, _| {
+            first_chunk.lock().unwrap().get_or_insert_with(std::time::Instant::now);
+            true
+        }));
+    }
+    let mut request = preference_test_request();
+    request.input = input;
+    request.job_id = format!("timed-{}", root.display()).replace(['/', '\\'], "_");
+    request.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
+        primary: crate::tts_preferences::TtsSelection {
+            engine: "timed-fixture".into(),
+            model_id: None,
+            voice: None,
+            session: Some(SessionSelection {
+                version: 2,
+                provider: "timed-fixture".into(),
+                runtime: "wav-fixture".into(),
+                model_id: None,
+                model_revision: None,
+                voice: None,
+                options: Default::default(),
+            }),
+        },
+        ..Default::default()
+    });
+    (worker, request)
+}
+
+#[test]
+fn a_streaming_request_holds_background_jobs_until_its_first_chunk() {
+    let _serial = crate::conversion_control::SEEK_TEST_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let streaming_root = tempfile::tempdir().unwrap();
+    let background_root = tempfile::tempdir().unwrap();
+    let streaming_starts = Arc::new(Mutex::new(Vec::new()));
+    let background_starts = Arc::new(Mutex::new(Vec::new()));
+    let first_chunk = Arc::new(Mutex::new(None));
+    // The playback request's first segment is slow: that is the window the listener waits in.
+    let (streaming, streaming_request) = timed_worker(
+        streaming_root.path(),
+        streaming_starts.clone(),
+        std::time::Duration::from_millis(700),
+        Some(first_chunk.clone()),
+    );
+    let (background, background_request) = timed_worker(
+        background_root.path(),
+        background_starts.clone(),
+        std::time::Duration::ZERO,
+        None,
+    );
+    let playback = std::thread::spawn(move || streaming.run(streaming_request).unwrap());
+    while streaming_starts.lock().unwrap().is_empty() {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let download = std::thread::spawn(move || background.run(background_request).unwrap());
+    playback.join().unwrap();
+    download.join().unwrap();
+    let first_chunk = first_chunk.lock().unwrap().expect("the playback request published a chunk");
+    let background_first = *background_starts.lock().unwrap().first().expect("the background job synthesized");
+    assert!(
+        background_first + std::time::Duration::from_millis(50) >= first_chunk,
+        "the background job started {:?} before the listener's first chunk",
+        first_chunk.saturating_duration_since(background_first)
+    );
+}

@@ -116,6 +116,11 @@ impl ConversionWorker {
                 )
                 .map_err(worker_from_failure)?,
         );
+        // A playback request holds background work until its first segment is published.
+        let mut foreground = self
+            .streaming_chunk
+            .is_some()
+            .then(crate::conversion_control::hold_foreground);
         let mut sessions = self.tts_sessions.lock().expect("TTS session lock");
         let mut resolved_sessions = Vec::new();
         let mut segment_receipts = Vec::new();
@@ -173,9 +178,11 @@ impl ConversionWorker {
             }
             // Streaming playback outranks background jobs: rest while a seek is being served.
             crate::conversion_control::wait_for_foreground(
-                self.control
-                    .as_ref()
-                    .is_some_and(|control| control.is_streaming()),
+                self.streaming_chunk.is_some()
+                    || self
+                        .control
+                        .as_ref()
+                        .is_some_and(|control| control.is_streaming()),
                 &|| self.cancel.is_cancelled(),
                 crate::conversion_control::FOREGROUND_MAX_WAIT,
             );
@@ -318,6 +325,7 @@ impl ConversionWorker {
             if let Some(control) = &self.control {
                 control.note_segment_done(source_index);
             }
+            drop(foreground.take());
             let consumed_chars = remainder
                 .first()
                 .map_or(segment.scalar_range.end, |next| next.scalar_range.start)

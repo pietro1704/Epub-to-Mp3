@@ -95,7 +95,12 @@ reorders the queue. Background jobs (no listening plan and no playback window, i
 without a control) rest at their segment boundaries while the target has not delivered its first
 segment, bounded by 30 s and by cancellation. `converter_job_control_chapter_is_preempted(control,
 chapter) -> bool` (additive) lets chunk-delivery adapters drop in-flight chunks of a chapter that
-must yield. Seeks through `set_listening_position` already preempted and still do.
+must yield. Seeks through `set_listening_position` already preempted and still do, and (like `prioritize`) they
+now also rest background jobs until the new position delivers its first segment. Independently of
+any control, every STREAMING playback request (a worker with a chunk sink: a new request started from
+a text position, a chapter change, any client) holds background jobs from its start until its first
+segment is published, so Flutter's restart-at-offset seeks and the Android requests are served first
+without extra wiring.
 
 ## Book language profile
 
