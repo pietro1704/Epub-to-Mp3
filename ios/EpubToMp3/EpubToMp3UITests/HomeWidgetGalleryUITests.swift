@@ -22,6 +22,13 @@ final class HomeWidgetGalleryUITests: XCTestCase {
 
         let icon = springboard.icons.matching(NSPredicate(format: "label CONTAINS[c] %@", "EpubToMp3")).firstMatch
         for _ in 0..<3 where !icon.isHittable { springboard.swipeLeft() }
+        // Diagnostics for a supervised run: which icons SpringBoard really exposes (page, label, hittable).
+        let report = springboard.icons.allElementsBoundByIndex.map { "\($0.label) hittable=\($0.isHittable)" }.joined(separator: "\n")
+        print("SpringBoard icons:\n\(report)")
+        let attachment = XCTAttachment(string: report)
+        attachment.name = "springboard-icon-labels"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         XCTAssertTrue(icon.waitForExistence(timeout: 4) && icon.isHittable, "The app icon must be on the Home Screen")
         icon.press(forDuration: 1.2)
 
