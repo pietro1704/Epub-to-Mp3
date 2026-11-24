@@ -256,7 +256,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               followNarration: settings.readerAutoScroll,
               pairRequest: ref.watch(readerPairRequestProvider),
               onPairedChanged: (paired) =>
-                  ref.read(readerNarrationPairedProvider.notifier).state = paired,
+                  ref.read(readerNarrationPairedProvider.notifier).state =
+                      paired,
             ),
           ),
         ),
@@ -392,7 +393,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               '${widget.chapter.charCount} characters',
-              style: TextStyle(fontSize: 12, color: fg.withValues(alpha: 0.5)),
+              // The theme's own text color: a translucent tint of it is 2.4:1 on sepia.
+              style: TextStyle(fontSize: 12, color: fg),
             ),
           ),
         const SizedBox(height: 12),
