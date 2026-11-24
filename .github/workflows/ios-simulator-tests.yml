@@ -80,7 +80,7 @@ jobs:
         working-directory: ios/EpubToMp3
         run: |
           set -euo pipefail
-          default='ModelsScreenAlertTests,LocalAudioSettingsScreenControllerTests,TocScreenControllerTests,IOSMainReaderControllerTests,IOSAppShellTests,ModelsByLanguageTests,VoiceModelSettingsNavigationTests,PlatformSettingsCellTests,ReaderContentsSheetTests,ReaderChromeOverlayTests,FullPlayerFittingTests,SettingsStorageActionTests'
+          default='ModelsScreenAlertTests,LocalAudioSettingsScreenControllerTests,TocScreenControllerTests,IOSMainReaderControllerTests,IOSAppShellTests,ModelsByLanguageTests,VoiceModelSettingsNavigationTests,PlatformSettingsCellTests,ReaderContentsSheetTests,ReaderChromeOverlayTests,FullPlayerFittingTests,SettingsStorageActionTests,ModelsLanguagesScreenIOSTests,ReaderSettingsScopeHeaderTests'
           classes="${TEST_CLASSES:-$default}"
           only=()
           IFS=',' read -ra names <<< "$classes"
