@@ -181,7 +181,8 @@ class _ModelsLanguagesScreenState extends ConsumerState<ModelsLanguagesScreen> {
           ),
           title: Text(
             id,
-            style: dim ? TextStyle(color: theme.disabledColor) : null,
+            // Not installed is said by the subtitle and the download icon; the disabled color is 2.6:1.
+            style: dim ? TextStyle(color: theme.colorScheme.onSurfaceVariant) : null,
           ),
           subtitle: !usable
               ? Text(t.modelsOnlineNeedsConsent)

@@ -73,8 +73,11 @@ abstract final class AppTheme {
         constraints: const BoxConstraints(maxWidth: panelWidth),
         showDragHandle: true,
       ),
-      dialogTheme: const DialogThemeData(
-        constraints: BoxConstraints(maxWidth: panelWidth),
+      // The accent as a button label must keep 4.5:1: the default dark dialog surface is lighter
+      // than the app surface (3.97:1 for the accent), so dialogs use the app surface.
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
+        constraints: const BoxConstraints(maxWidth: panelWidth),
       ),
     );
   }
