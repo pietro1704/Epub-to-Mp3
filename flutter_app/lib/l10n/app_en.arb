@@ -117,6 +117,7 @@
   "done": "Done",
   "searchResultsCapped": "Showing first 100 results",
 
+  "libraryColumns": "Columns",
   "sortLibrary": "Sort library",
   "playbackPosition": "Playback position",
   "playbackSpeed": "Playback speed",

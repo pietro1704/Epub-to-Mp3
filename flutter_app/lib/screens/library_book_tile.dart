@@ -55,7 +55,9 @@ class _BookGrid extends StatelessWidget {
     required this.books,
     required this.onTap,
     required this.onLongPress,
+    this.requestedColumns,
   });
+  final int? requestedColumns;
   final List<BookEntity> books;
   final ValueChanged<BookEntity> onTap;
   final ValueChanged<BookEntity> onLongPress;
@@ -65,9 +67,10 @@ class _BookGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth <= 0) return const SizedBox.shrink();
-        final columns = constraints.maxWidth < 600
-            ? 2
-            : (constraints.maxWidth / 190).floor().clamp(3, 8);
+        final columns = libraryColumnCount(
+          constraints.maxWidth,
+          requested: requestedColumns,
+        );
         final tileWidth =
             (constraints.maxWidth - 32 - (columns - 1) * 16) / columns;
         final textTheme = Theme.of(context).textTheme;

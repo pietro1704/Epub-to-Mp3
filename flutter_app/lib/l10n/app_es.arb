@@ -113,6 +113,7 @@
   "done": "Listo",
   "searchResultsCapped": "Mostrando los primeros 100 resultados",
 
+  "libraryColumns": "Columnas",
   "sortLibrary": "Ordenar biblioteca",
   "playbackPosition": "Posición de reproducción",
   "playbackSpeed": "Velocidad de reproducción",

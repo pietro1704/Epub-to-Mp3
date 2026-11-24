@@ -307,6 +307,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get searchResultsCapped => 'Mostrando los primeros 100 resultados';
 
   @override
+  String get libraryColumns => 'Columnas';
+
+  @override
   String get sortLibrary => 'Ordenar biblioteca';
 
   @override

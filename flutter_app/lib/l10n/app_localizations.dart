@@ -640,6 +640,12 @@ abstract class AppLocalizations {
   /// **'Showing first 100 results'**
   String get searchResultsCapped;
 
+  /// No description provided for @libraryColumns.
+  ///
+  /// In en, this message translates to:
+  /// **'Columns'**
+  String get libraryColumns;
+
   /// No description provided for @sortLibrary.
   ///
   /// In en, this message translates to:
