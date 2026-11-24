@@ -682,6 +682,48 @@ abstract class AppLocalizations {
   /// **'Book language'**
   String get bookLanguageMenu;
 
+  /// No description provided for @bookLanguageAnalyzing.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing the book…'**
+  String get bookLanguageAnalyzing;
+
+  /// No description provided for @bookLanguageSummaryMain.
+  ///
+  /// In en, this message translates to:
+  /// **'{language} {percent}%'**
+  String bookLanguageSummaryMain(String language, int percent);
+
+  /// No description provided for @bookLanguageSummaryMainOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{language}'**
+  String bookLanguageSummaryMainOnly(String language);
+
+  /// No description provided for @bookLanguageSummaryWritten.
+  ///
+  /// In en, this message translates to:
+  /// **'Also written in {languages}'**
+  String bookLanguageSummaryWritten(String languages);
+
+  /// No description provided for @bookLanguageSummaryQuoted.
+  ///
+  /// In en, this message translates to:
+  /// **'Quotes in {languages}'**
+  String bookLanguageSummaryQuoted(String languages);
+
+  /// No description provided for @bookLanguageConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'The file says {declared}; the text is {detected}.'**
+  String bookLanguageConflict(String declared, String detected);
+
+  /// No description provided for @bookLanguageDetectedSection.
+  ///
+  /// In en, this message translates to:
+  /// **'In this book'**
+  String get bookLanguageDetectedSection;
+
   /// No description provided for @sortLibrary.
   ///
   /// In en, this message translates to:

@@ -22,7 +22,7 @@ import '../views/tag_editor_sheet.dart';
 import '../services/playback/playback_recency_recorder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'library_columns.dart';
-import 'book_language_picker.dart';
+import 'book_language_sheet.dart';
 
 part 'library_book_tile.dart';
 part 'library_filter_controls.dart';
@@ -255,11 +255,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 final corrections = ref.read(bookLanguageCorrectionsProvider);
-                final choice = await showBookLanguagePicker(
-                  this.context,
-                  allowsAutomatic: true,
-                  selected: corrections.decision(book.id).bookLanguage,
-                );
+                final choice = await showBookLanguageSheet(this.context, ref, book);
                 if (choice != null) await corrections.set(choice, bookId: book.id);
               },
             ),

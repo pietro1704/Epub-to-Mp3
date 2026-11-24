@@ -195,11 +195,34 @@ enum BookLanguageClass {
       );
 }
 
+/// How much a language matters in the book (Rust's roles): the main one, a significant one, a
+/// whole section in another language, or only quotations.
+enum BookLanguageRole {
+  main,
+  significant,
+  section,
+  incidental,
+  unknown;
+
+  static BookLanguageRole parse(Object? value) => switch (value) {
+    'main' => main,
+    'significant' => significant,
+    'section' => section,
+    'incidental' => incidental,
+    _ => unknown,
+  };
+}
+
 /// One language of the book and its share of the detected text.
 class BookLanguageShare {
-  const BookLanguageShare({required this.language, required this.fraction});
+  const BookLanguageShare({
+    required this.language,
+    required this.fraction,
+    this.role = BookLanguageRole.unknown,
+  });
   final String language;
   final double fraction;
+  final BookLanguageRole role;
 }
 
 /// The `profile` Rust adds (additively) to the book language analysis: a monolingual book is read
@@ -227,6 +250,7 @@ class BookLanguageProfile {
               BookLanguageShare(
                 language: entry['language'] as String,
                 fraction: (entry['fraction'] as num?)?.toDouble() ?? 0,
+                role: BookLanguageRole.parse(entry['role']),
               ),
         ],
         incidental: [
