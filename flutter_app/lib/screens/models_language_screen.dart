@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../models/language_model_choices.dart';
 import '../models/language_names.dart';
+import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
+import '../services/conversion/embedded_conversion_contract.dart' show ManualTtsModelCatalog;
 import '../services/conversion/model_install/model_install_models.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
 import '../state/providers.dart';
@@ -101,6 +103,30 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
     }
   }
 
+  /// A Piper Low voice is chosen with its catalog revision: the probe confirms the installed
+  /// voice is ready, and only then is the choice stored (Rust accepts a Low voice no other way).
+  Future<void> _chooseLow(TtsCatalog manual, Map<String, dynamic> model) async {
+    final identity = manual.installedLowModels().where((m) => m.modelId == model['id']).firstOrNull;
+    if (identity == null) return;
+    try {
+      final root = await ref.read(ttsModelRootProvider.future);
+      final converter = ref.read(embeddedConverterProvider);
+      if (converter is! ManualTtsModelCatalog) throw StateError('Manual probing is unavailable');
+      final probe = await (converter as ManualTtsModelCatalog).probeTtsModel(
+        modelId: identity.modelId!,
+        root: root,
+        language: _base,
+      );
+      final selection = TtsCatalog.decodeManual(probe).confirmedManualModel(identity);
+      if (mounted) ref.read(languageModelChoicesProvider.notifier).choose(_base, selection);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context)!.ttsManualModelUnavailable)),
+      );
+    }
+  }
+
   void _choose(Map<String, dynamic> model) => ref
       .read(languageModelChoicesProvider.notifier)
       .choose(_base, _selectionFor(model));
@@ -190,6 +216,17 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
     final allowOnline = ref.watch(settingsProvider).ttsPreferences.allowOnlineFallback;
     final systemVoices = ref.watch(systemVoiceLanguagesProvider).asData?.value ?? const <String>[];
     final choice = choices.choiceFor(_base);
+    final showLow = ref.watch(showLowQualityModelsProvider);
+    final manualCatalog = showLow ? ref.watch(manualLowCatalogProvider).asData?.value : null;
+    // Installed Low voices that serve this language (they need the catalog revision to be chosen).
+    final lowModels = manualCatalog == null
+        ? const <Map<String, dynamic>>[]
+        : [
+            for (final identity in manualCatalog.installedLowModels())
+              ...manualCatalog.models.where(
+                (m) => m['id'] == identity.modelId && _serves(m, _base),
+              ),
+          ];
     return Scaffold(
       appBar: AppBar(title: Text(languageEndonym(_base))),
       body: ListView(
@@ -255,6 +292,17 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
                         usable: true,
                                         choices: choices,
                         t: t,
+                      ),
+                  ],
+                  if (lowModels.isNotEmpty) ...[
+                    _header(t.modelsLowQualitySection),
+                    for (final model in lowModels)
+                      ListTile(
+                        key: ValueKey('model-$_base-${model['id']}'),
+                        leading: _radio(choice?.modelId == model['id'] && choice?.session != null),
+                        title: Text('${model['id']}'),
+                        subtitle: _details(t, model) == null ? null : Text(_details(t, model)!),
+                        onTap: () => _chooseLow(manualCatalog!, model),
                       ),
                   ],
                   if (edge.isNotEmpty) ...[
