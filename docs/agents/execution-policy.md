@@ -215,8 +215,11 @@ Code that runs only on iOS (UIKit presentation, `#if os(iOS)` paths, alerts and
 action sheets) needs an iOS execution before its PR is opened ready. macOS tests
 plus an iOS compile do not cover it. On 2026-11-23, #1353 passed that evidence
 and crashed on the iPhone 16e at the first tap, because UIKit rejects two cancel
-actions. Until a CI simulator job exists, keep such changes on a branch and add
-them to the device plan.
+actions. The PR gate now includes `iOS Simulator UIKit tests` (an iPhone Simulator on a hosted
+runner, selected by the `apple` scope), which runs the UIKit controller/alert test
+classes listed in `.github/workflows/ios-simulator-tests.yml`. Add a new iOS-only test
+class to that list; code with no test there still needs a device run and a place in the
+device plan.
 
 Attach the visual evidence for a visible change before opening its PR ready,
 because ready PRs merge automatically.

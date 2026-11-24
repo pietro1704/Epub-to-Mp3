@@ -16,8 +16,6 @@ on:
         description: Comma-separated EpubToMp3Tests classes; empty runs the default UIKit selection
         type: string
         default: ''
-  push:
-    branches: [ci/ios-simulator-tests]
 
 permissions:
   contents: read
