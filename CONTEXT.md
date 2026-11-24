@@ -124,7 +124,6 @@ total_chars, undetermined_chars}`. A client warns BEFORE playing which models ar
 resolving each `languages[].language` with the existing language-model-resolution contract
 (installing a model stays an explicit action).
 
-||||||| parent of 1af7a527 (feat(core): shared language popularity rank for the Models screen order)
 ## Models screen language order
 
 Clients list the languages of the Models screen in this order (card MODELS-LANGUAGE-SUBSCREEN):
