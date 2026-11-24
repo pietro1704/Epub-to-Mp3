@@ -54,10 +54,10 @@ final class TtsPreferencesUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 10))
         app.tabBars.buttons["Settings"].tap()
-        let primary = app.cells["settings.tts.primary"]
+        let primary = app.buttons["settings.tts.primary"]
         reveal(primary, in: app)
         let originalPrimary = try XCTUnwrap(primary.value as? String)
-        let secondary = app.cells["settings.tts.secondary"]
+        let secondary = app.buttons["settings.tts.secondary"]
         reveal(secondary, in: app)
         let originalSecondary = try XCTUnwrap(secondary.value as? String)
         let online = app.switches["settings.tts.onlineConsent"]
@@ -65,28 +65,28 @@ final class TtsPreferencesUITests: XCTestCase {
         let originalOnline = online.value as? String == "1"
         defer {
             app.tabBars.buttons["Settings"].tap()
-            choose(originalPrimary, row: primary, app: app)
-            choose(originalSecondary, row: secondary, app: app)
+            chooseNarration(originalPrimary, row: primary, app: app)
+            chooseNarration(originalSecondary, row: secondary, app: app)
             setSwitch(online, on: originalOnline, app: app)
         }
 
-        choose("Faber medium", row: primary, app: app)
-        choose("None", row: secondary, app: app)
+        chooseNarration("Piper, Faber medium", row: primary, app: app)
+        chooseNarration("None", row: secondary, app: app)
         setSwitch(online, on: false, app: app)
         reveal(primary, in: app)
-        XCTAssertEqual(primary.value as? String, "Faber medium")
+        XCTAssertEqual(primary.value as? String, "Piper, Faber medium")
         reveal(secondary, in: app)
         XCTAssertEqual(secondary.value as? String, "None")
         reveal(online, in: app)
         XCTAssertEqual(online.value as? String, "0")
 
-        choose("System voice (Luciana when available)", row: secondary, app: app)
+        chooseNarration("System, Luciana when available", row: secondary, app: app)
         reveal(secondary, in: app)
-        XCTAssertEqual(secondary.value as? String, "System voice (Luciana when available)")
+        XCTAssertEqual(secondary.value as? String, "System, Luciana when available")
         reveal(primary, in: app)
-        XCTAssertEqual(primary.value as? String, "Faber medium")
+        XCTAssertEqual(primary.value as? String, "Piper, Faber medium")
 
-        choose("Edge", row: secondary, app: app)
+        chooseNarration("Edge", row: secondary, app: app)
         setSwitch(online, on: true, app: app)
         app.tabBars.buttons["Convert"].tap()
         let manual = app.cells["convert.tts.primary"]
@@ -108,7 +108,7 @@ final class TtsPreferencesUITests: XCTestCase {
         XCTAssertEqual(reserve.value as? String, "0", "An explicit manual voice starts without a secondary.")
         app.tabBars.buttons["Settings"].tap()
         reveal(primary, in: app)
-        XCTAssertEqual(primary.value as? String, "Faber medium", "Manual overrides must not change the default.")
+        XCTAssertEqual(primary.value as? String, "Piper, Faber medium", "Manual overrides must not change the default.")
         reveal(secondary, in: app)
         XCTAssertEqual(secondary.value as? String, "Edge")
         app.tabBars.buttons["Convert"].tap()
@@ -138,6 +138,26 @@ final class TtsPreferencesUITests: XCTestCase {
         reveal(reserve, in: app)
         XCTAssertTrue(reserve.isEnabled, "Editing an inherited voice must immediately enable the manual secondary control.")
         XCTAssertEqual(reserve.value as? String, "0")
+    }
+
+    /// Settings narration rows open an engine-first menu (System / Piper / Edge, the voice inside the engine).
+    /// `value` is the row's accessibility value: "<engine>[, <voice>]" or "None". Each tap applies at once.
+    private func chooseNarration(_ value: String, row: XCUIElement, app: XCUIApplication) {
+        reveal(row, in: app)
+        row.tap()
+        let parts = value.components(separatedBy: ", ")
+        let engine = parts[0]
+        let voice = parts.count > 1 ? parts.dropFirst().joined(separator: ", ") : nil
+        let entry = app.buttons[engine]
+        XCTAssertTrue(entry.waitForExistence(timeout: 3), "Missing engine in the menu: \(engine)")
+        entry.tap()
+        // System offers a detail label rather than a voice list; only Piper opens a submenu.
+        if engine == "Piper", let voice {
+            let leaf = app.buttons[voice]
+            XCTAssertTrue(leaf.waitForExistence(timeout: 3), "Missing Piper model in the menu: \(voice)")
+            leaf.tap()
+        }
+        XCTAssertTrue(entry.waitForNonExistence(timeout: 3), "The menu must close after the choice")
     }
 
     private func choose(_ title: String, row: XCUIElement, app: XCUIApplication) {
