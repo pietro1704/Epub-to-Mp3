@@ -129,6 +129,14 @@ class MeasuredSpeechAlignment {
       final text = passage['text'] as String;
       final words = passage['words'] as List;
       final base = passage['audioStart'] ?? 0;
+      final note = passage['note'];
+      if (note is Map) {
+        // A narrated footnote: its text is the spoken note, not source text, so it maps
+        // as a whole to the note body (or the reference when the body is elsewhere).
+        final span = _noteSpan(note, words, base, chapter, source);
+        if (span != null) timeline.add(span);
+        continue;
+      }
       if (base is! num ||
           !base.isFinite ||
           base < 0 ||
@@ -213,6 +221,49 @@ class MeasuredSpeechAlignment {
     }
     return timeline;
   }
+}
+
+/// The whole spoken note as one timed range, or null when the metadata is invalid.
+_MeasuredWord? _noteSpan(
+  Map note,
+  List words,
+  Object base,
+  String chapter,
+  NormalizedReaderText source,
+) {
+  final first = words.isEmpty ? null : words.first,
+      last = words.isEmpty ? null : words.last;
+  final from = note['sourceStart'], to = note['sourceEnd'];
+  if (base is! num ||
+      !base.isFinite ||
+      base < 0 ||
+      first is! Map ||
+      last is! Map ||
+      first['start'] is! num ||
+      last['end'] is! num ||
+      from is! int ||
+      to is! int ||
+      from < 0 ||
+      to < from ||
+      to > chapter.runes.length) {
+    return null;
+  }
+  final begin = (first['start'] as num).toDouble(),
+      end = (last['end'] as num).toDouble();
+  if (!begin.isFinite || !end.isFinite || begin < 0 || end <= begin) {
+    return null;
+  }
+  int raw(int scalar) =>
+      String.fromCharCodes(chapter.runes.take(scalar)).length;
+  final rawEnd = raw(to);
+  // An empty body range is the reference itself: keep its last character highlighted.
+  final rawStart = to == from ? (rawEnd > 0 ? rawEnd - 1 : 0) : raw(from);
+  if (rawEnd <= rawStart) return null;
+  return _MeasuredWord(
+    (base + begin).toDouble(),
+    (base + end).toDouble(),
+    TextRange(start: rawStart, end: rawEnd),
+  );
 }
 
 class _MeasuredWord {

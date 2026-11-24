@@ -455,6 +455,13 @@ class AppLocalizationsEs extends AppLocalizations {
       'Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.';
 
   @override
+  String get ttsFootnoteNarration => 'Leer las notas al pie en el texto';
+
+  @override
+  String get ttsFootnoteNarrationDescription =>
+      'Cada nota se lee donde se cita, entre los avisos \"Nota al pie N\". Desactiva para omitir las notas.';
+
+  @override
   String get ttsEngineSystem => 'Voz del sistema';
 
   @override

@@ -172,6 +172,8 @@
   "ttsOnlineSecondaryDescription": "Send failed segments to Edge only when enabled.",
   "ttsAutomaticSystemFallback": "Automatic system voice fallback",
   "ttsAutomaticSystemFallbackDescription": "If selected voices fail, try an installed system voice. Turn off to use only your selected voices.",
+  "ttsFootnoteNarration": "Read footnotes in the text",
+  "ttsFootnoteNarrationDescription": "Each note is read where it is referenced, between \"Footnote N\" markers. Turn off to skip the notes.",
   "ttsEngineSystem": "System voice",
   "ttsEnginePiper": "Piper",
   "ttsEngineEdge": "Edge (online)",

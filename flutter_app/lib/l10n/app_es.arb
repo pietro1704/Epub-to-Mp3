@@ -168,6 +168,8 @@
   "ttsOnlineSecondaryDescription": "Envía los fragmentos que fallen a Edge solo cuando esta opción esté activada.",
   "ttsAutomaticSystemFallback": "Voz del sistema como alternativa automática",
   "ttsAutomaticSystemFallbackDescription": "Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.",
+  "ttsFootnoteNarration": "Leer las notas al pie en el texto",
+  "ttsFootnoteNarrationDescription": "Cada nota se lee donde se cita, entre los avisos \"Nota al pie N\". Desactiva para omitir las notas.",
   "ttsEngineSystem": "Voz del sistema",
   "ttsEnginePiper": "Piper",
   "ttsEngineEdge": "Edge (en línea)",

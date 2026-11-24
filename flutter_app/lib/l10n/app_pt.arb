@@ -168,6 +168,8 @@
   "ttsOnlineSecondaryDescription": "Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.",
   "ttsAutomaticSystemFallback": "Voz do sistema como alternativa automática",
   "ttsAutomaticSystemFallbackDescription": "Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.",
+  "ttsFootnoteNarration": "Ler notas de rodapé no texto",
+  "ttsFootnoteNarrationDescription": "Cada nota é lida onde é citada, entre os avisos \"Início/Fim da nota de rodapé N\". Desative para pular as notas.",
   "ttsEngineSystem": "Voz do sistema",
   "ttsEnginePiper": "Piper",
   "ttsEngineEdge": "Edge (online)",

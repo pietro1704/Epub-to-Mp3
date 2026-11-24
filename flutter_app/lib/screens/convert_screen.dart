@@ -239,6 +239,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
                   : null,
               allowOnlineFallback: allowSecondary && saved.allowOnlineFallback,
               policyVersion: saved.policyVersion,
+              footnoteNarration: saved.footnoteNarration,
             );
       final request = ConversionRequest(
         filePath: path,

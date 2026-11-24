@@ -140,7 +140,9 @@ class _VoiceSelectionSettingsState
                                 ))) &&
                         (selection.engine != 'edge' ||
                             preferences.allowOnlineFallback ||
-                            selection.representsSameRequest(preferences.primary)),
+                            selection.representsSameRequest(
+                              preferences.primary,
+                            )),
                   );
                   final selected = pick?.selection;
                   if (selected == null || !mounted) return;
@@ -188,6 +190,7 @@ class _VoiceSelectionSettingsState
                       allowOnlineFallback: preferences.allowOnlineFallback,
                       // Keep an explicit "no automatic system voice" policy.
                       policyVersion: preferences.policyVersion == 3 ? 3 : 2,
+                      footnoteNarration: preferences.footnoteNarration,
                     ),
                   );
                 },
@@ -210,6 +213,7 @@ class _VoiceSelectionSettingsState
                           : prefs.secondary,
                       allowOnlineFallback: value,
                       policyVersion: prefs.policyVersion,
+                      footnoteNarration: prefs.footnoteNarration,
                     ),
                   );
                 },

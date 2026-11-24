@@ -6,7 +6,9 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/features/playback/measured_speech_alignment.dart';
 import 'package:flutter_app/features/playback/measured_playback_binding.dart';
+
 import 'support/fake_audio_player_service.dart';
+
 import 'package:flutter_app/models/job_snapshot.dart';
 
 Uint8List tag(List<Object> passages, {int version = 3}) {
@@ -138,4 +140,80 @@ void main() {
       await player.dispose();
     },
   );
+
+  group('narrated footnotes', () {
+    // Chapter text; the note body "Corpo da nota." is scalars 24..38 and is read at the reference.
+    const chapter = 'Texto antes 1 e depois. Corpo da nota.';
+    Map<String, Object> sourcePassage(
+      String text,
+      int offset,
+      double audioStart,
+    ) => {
+      'version': 1,
+      'text': text,
+      'audioStart': audioStart,
+      'sourceOffset': offset,
+      'words': [
+        {'location': 0, 'length': text.length, 'start': 0, 'end': 1},
+      ],
+    };
+    Map<String, Object> notePassage({required int start, required int end}) => {
+      'version': 1,
+      'text':
+          'Início da nota de rodapé 1. Corpo da nota. Fim da nota de rodapé 1.',
+      'audioStart': 3,
+      'note': {'number': '1', 'sourceStart': start, 'sourceEnd': end},
+      'words': [
+        {'location': 0, 'length': 6, 'start': 0, 'end': 1},
+        {'location': 28, 'length': 5, 'start': 1, 'end': 2},
+        {'location': 43, 'length': 3, 'start': 2, 'end': 4},
+      ],
+    };
+
+    test('the body is highlighted while the note is read and the text resumes after it', () {
+      final alignment = MeasuredSpeechAlignment.parse(
+        tag([
+          sourcePassage('Texto antes 1', 0, 0),
+          notePassage(start: 24, end: 38),
+          sourcePassage('e depois.', 14, 8),
+        ]),
+      );
+      expect(
+        alignment.rangeAt(.5, chapter),
+        const TextRange(start: 0, end: 13),
+      );
+      for (final seconds in [3.2, 4.5, 6.5]) {
+        expect(
+          alignment.rangeAt(seconds, chapter),
+          const TextRange(start: 24, end: 38),
+          reason: 'second $seconds of the spoken note',
+        );
+      }
+      expect(
+        alignment.rangeAt(8.5, chapter),
+        const TextRange(start: 14, end: 23),
+      );
+    });
+
+    test('a note whose body is elsewhere keeps the reference highlighted', () {
+      final alignment = MeasuredSpeechAlignment.parse(
+        tag([notePassage(start: 13, end: 13)]),
+      );
+      expect(
+        alignment.rangeAt(4, chapter),
+        const TextRange(start: 12, end: 13),
+      );
+    });
+
+    test('an invalid note range produces no highlight', () {
+      for (final range in [(40, 50), (30, 24)]) {
+        expect(
+          MeasuredSpeechAlignment.parse(
+            tag([notePassage(start: range.$1, end: range.$2)]),
+          ).rangeAt(4, chapter),
+          isNull,
+        );
+      }
+    });
+  });
 }
