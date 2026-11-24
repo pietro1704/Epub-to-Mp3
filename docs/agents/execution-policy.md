@@ -71,6 +71,38 @@ Arch. The branch must be based on a `master` that has the `scope` input.
 - Branch-evidence runs use their own concurrency group and never cancel PR-gate
   runs. A pushed branch still ends in a PR or is deleted; drafts stay forbidden.
 
+### Throughput and scheduling
+
+Pietro, 2026-11-24: maximum speed on the Mac and the Arch without so much
+parallelism that context switches and swap slow things down; no agent, terminal
+or device stays idle.
+
+- One heavy job per host at a time: the heavy lease on the Mac, and on the Arch
+  one `cargo`/`flutter`/`gradle` build by convention. Inside that job, use the
+  physical cores minus one: `CARGO_BUILD_JOBS=3` and `xcodebuild -jobs 3` on the
+  Mac (4 cores, 8 GiB); on the Arch (4 cores, 7 GiB) `CARGO_BUILD_JOBS=3`,
+  Gradle `--max-workers=2`, `flutter test --concurrency=3`. Drop to 2 when swap
+  passes 3 GiB or available memory falls below 1.5 GiB. Hyperthreads and a
+  second heavy job lose more to swap and context switches than they gain.
+- Priority: (1) a device step while Pietro holds the device; (2) work that blocks
+  a PR; (3) the next card. Prepare device runs first (build-for-testing,
+  install, prerequisites such as Developer Mode and UI automation), and ask
+  Pietro to unlock only for the on-device step.
+- GitHub Actions is the parallel compute. Push, and while CI runs, move to the
+  next card's code instead of waiting. Keep at most two of your own PRs waiting
+  on CI, which limits context switching.
+- Light work (editing, `gh`, reviews, docs) runs next to the heavy job and never
+  starts a second compiler.
+- Other projects' background jobs on these hosts (for example course
+  transcription) run only while the heavy lease is free, at background
+  priority, with at most two threads, and pause under memory pressure.
+- Devices never idle: the tablet runs the device-farm loop (regression, playback
+  soak, monkey) whenever no worker holds it, and the A8 joins when Pietro is
+  not using it. Each device shows exactly one EpubToMp3 app; test builds leave no
+  second launcher icon and are closed after each run.
+- The coordinator keeps each worker's queue at least two cards deep and gives an
+  idle worker its next card within minutes.
+
 ### Cache policy
 
 The repository's GitHub Actions cache limit is 10 GB and eviction is LRU, so a
