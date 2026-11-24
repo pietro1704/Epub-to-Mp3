@@ -67,7 +67,13 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         playbackChapterIndex:
             readerPosition?.chapterIndex ??
             (_playableChapters.isEmpty || player.currentIndexValue == null
-                ? savedChapter ?? 0
+                // A converter that cannot start inside a chapter (Android) still starts at the
+                // chapter the reader shows (its last published position, else the chapter it
+                // last displayed); the saved listening only applies without a reader.
+                ? _readerListeningPosition?.chapterIndex ??
+                      ref.read(sharedPrefsProvider).getInt('readPos_ch_${widget.bookId}') ??
+                      savedChapter ??
+                      0
                 : _sourceChapterIndexForPlayerIndex(
                     player,
                     player.currentIndexValue!,
