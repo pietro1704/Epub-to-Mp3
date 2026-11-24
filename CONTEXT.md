@@ -97,6 +97,28 @@ segment, bounded by 30 s and by cancellation. `converter_job_control_chapter_is_
 chapter) -> bool` (additive) lets chunk-delivery adapters drop in-flight chunks of a chapter that
 must yield. Seeks through `set_listening_position` already preempted and still do.
 
+## Book language profile
+
+The detector reads the WHOLE book once (not 32 samples) and classifies it
+(`language/profile.rs`, card BOOK-LANGUAGE-PROFILE): `monolingual` (quotations in other languages
+do not count: a language belongs to the book only when it is at least 10% of the detected text or
+fills one uninterrupted section of about a page), `bilingual` (two languages, parallel text or
+alternating sections) or `multilingual` (three or more, by section), with each language's share.
+The profile is cached by the book's source identity (`language-profile-v1.json`), computed in the
+job set-up and never in the segment loop. A monolingual book is narrated entirely with the voice
+of its main language: no passage is routed to another language, so a quotation never stops the
+playback or asks for another model. In a bilingual or multilingual book, the main voice speaks the
+first of the book's languages it can; a passage in a language without a voice (and without a
+language-compatible secondary voice) is read with the main voice and playback continues. The
+profile and the detector are part of the narration cache identity (`book-language-profile-v1`).
+
+Contract for clients (additive): `converter_book_language_analysis_json_v1(path)` keeps its
+payload and adds `profile`: `{version, detector, class: "monolingual"|"bilingual"|"multilingual",
+primary, languages: [{language, chars, fraction, longest_section_chars}], incidental: [language],
+total_chars, undetermined_chars}`. A client warns BEFORE playing which models are missing by
+resolving each `languages[].language` with the existing language-model-resolution contract
+(installing a model stays an explicit action).
+
 ## Provider feedback
 
 **Provider pressure**:

@@ -128,15 +128,36 @@ impl ConversionWorker {
             .expect("source identity lock")
             .clone();
         while let Some(segment) = segments.pop_front() {
-            let language = Some(super::language_routing::language_for_segment(
+            let passage_language = super::language_routing::language_for_segment(
                 &language_passages,
                 segment.scalar_range.clone(),
                 language,
                 source_index,
                 source_offset,
-            )?);
-            let routed_preferences =
-                crate::language::preferences_for_language(preferences, language);
+            )?;
+            // A passage in a language the selected voices cannot speak (and with no language-
+            // compatible secondary) is read with the book's main voice: playback never stops
+            // mid-way for lack of a model. Which models are missing is known up front, from the
+            // book profile, and installing one stays an explicit action.
+            let routed =
+                crate::language::preferences_for_language(preferences, Some(passage_language));
+            let language = if crate::language::selection_supports_language(
+                &routed.primary,
+                passage_language,
+            ) {
+                Some(passage_language)
+            } else {
+                eprintln!(
+                    "no voice for {passage_language}: reading this passage with the book's main voice ({})",
+                    language.unwrap_or("default")
+                );
+                language.or(Some(passage_language))
+            };
+            let routed_preferences = if language == Some(passage_language) {
+                routed
+            } else {
+                crate::language::preferences_for_language(preferences, language)
+            };
             let preferences = &routed_preferences;
             let cache_hit = std::cell::Cell::new(false);
             let segment_started = std::time::Instant::now();
