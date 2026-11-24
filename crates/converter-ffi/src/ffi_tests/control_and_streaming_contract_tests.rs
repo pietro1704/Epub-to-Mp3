@@ -8,6 +8,7 @@ fn controlled_ffi_rejects_null_control_and_keeps_null_cleanup_safe() {
             0
         ));
         assert!(!converter_job_control_prioritize(ptr::null(), 0));
+        assert!(!converter_job_control_chapter_is_preempted(ptr::null(), 0));
         assert!(converter_session_convert_streaming_job_options_json_v1(
             ptr::null(),
             ptr::null(),
@@ -221,6 +222,20 @@ fn queued_streaming_publishes_a_real_segment_before_chapter_completion_and_cance
         );
         assert_eq!(calls.load(std::sync::atomic::Ordering::Acquire), 1);
         converter_session_free(session);
+        converter_job_control_free(control);
+    }
+}
+
+#[test]
+fn a_fresh_job_control_preempts_nothing() {
+    // The preemption itself (attach, take, prioritize while streaming) is covered in
+    // converter-core; here the additive symbol is only checked for a safe default.
+    unsafe {
+        let control = converter_job_control_create();
+        assert!(!control.is_null());
+        converter_job_control_set_playback_window(control, 0, 3);
+        assert!(!converter_job_control_chapter_is_preempted(control, 0));
+        assert!(!converter_job_control_chapter_is_preempted(control, 2));
         converter_job_control_free(control);
     }
 }
