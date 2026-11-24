@@ -110,7 +110,7 @@ jobs:
           xcodebuild test-without-building -xctestrun "$xctestrun" -destination "id=${{ steps.sim.outputs.udid }}" \
             -parallel-testing-enabled NO -resultBundlePath "$report/result.xcresult" "${only[@]}" "${skip[@]}" 2>&1 | tee "$report/test.log" | tail -40 || true
           grep -E "Executed [0-9]+ tests" "$report/test.log" | tail -2
-          grep -q "\*\* TEST SUCCEEDED \*\*" "$report/test.log"
+          grep -qE "\*\* TEST (EXECUTE )?SUCCEEDED \*\*" "$report/test.log"
       - name: Shut the Simulator down
         if: always()
         run: xcrun simctl shutdown all || true
