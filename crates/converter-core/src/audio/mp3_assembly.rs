@@ -7,7 +7,7 @@ use super::{
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 /// A bounded header check avoids rescanning every healthy chapter on queue
@@ -208,14 +208,60 @@ fn join_mp3_segments_with(
     parts: &[&[u8]],
     finalize: impl FnOnce(&Path) -> Result<bool, AudioError>,
 ) -> Result<Vec<u8>, AudioError> {
+    join_mp3_segments_in(parts, &scratch_directories(), finalize)
+}
+
+/// Directories the join may keep its scratch file in, best first. The system one is not always
+/// writable: Android's default (`/data/local/tmp`) is closed to app UIDs, and under ABI
+/// translation the app's `TMPDIR` does not reach the translated libc. On Android the app's own
+/// cache directory (named by the process, which is the package name) is the fallback.
+fn scratch_directories() -> Vec<PathBuf> {
+    let mut directories = vec![std::env::temp_dir()];
+    #[cfg(target_os = "android")]
+    if let Ok(cmdline) = std::fs::read("/proc/self/cmdline") {
+        let name = cmdline.split(|byte| *byte == 0).next().unwrap_or_default();
+        // A secondary process is named `package:suffix`.
+        let name = String::from_utf8_lossy(name);
+        let package = name.split(':').next().unwrap_or_default();
+        if !package.is_empty() {
+            directories.push(PathBuf::from(format!("/data/user/0/{package}/cache")));
+            directories.push(PathBuf::from(format!("/data/data/{package}/cache")));
+        }
+    }
+    directories
+}
+
+fn join_mp3_segments_in(
+    parts: &[&[u8]],
+    directories: &[PathBuf],
+    finalize: impl FnOnce(&Path) -> Result<bool, AudioError>,
+) -> Result<Vec<u8>, AudioError> {
     if let [only] = parts {
         return Ok(only.to_vec());
     }
+    let mut failure = None;
+    let mut scratch = None;
+    for directory in directories {
+        match tempfile::Builder::new().tempfile_in(directory) {
+            Ok(file) => {
+                scratch = Some(file);
+                break;
+            }
+            Err(error) => failure = Some(error),
+        }
+    }
+    let mut joined = match scratch {
+        Some(file) => file,
+        None => {
+            return Err(failure
+                .unwrap_or_else(|| std::io::Error::other("no scratch directory"))
+                .into())
+        }
+    };
     // The handle is closed (`into_temp_path`) BEFORE `finalize` replaces the file by an atomic
     // rename: Windows refuses to rename over, or delete, a file that still has an open handle
     // (`Access is denied`, os error 5). The path still deletes the file when it is dropped.
     let path = {
-        let mut joined = tempfile::NamedTempFile::new()?;
         for part in parts {
             joined.write_all(part)?;
         }
@@ -281,6 +327,39 @@ mod tests {
             "the temporary file must be closed before it is replaced (Windows os error 5)"
         );
         assert!(joined.len() > AUDIO.len());
+    }
+
+    /// Android's native temporary directory (`/data/local/tmp`) is not writable by an app, and
+    /// under ABI translation the app's `TMPDIR` does not reach the translated libc: the narration
+    /// pause join failed there with `Permission denied (os error 13)`. The join tries the next
+    /// scratch directory instead of failing.
+    #[test]
+    fn joining_falls_back_to_a_writable_scratch_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let unusable = root.path().join("missing").join("tmp");
+        let joined = join_mp3_segments_in(
+            &[AUDIO, AUDIO],
+            &[unusable, root.path().to_path_buf()],
+            finalize_mp3,
+        )
+        .unwrap();
+        assert!(joined.len() > AUDIO.len());
+        assert!(
+            std::fs::read_dir(root.path()).unwrap().next().is_none(),
+            "the scratch file is removed once the join is done"
+        );
+    }
+
+    #[test]
+    fn joining_reports_the_failure_when_no_scratch_directory_is_writable() {
+        let root = tempfile::tempdir().unwrap();
+        let error = join_mp3_segments_in(
+            &[AUDIO, AUDIO],
+            &[root.path().join("a"), root.path().join("b")],
+            finalize_mp3,
+        )
+        .unwrap_err();
+        assert!(matches!(error, AudioError::Io(_)), "{error}");
     }
 
     #[test]
