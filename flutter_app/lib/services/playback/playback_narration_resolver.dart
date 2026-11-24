@@ -62,6 +62,22 @@ class BookLanguageCache {
     return analysis;
   }
 
+  /// The main language of each library book analysed so far, without parsing any book: what the
+  /// Models screen needs to say which languages the library asks for.
+  Map<String, String> knownPrimaryLanguages({
+    String? Function(String bookId)? corrected,
+  }) {
+    final result = <String, String>{};
+    for (final bookId in _all().keys) {
+      final language = primaryBookLanguage(
+        _stored(bookId)?.analysis ?? const BookLanguageAnalysis(languages: []),
+        corrected: corrected?.call(bookId),
+      );
+      if (language != null) result[bookId] = language;
+    }
+    return result;
+  }
+
   String _stamp(String path) {
     final stat = File(path).statSync();
     return '${stat.size}-${stat.modified.millisecondsSinceEpoch}';

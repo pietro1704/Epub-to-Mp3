@@ -1,28 +1,49 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/language_model_choices.dart';
 import '../models/language_names.dart';
-import '../models/language_order.dart';
 import '../models/language_model_resolution.dart';
+import '../models/language_order.dart';
 import '../models/tts_catalog.dart';
-import '../models/tts_preferences.dart';
-import '../services/conversion/model_install/model_install_models.dart';
-import '../services/conversion/model_install/model_install_runner.dart';
 import '../state/providers.dart';
-import '../views/reader_narration_menu.dart'
-    show installedNarrationModelIdsProvider;
+import 'models_language_screen.dart';
 
-/// Narration models grouped by book language, on their own route: the system's languages first,
+/// Every language of the catalog, on its own route: the system's languages first,
 /// then the most popular, then the rest alphabetically. The user picks, per language,
 /// which model plays books in it (or Automatic); Rust resolves the rest at job
 /// start. Installing a model is always an explicit tap on its row.
+class ModelsData {
+  const ModelsData(this.languages, this.models, this.installed);
+  final List<TtsCatalogLanguage> languages;
+  final List<Map<String, dynamic>> models;
+  final Set<String> installed;
+}
+
+/// The catalog languages, the catalog models and which of them are installed (online voices
+/// count as installed: nothing to download).
+Future<ModelsData> loadModelsData(WidgetRef ref) async {
+  final converter = ref.read(embeddedConverterProvider);
+  final languages = await converter.ttsCatalogLanguages();
+  final models = TtsCatalog.decode(await converter.ttsModels()).models;
+  final root = await ref.read(ttsModelRootProvider.future);
+  final installed = <String>{};
+  for (final model in models) {
+    final id = model['id'];
+    if (id is! String || id.isEmpty) continue;
+    if (model['engine'] == 'edge' ||
+        await converter.ttsModelMetadata(modelId: id, root: root) != null) {
+      installed.add(id);
+    }
+  }
+  return ModelsData(languages, models, installed);
+}
+
 class ModelsLanguagesScreen extends ConsumerStatefulWidget {
   const ModelsLanguagesScreen({super.key, this.initialLanguage});
 
-  /// Base language whose section starts expanded (from the missing-model alert).
+  /// Base language whose page opens at once (from the missing-model alert).
   final String? initialLanguage;
 
   @override
@@ -30,291 +51,57 @@ class ModelsLanguagesScreen extends ConsumerStatefulWidget {
       _ModelsLanguagesScreenState();
 }
 
-class _ModelsData {
-  const _ModelsData(this.languages, this.models, this.installed);
-  final List<TtsCatalogLanguage> languages;
-  final List<Map<String, dynamic>> models;
-  final Set<String> installed;
-}
-
 class _ModelsLanguagesScreenState extends ConsumerState<ModelsLanguagesScreen> {
-  late Future<_ModelsData> _data = _load();
-  final Map<String, ModelInstallEvent?> _progress = {};
-  final Map<String, ModelInstallCancellation> _cancellations = {};
-  String? _error;
+  late final Future<ModelsData> _data = loadModelsData(ref);
 
-  /// The section of [ModelsScreen.initialLanguage]; scrolled into view once.
-  final GlobalKey _focusKey = GlobalKey();
-  bool _focused = false;
-
-  void _scrollToInitialLanguage() {
-    if (_focused || widget.initialLanguage == null) return;
-    _focused = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = _focusKey.currentContext;
-      if (context != null && context.mounted) {
-        Scrollable.ensureVisible(
-          context,
-          duration: Duration.zero,
-          alignment: 0.05,
-        );
-      }
-    });
-  }
-
-  Future<_ModelsData> _load() async {
-    final converter = ref.read(embeddedConverterProvider);
-    final languages = await converter.ttsCatalogLanguages();
-    final models = TtsCatalog.decode(await converter.ttsModels()).models;
-    final root = await ref.read(ttsModelRootProvider.future);
-    final installed = <String>{};
-    for (final model in models) {
-      final id = model['id'];
-      if (id is! String || id.isEmpty) continue;
-      // Online voices have nothing to install: always usable once consented.
-      if (model['engine'] == 'edge' ||
-          await converter.ttsModelMetadata(modelId: id, root: root) != null) {
-        installed.add(id);
-      }
-    }
-    return _ModelsData(languages, models, installed);
-  }
-
-  void _reload() {
-    final next = _load();
-    setState(() {
-      _data = next;
-    });
-  }
-
-  static bool _isOnline(Map<String, dynamic> model) =>
-      model['engine'] == 'edge';
-
-  static bool _servesLanguage(Map<String, dynamic> model, String base) {
-    final tags = model['languages'];
-    return tags is List &&
-        tags.any((tag) => LanguageModelChoices.baseLanguage('$tag') == base);
-  }
-
-  static TtsSelection _selectionFor(Map<String, dynamic> model) => TtsSelection(
-    engine: model['engine'] as String,
-    modelId: model['id'] as String,
-  );
-
-  bool _isChosen(
-    LanguageModelChoices choices,
-    String language,
-    Map<String, dynamic> model,
-  ) {
-    final choice = choices.choiceFor(language);
-    return choice != null &&
-        choice.engine == model['engine'] &&
-        choice.modelId == model['id'];
-  }
-
-  Future<void> _install(String language, Map<String, dynamic> model) async {
-    final id = model['id'] as String;
-    if (_cancellations.containsKey(id)) return;
-    final converter = ref.read(embeddedConverterProvider);
-    final token = ModelInstallCancellation();
-    setState(() {
-      _error = null;
-      _progress[id] = null;
-      _cancellations[id] = token;
-    });
-    try {
-      final root = await ref.read(ttsModelRootProvider.future);
-      ModelInstallEvent? last;
-      await for (final event in converter.installTtsModelWithProgress(
-        modelId: id,
-        root: root,
-        cancellation: token,
-      )) {
-        last = event;
-        if (mounted && !event.stage.terminal) {
-          setState(() => _progress[id] = event);
-        }
-      }
-      if (last?.stage == ModelInstallStage.completed) {
-        ref
-            .read(languageModelChoicesProvider.notifier)
-            .choose(language, _selectionFor(model));
-      } else if (last?.stage == ModelInstallStage.failed && mounted) {
-        setState(() => _error = last?.failure?.message ?? id);
-      }
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      _cancellations.remove(id);
-      _progress.remove(id);
-      // Whoever keeps the installed list alive (the reader menu) must see it.
-      ref.invalidate(installedNarrationModelIdsProvider);
-      if (mounted) _reload();
+  @override
+  void initState() {
+    super.initState();
+    final language = widget.initialLanguage;
+    if (language != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _open(language);
+      });
     }
   }
 
-  void _choose(String language, Map<String, dynamic> model) => ref
-      .read(languageModelChoicesProvider.notifier)
-      .choose(language, _selectionFor(model));
-
-  Widget _modelTile({
-    required String language,
-    required Map<String, dynamic> model,
-    required bool installed,
-    required bool usable,
-    required LanguageModelChoices choices,
-    required AppLocalizations t,
-  }) {
-    final id = model['id'] as String;
-    final installing = _cancellations.containsKey(id);
-    final chosen = _isChosen(choices, language, model);
-    final dim = !installed && !installing;
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        ListTile(
-          key: ValueKey('model-$language-$id'),
-          enabled: usable,
-          leading: Icon(
-            chosen ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-            color: chosen ? theme.colorScheme.primary : null,
-          ),
-          title: Text(
-            id,
-            // Not installed is said by the subtitle and the download icon; the disabled color is 2.6:1.
-            style: dim ? TextStyle(color: theme.colorScheme.onSurfaceVariant) : null,
-          ),
-          subtitle: !usable
-              ? Text(t.modelsOnlineNeedsConsent)
-              : installed
-              ? null
-              : Text(t.modelsNotInstalled),
-          trailing: installing
-              ? IconButton(
-                  key: ValueKey('models-cancel-$id'),
-                  icon: const Icon(Icons.close),
-                  tooltip: MaterialLocalizations.of(context).cancelButtonLabel,
-                  onPressed: () => _cancellations[id]?.cancel(),
-                )
-              : (!installed && usable
-                    ? const Icon(Icons.download_outlined)
-                    : null),
-          onTap: !usable || installing
-              ? null
-              : installed
-              ? () => _choose(language, model)
-              : () => _install(language, model),
-        ),
-        if (installing)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: LinearProgressIndicator(
-              key: ValueKey('models-progress-$id'),
-              value: _progress[id]?.fraction,
-            ),
-          ),
-      ],
+  void _open(String language) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ModelsLanguageScreen(language: language),
+      ),
     );
   }
 
-  Widget _languageSection(
+  Widget _row(
     TtsCatalogLanguage language,
-    _ModelsData data,
     LanguageModelChoices choices,
-    bool allowOnline,
     AppLocalizations t,
   ) {
     final base = language.tag;
-    final models = data.models.where((m) => _servesLanguage(m, base)).toList();
-    final local = models.where((m) => !_isOnline(m)).toList();
-    final online = models.where(_isOnline).toList();
     final choice = choices.choiceFor(base);
-    final header = Theme.of(context).textTheme.labelLarge
-        ?.copyWith(color: Theme.of(context).colorScheme.primary);
-    final tile = ExpansionTile(
+    return ListTile(
       key: ValueKey('language-$base'),
-      initiallyExpanded: base == widget.initialLanguage,
       title: Text(languageEndonym(base)),
       subtitle: Text(
         '${choice == null ? t.modelsAutomatic : choice.modelId ?? choice.displayName}'
         ' · ${t.modelsRowSubtitle(language.modelCount)}',
       ),
-      children: [
-        ListTile(
-          key: ValueKey('model-$base-automatic'),
-          leading: Icon(
-            choice == null
-                ? Icons.radio_button_checked
-                : Icons.radio_button_unchecked,
-            color: choice == null
-                ? Theme.of(context).colorScheme.primary
-                : null,
-          ),
-          title: Text(t.modelsAutomatic),
-          subtitle: Text(t.modelsAutomaticDesc),
-          onTap: () =>
-              ref.read(languageModelChoicesProvider.notifier).clear(base),
-        ),
-        if (local.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(t.modelsLocalSection, style: header),
-            ),
-          ),
-        for (final model in local)
-          _modelTile(
-            language: base,
-            model: model,
-            installed: data.installed.contains(model['id']),
-            usable: true,
-            choices: choices,
-            t: t,
-          ),
-        if (online.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(t.modelsOnlineSection, style: header),
-            ),
-          ),
-        for (final model in online)
-          _modelTile(
-            language: base,
-            model: model,
-            installed: data.installed.contains(model['id']),
-            usable: allowOnline,
-            choices: choices,
-            t: t,
-          ),
-      ],
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _open(base),
     );
-    return base == widget.initialLanguage
-        ? KeyedSubtree(key: _focusKey, child: tile)
-        : tile;
   }
 
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
     final choices = ref.watch(languageModelChoicesProvider);
-    final allowOnline = ref
-        .watch(settingsProvider)
-        .ttsPreferences
-        .allowOnlineFallback;
     final locales = ref.watch(systemLocalesProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(t.modelsLanguagesTitle)),
+      appBar: AppBar(title: Text(t.modelsAllLanguages)),
       body: ListView(
-        // Every section is built when a language was asked for, so it can be
-        // scrolled to (a lazy list has not built it yet).
-        scrollCacheExtent: widget.initialLanguage == null
-            ? null
-            : const ScrollCacheExtent.pixels(100000),
         children: [
-          FutureBuilder<_ModelsData>(
+          FutureBuilder<ModelsData>(
             future: _data,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done &&
@@ -331,7 +118,6 @@ class _ModelsLanguagesScreenState extends ConsumerState<ModelsLanguagesScreen> {
                 );
               }
               final data = snapshot.requireData;
-              _scrollToInitialLanguage();
               if (data.languages.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.all(24),
@@ -358,17 +144,6 @@ class _ModelsLanguagesScreenState extends ConsumerState<ModelsLanguagesScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                      child: Text(
-                        _error!,
-                        key: const ValueKey('models-error'),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ),
                   for (final group in [
                     (
                       const ValueKey('models-group-system'),
@@ -388,14 +163,7 @@ class _ModelsLanguagesScreenState extends ConsumerState<ModelsLanguagesScreen> {
                   ])
                     if (group.$3.isNotEmpty) ...[
                       header(group.$2, group.$1),
-                      for (final language in group.$3)
-                        _languageSection(
-                          language,
-                          data,
-                          choices,
-                          allowOnline,
-                          t,
-                        ),
+                      for (final language in group.$3) _row(language, choices, t),
                     ],
                 ],
               );
