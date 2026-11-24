@@ -1,5 +1,6 @@
 import '../app/app_destination.dart';
 export '../app/app_destination.dart';
+import 'dart:async' show unawaited;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ import '../services/playback/playback_narration_resolver.dart';
 import '../services/playback/system_voice_languages.dart';
 import '../services/playback/audio_player_service.dart';
 import '../services/playback/background_audio_handler.dart';
+import '../services/playback/mpris_service.dart';
 import '../services/storage/book_derived_data_remover.dart';
 import '../services/storage/bookmark_store.dart';
 import '../services/conversion/embedded_converter.dart';
