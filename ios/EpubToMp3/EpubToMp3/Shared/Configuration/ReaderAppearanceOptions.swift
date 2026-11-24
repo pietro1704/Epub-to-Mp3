@@ -112,7 +112,7 @@ extension ReaderTheme {
         }
         let scheme = readerPreferredColorScheme(customColors: custom)
         #if canImport(UIKit)
-        let link: UIColor
+        var link: UIColor
         if let scheme {
             link = UIColor.link.resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
         } else {
@@ -126,7 +126,17 @@ extension ReaderTheme {
             }
         }
         #endif
+        // CONTRAST-AUDIT: a fixed-scheme reader draws links on its own background; the system link blue is only
+        // 3.7-4.3:1 on sepia/parchment and lower on custom backgrounds, so darken or lighten it to WCAG AA.
+        if scheme != nil { link = Self.accessibleLink(link, on: base.background) }
         return (base.background, base.foreground, link)
+    }
+
+    private static func accessibleLink(_ link: PlatformColor, on background: PlatformColor) -> PlatformColor {
+        guard let linkRGB = link.srgbComponents, let backgroundRGB = background.srgbComponents else { return link }
+        let adjusted = WCAGContrast.adjusted(linkRGB, against: backgroundRGB, minimum: 4.5)
+        if adjusted == linkRGB { return link }
+        return PlatformColor(red: CGFloat(adjusted.r), green: CGFloat(adjusted.g), blue: CGFloat(adjusted.b), alpha: 1)
     }
 
     func readerPreferredColorScheme(customColors custom: ReaderCustomColorCodec.Colors) -> ReaderColorScheme? {
