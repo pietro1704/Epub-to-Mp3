@@ -72,6 +72,13 @@ what remains (the shared build lease).
   decision, and never sit idle while lease-free work remains.
 - Unclear feature behavior: ask Pietro how it should work; continue the
   unambiguous work meanwhile.
+- Before starting a work item, check open PRs, the board and other agents'
+  claims, and report any overlap before claiming it. While Pietro has declared a
+  release pause, do not merge or enable auto-merge.
+- Update your handoff checkpoint after each merged PR, each finished device run
+  and about every 45 minutes, without being asked (`checkpoint` skill).
+- Physical iPhone runs: follow the preflight and failure signatures in
+  [supervised device runs](docs/agents/device-supervised-runs.md) (`device-test` skill).
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
