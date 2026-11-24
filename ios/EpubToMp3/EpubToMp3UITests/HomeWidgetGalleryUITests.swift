@@ -56,9 +56,16 @@ final class HomeWidgetGalleryUITests: XCTestCase {
 
         let edit = element(in: springboard, labels: ["Edit Home Screen", "Editar Tela de Início", "Editar pantalla de inicio"])
         XCTAssertTrue(edit.waitForExistence(timeout: 4))
-        edit.tap()
-        let add = element(in: springboard, labels: ["Add Widget", "Add Widgets", "Adicionar Widget", "Añadir widget"])
-        XCTAssertTrue(add.waitForExistence(timeout: 4), "SpringBoard must expose its widget gallery control")
+        // Measured on the 16e: the context menu stayed open after `edit.tap()`; tap its centre by coordinate.
+        edit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let add = element(in: springboard, labels: ["Add Widget", "Add Widgets", "Adicionar Widget", "Añadir widget", "Adicionar", "Add"])
+        if !add.waitForExistence(timeout: 6) {
+            let dump = XCTAttachment(string: springboard.debugDescription)
+            dump.name = "springboard-hierarchy-after-edit"
+            dump.lifetime = .keepAlways
+            self.add(dump)
+        }
+        XCTAssertTrue(add.exists, "SpringBoard must expose its widget gallery control")
         add.tap()
 
         let search = springboard.searchFields.firstMatch
