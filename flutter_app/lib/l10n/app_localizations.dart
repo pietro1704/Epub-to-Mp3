@@ -1066,6 +1066,12 @@ abstract class AppLocalizations {
   /// **'Skip seconds'**
   String get remoteButtonModeSeconds;
 
+  /// No description provided for @fallbackChapterName.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter {number}'**
+  String fallbackChapterName(int number);
+
   /// No description provided for @ttsShowLowQuality.
   ///
   /// In en, this message translates to:

@@ -193,6 +193,7 @@
   "remoteButtonModeDescription": "Qué hacen los botones del coche, los auriculares y la pantalla de bloqueo.",
   "remoteButtonModeChapter": "Capítulo",
   "remoteButtonModeSeconds": "Saltar segundos",
+  "fallbackChapterName": "Capítulo {number}",
   "ttsShowLowQuality": "Mostrar modelos de calidad baja",
   "ttsManualModelUnavailable": "No se pudo preparar este modelo de narración.",
   "readerNarrationModel": "Modelo de narración",

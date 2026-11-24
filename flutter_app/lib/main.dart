@@ -1,4 +1,5 @@
 import 'design_system/app_theme.dart';
+import 'models/fallback_chapter_name.dart';
 
 import 'dart:async';
 
@@ -202,7 +203,11 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
     ref.watch(linuxMprisProvider);
     ref.watch(remoteButtonModeSyncProvider);
     return MaterialApp(
-      onGenerateTitle: (ctx) => AppLocalizations.of(ctx)!.appTitle,
+      onGenerateTitle: (ctx) {
+        // Untitled chapters are named in the app language (models carry no context).
+        FallbackChapterName.use(AppLocalizations.of(ctx)!);
+        return AppLocalizations.of(ctx)!.appTitle;
+      },
       theme: AppTheme.forBrightness(Brightness.light),
       darkTheme: AppTheme.forBrightness(Brightness.dark),
       highContrastTheme: AppTheme.forBrightness(Brightness.light, highContrast: true),

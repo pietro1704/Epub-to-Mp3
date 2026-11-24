@@ -193,6 +193,7 @@
   "remoteButtonModeDescription": "O que fazem os botões do carro, dos fones e da tela de bloqueio.",
   "remoteButtonModeChapter": "Capítulo",
   "remoteButtonModeSeconds": "Pular segundos",
+  "fallbackChapterName": "Capítulo {number}",
   "ttsShowLowQuality": "Mostrar qualidade baixa",
   "ttsManualModelUnavailable": "Não foi possível preparar este modelo de narração.",
   "readerNarrationModel": "Modelo de narração",
