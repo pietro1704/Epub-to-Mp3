@@ -43,3 +43,33 @@ final class MacSettingsDetailNavigation: NSViewController {
     @objc private func goBack() { onBack() }
 }
 #endif
+
+#if os(macOS)
+extension NSViewController {
+    /// Pushes `detail` over this controller's whole view with the Back header of `MacSettingsDetailNavigation`.
+    /// Returns the pushed container; popping removes it and unhides what it covered.
+    @discardableResult
+    func pushDetail(_ detail: NSViewController, onPop: (() -> Void)? = nil) -> NSViewController {
+        let covered = view.subviews.map { ($0, $0.isHidden) }
+        var container: MacSettingsDetailNavigation?
+        let navigation = MacSettingsDetailNavigation(detail: detail) {
+            container?.view.removeFromSuperview()
+            container?.removeFromParent()
+            covered.forEach { $0.0.isHidden = $0.1 }
+            onPop?()
+        }
+        container = navigation
+        covered.forEach { $0.0.isHidden = true }
+        addChild(navigation)
+        navigation.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(navigation.view)
+        NSLayoutConstraint.activate([
+            navigation.view.topAnchor.constraint(equalTo: view.topAnchor),
+            navigation.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            navigation.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            navigation.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        return navigation
+    }
+}
+#endif

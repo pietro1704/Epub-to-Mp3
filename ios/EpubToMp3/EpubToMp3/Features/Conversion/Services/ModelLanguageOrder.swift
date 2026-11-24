@@ -42,4 +42,9 @@ enum ModelLanguageOrder {
     static func displayName(_ tag: String, in locale: Locale) -> String {
         locale.localizedString(forLanguageCode: tag) ?? tag
     }
+
+    /// "1 model" / "9 models", localized.
+    static func modelCountText(_ count: Int) -> String {
+        count == 1 ? L10n.string("models.languages.modelCount.one", count) : L10n.string("models.languages.modelCount", count)
+    }
 }

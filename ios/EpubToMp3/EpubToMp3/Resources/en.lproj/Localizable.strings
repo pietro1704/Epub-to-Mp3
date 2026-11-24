@@ -571,6 +571,13 @@
 
 "reader.pdf.audioUnavailable" = "This page could not be matched to the narration text. A scanned PDF requires verified OCR before audio can start.";
 "models.title" = "Models";
+"models.languages" = "Languages";
+"models.languages.open" = "All languages";
+"models.languages.system" = "Your system languages";
+"models.languages.popular" = "Popular languages";
+"models.languages.all" = "All languages";
+"models.languages.modelCount" = "%d models";
+"models.languages.modelCount.one" = "%d model";
 "models.section.local" = "%@ · Local";
 "models.section.online" = "%@ · Online";
 "models.showLowQuality" = "Show low-quality voices";

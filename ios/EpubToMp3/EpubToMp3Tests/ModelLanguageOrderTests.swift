@@ -66,6 +66,13 @@ final class ModelLanguageOrderTests: XCTestCase {
         }
     }
 
+    func testModelCountIsPluralizedForOneModel() {
+        XCTAssertEqual(ModelLanguageOrder.modelCountText(1), L10n.string("models.languages.modelCount.one", 1))
+        XCTAssertEqual(ModelLanguageOrder.modelCountText(9), L10n.string("models.languages.modelCount", 9))
+        XCTAssertNotEqual(ModelLanguageOrder.modelCountText(1), L10n.string("models.languages.modelCount", 1),
+                          "One model must not read '1 models'")
+    }
+
     func testABaseTagIgnoresRegionScriptAndSeparators() {
         XCTAssertEqual(ModelLanguageOrder.baseTag("pt-BR"), "pt")
         XCTAssertEqual(ModelLanguageOrder.baseTag("zh_Hans_CN"), "zh")

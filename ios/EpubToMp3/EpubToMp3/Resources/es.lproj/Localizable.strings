@@ -571,6 +571,13 @@
 
 "reader.pdf.audioUnavailable" = "No se pudo vincular esta página con el texto de narración. Un PDF escaneado necesita OCR verificado antes de generar audio.";
 "models.title" = "Modelos";
+"models.languages" = "Idiomas";
+"models.languages.open" = "Todos los idiomas";
+"models.languages.system" = "Idiomas del sistema";
+"models.languages.popular" = "Idiomas más populares";
+"models.languages.all" = "Todos los idiomas";
+"models.languages.modelCount" = "%d modelos";
+"models.languages.modelCount.one" = "%d modelo";
 "models.section.local" = "%@ · Local";
 "models.section.online" = "%@ · En línea";
 "models.showLowQuality" = "Mostrar calidad baja";
