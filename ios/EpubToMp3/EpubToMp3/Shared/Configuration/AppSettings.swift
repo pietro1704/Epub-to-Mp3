@@ -31,6 +31,7 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.readerDefaults = defaults
         self.speechPreferences = SpeechPreferences(defaults: defaults)
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
@@ -38,7 +39,31 @@ final class AppSettings: ObservableObject {
         self.playbackBackwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackBackwardSecondsKey) as? Double
         )
-        let reader = ReaderLayoutPreferences(defaults: defaults, arguments: ProcessInfo.processInfo.arguments)
+        reloadReaderPreferences(from: defaults, arguments: ProcessInfo.processInfo.arguments)
+        loadingPersistedValues = false
+        // Synchronous, like the `@Published` speech properties it replaces:
+        // observers still hear about a change before the value moves.
+        speechPreferencesObservation = speechPreferences.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
+
+
+    // MARK: per-book reading preferences
+
+    /// Where reader appearance preferences are written: the app defaults, or a book's own suite while a book that has
+    /// its own preferences is open (`BookReadingPreferencesStore`). Other settings always use `defaults`.
+    private var readerDefaults: UserDefaults
+    private var bookScopeID: String?
+
+    /// True while the open book uses its own reading preferences instead of the default.
+    private(set) var isBookSpecific = false
+
+    private func reloadReaderPreferences(from source: UserDefaults, arguments: [String] = []) {
+        let wasLoading = loadingPersistedValues
+        loadingPersistedValues = true
+        defer { loadingPersistedValues = wasLoading }
+        let reader = ReaderLayoutPreferences(defaults: source, arguments: arguments)
         self.readerFontSize = reader.readerFontSize
         self.readerFontFamily = reader.readerFontFamily
         self.readerTheme = reader.readerTheme
@@ -56,19 +81,54 @@ final class AppSettings: ObservableObject {
         self.readerOverrideFontFamily = reader.readerOverrideFontFamily
         self.readerOverrideFontSize = reader.readerOverrideFontSize
         self.readerOverrideColours = reader.readerOverrideColours
-        let paragraphs = ReaderParagraphPreferences(defaults: defaults)
+        let paragraphs = ReaderParagraphPreferences(defaults: source)
         self.readerOverrideTextAlignment = paragraphs.overridesAlignment
         self.readerOverrideLineSpacing = paragraphs.overridesLineSpacing
         self.readerBoldOverride = reader.readerBoldOverride
         self.readerSuppressItalic = reader.readerSuppressItalic
         self.readerLetterSpacing = reader.readerLetterSpacing
         self.readerWordSpacing = reader.readerWordSpacing
-        loadingPersistedValues = false
-        // Synchronous, like the `@Published` speech properties it replaces:
-        // observers still hear about a change before the value moves.
-        speechPreferencesObservation = speechPreferences.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
+    }
+
+    /// A book opens: its own preferences apply when it has them, else the default.
+    func enterBookScope(_ bookID: String, store: BookReadingPreferencesStore = .shared) {
+        bookScopeID = bookID
+        if let suite = store.suite(for: bookID) {
+            readerDefaults = suite
+            isBookSpecific = true
+        } else {
+            readerDefaults = defaults
+            isBookSpecific = false
         }
+        reloadReaderPreferences(from: readerDefaults)
+        objectWillChange.send()
+    }
+
+    /// The book closes: the default applies again.
+    func leaveBookScope() {
+        bookScopeID = nil
+        readerDefaults = defaults
+        isBookSpecific = false
+        reloadReaderPreferences(from: defaults)
+        objectWillChange.send()
+    }
+
+    /// "Only for this book": the book starts from the current default and keeps its own values from now on.
+    func useOnlyForThisBook(store: BookReadingPreferencesStore = .shared) {
+        guard let bookID = bookScopeID, !isBookSpecific else { return }
+        readerDefaults = store.create(for: bookID, copying: defaults)
+        isBookSpecific = true
+        objectWillChange.send()
+    }
+
+    /// "Use default": the book forgets its own values and follows the default.
+    func useDefaultForThisBook(store: BookReadingPreferencesStore = .shared) {
+        guard let bookID = bookScopeID, isBookSpecific else { return }
+        store.remove(bookID)
+        readerDefaults = defaults
+        isBookSpecific = false
+        reloadReaderPreferences(from: defaults)
+        objectWillChange.send()
     }
 
     @Published var playbackForwardSeconds: Double = 15 {
@@ -110,13 +170,13 @@ final class AppSettings: ObservableObject {
                 readerFontSize = clamped
                 return  // recursive set will write defaults
             }
-            defaults.set(readerFontSize, forKey: "readerFontSize")
+            readerDefaults.set(readerFontSize, forKey: "readerFontSize")
         }
     }
 
     @Published var readerFontFamily: ReaderFontFamily = .serif {
         didSet {
-            defaults.set(readerFontFamily.rawValue, forKey: "readerFontFamily")
+            readerDefaults.set(readerFontFamily.rawValue, forKey: "readerFontFamily")
             if !loadingPersistedValues { readerOverrideFontFamily = readerFontFamily != .original }
         }
     }
@@ -124,15 +184,15 @@ final class AppSettings: ObservableObject {
     var selectedReaderFontFamily: ReaderFontFamily { readerOverrideFontFamily ? readerFontFamily : .original }
 
     @Published var readerTheme: ReaderTheme = .light {
-        didSet { defaults.set(readerTheme.rawValue, forKey: "readerTheme") }
+        didSet { readerDefaults.set(readerTheme.rawValue, forKey: "readerTheme") }
     }
 
     @Published var readerAutoScroll: Bool = true {
-        didSet { defaults.set(readerAutoScroll, forKey: "readerAutoScroll") }
+        didSet { readerDefaults.set(readerAutoScroll, forKey: "readerAutoScroll") }
     }
 
     @Published var readerAudioTrackingEnabled: Bool = true {
-        didSet { defaults.set(readerAudioTrackingEnabled, forKey: "readerAudioTrackingEnabled") }
+        didSet { readerDefaults.set(readerAudioTrackingEnabled, forKey: "readerAudioTrackingEnabled") }
     }
 
     /// Whether the "n / total" page indicator renders at the bottom of
@@ -141,14 +201,14 @@ final class AppSettings: ObservableObject {
     /// budget reclaims the footer's reserved height so the chapter
     /// uses the freed space.
     @Published var readerShowPageNumbers: Bool = true {
-        didSet { defaults.set(readerShowPageNumbers, forKey: "readerShowPageNumbers") }
+        didSet { readerDefaults.set(readerShowPageNumbers, forKey: "readerShowPageNumbers") }
     }
 
     /// Changing the control explicitly overrides publisher body alignment.
     @Published var readerTextAlignment: ReaderTextAlignment = .justified {
         didSet {
             guard !loadingPersistedValues else { return }
-            defaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment")
+            readerDefaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment")
             readerOverrideTextAlignment = true
         }
     }
@@ -156,8 +216,8 @@ final class AppSettings: ObservableObject {
     @Published var readerLayout: ReaderLayout = .paginated {
         didSet {
             guard !loadingPersistedValues else { return }
-            defaults.set(readerLayout.rawValue, forKey: "readerLayout")
-            defaults.set(true, forKey: "readerLayout.userSet.v1")
+            readerDefaults.set(readerLayout.rawValue, forKey: "readerLayout")
+            readerDefaults.set(true, forKey: "readerLayout.userSet.v1")
         }
     }
 
@@ -169,13 +229,13 @@ final class AppSettings: ObservableObject {
                 readerColumns = clamped
                 return
             }
-            defaults.set(readerColumns, forKey: "readerColumns")
+            readerDefaults.set(readerColumns, forKey: "readerColumns")
         }
     }
 
     /// Page-turn animation in paginated mode. Default: `.flip` (curl).
     @Published var pageTurnStyle: PageTurnStyle = .flip {
-        didSet { defaults.set(pageTurnStyle.rawValue, forKey: "pageTurnStyle") }
+        didSet { readerDefaults.set(pageTurnStyle.rawValue, forKey: "pageTurnStyle") }
     }
 
     /// Line spacing in points. 0 = system default (~1.2 line-height).
@@ -190,7 +250,7 @@ final class AppSettings: ObservableObject {
             // Loading must not persist the default: a stored `readerLineSpacing`
             // is the legacy signal of an explicit choice (ReaderParagraphPreferences).
             guard !loadingPersistedValues else { return }
-            defaults.set(readerLineSpacing, forKey: "readerLineSpacing")
+            readerDefaults.set(readerLineSpacing, forKey: "readerLineSpacing")
             readerOverrideLineSpacing = true
         }
     }
@@ -207,7 +267,7 @@ final class AppSettings: ObservableObject {
                 readerMargin = clamped
                 return
             }
-            defaults.set(readerMargin, forKey: "readerMargin")
+            readerDefaults.set(readerMargin, forKey: "readerMargin")
         }
     }
 
@@ -220,7 +280,7 @@ final class AppSettings: ObservableObject {
                 readerColumnWidth = clamped
                 return
             }
-            defaults.set(readerColumnWidth, forKey: "readerColumnWidth")
+            readerDefaults.set(readerColumnWidth, forKey: "readerColumnWidth")
         }
     }
 
@@ -230,7 +290,7 @@ final class AppSettings: ObservableObject {
     /// key; surfaced via the typed `readerCustomColors` computed
     /// property below.
     @Published private var storedReaderCustomColors: String = "1,1,1,0,0,0" {
-        didSet { defaults.set(storedReaderCustomColors, forKey: "readerCustomColors") }
+        didSet { readerDefaults.set(storedReaderCustomColors, forKey: "readerCustomColors") }
     }
 
     /// Decoded (background, foreground) RGB tuple — six doubles in
@@ -256,34 +316,34 @@ final class AppSettings: ObservableObject {
     /// When `true`, every text run is re-rendered in `readerFontFamily`,
     /// overriding the font baked into the EPUB's CSS / inline styles.
     @Published var readerOverrideFontFamily: Bool = false {
-        didSet { defaults.set(readerOverrideFontFamily, forKey: "readerOverrideFontFamily") }
+        didSet { readerDefaults.set(readerOverrideFontFamily, forKey: "readerOverrideFontFamily") }
     }
 
     /// When `true`, every text run is forced to `readerPointSize`,
     /// overriding the EPUB's font-size CSS.
     @Published var readerOverrideFontSize: Bool = false {
-        didSet { defaults.set(readerOverrideFontSize, forKey: "readerOverrideFontSize") }
+        didSet { readerDefaults.set(readerOverrideFontSize, forKey: "readerOverrideFontSize") }
     }
 
     /// When `true`, the reader theme (or custom RGB) wins over any
     /// inline `color:` / `background-color:` declared by the EPUB.
     @Published var readerOverrideColours: Bool = false {
-        didSet { defaults.set(readerOverrideColours, forKey: "readerOverrideColours") }
+        didSet { readerDefaults.set(readerOverrideColours, forKey: "readerOverrideColours") }
     }
 
     @Published var readerOverrideTextAlignment: Bool = false {
-        didSet { defaults.set(readerOverrideTextAlignment, forKey: "readerOverrideTextAlignment") }
+        didSet { readerDefaults.set(readerOverrideTextAlignment, forKey: "readerOverrideTextAlignment") }
     }
 
     @Published var readerOverrideLineSpacing: Bool = false {
-        didSet { defaults.set(readerOverrideLineSpacing, forKey: "readerOverrideLineSpacing") }
+        didSet { readerDefaults.set(readerOverrideLineSpacing, forKey: "readerOverrideLineSpacing") }
     }
 
     /// When `true`, every run is rendered with `.bold` weight. Useful
     /// for low-vision users; toggling it on does NOT modify the EPUB's
     /// own bold-tag detection — it stacks on top.
     @Published var readerBoldOverride: Bool = false {
-        didSet { defaults.set(readerBoldOverride, forKey: "readerBoldOverride") }
+        didSet { readerDefaults.set(readerBoldOverride, forKey: "readerBoldOverride") }
     }
 
     /// When `true`, italic slant is stripped from every run. The
@@ -291,7 +351,7 @@ final class AppSettings: ObservableObject {
     /// (we still parse them), but the final attributed string flattens
     /// the slant trait.
     @Published var readerSuppressItalic: Bool = false {
-        didSet { defaults.set(readerSuppressItalic, forKey: "readerSuppressItalic") }
+        didSet { readerDefaults.set(readerSuppressItalic, forKey: "readerSuppressItalic") }
     }
 
     /// Additional kerning per character glyph, in points. Range
@@ -303,7 +363,7 @@ final class AppSettings: ObservableObject {
                 readerLetterSpacing = clamped
                 return
             }
-            defaults.set(readerLetterSpacing, forKey: "readerLetterSpacing")
+            readerDefaults.set(readerLetterSpacing, forKey: "readerLetterSpacing")
         }
     }
 
@@ -317,7 +377,7 @@ final class AppSettings: ObservableObject {
                 readerWordSpacing = clamped
                 return
             }
-            defaults.set(readerWordSpacing, forKey: "readerWordSpacing")
+            readerDefaults.set(readerWordSpacing, forKey: "readerWordSpacing")
         }
     }
 
