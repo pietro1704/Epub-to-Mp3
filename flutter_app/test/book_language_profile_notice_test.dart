@@ -6,7 +6,7 @@ import 'package:flutter_app/models/language_model_choices.dart';
 import 'package:flutter_app/models/language_model_resolution.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/screens/missing_narration_dialog.dart';
-import 'package:flutter_app/screens/models_languages_screen.dart';
+import 'package:flutter_app/screens/models_language_screen.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_app/services/playback/playback_narration_resolver.dart';
 import 'package:flutter_app/state/providers.dart';
@@ -218,6 +218,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(converter),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -249,9 +250,9 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(find.byType(ModelsLanguagesScreen), findsOneWidget);
+      expect(find.byType(ModelsLanguageScreen), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('language-en')),
+        find.byKey(const ValueKey('model-en-automatic')),
         findsOneWidget,
         reason: 'opens on the first missing language',
       );

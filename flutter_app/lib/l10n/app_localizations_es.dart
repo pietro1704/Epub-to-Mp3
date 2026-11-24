@@ -656,6 +656,33 @@ class AppLocalizationsEs extends AppLocalizations {
   String get modelsOtherLanguages => 'Todos los idiomas';
 
   @override
+  String get modelsSystemSection => 'Sistema';
+
+  @override
+  String get modelsSystemVoice => 'Voz del sistema';
+
+  @override
+  String get modelsPiperSection => 'Piper (en este dispositivo)';
+
+  @override
+  String get modelsEdgeSection => 'Edge (en línea)';
+
+  @override
+  String get modelsVoiceForEachLanguage => 'Voz para cada idioma';
+
+  @override
+  String get modelsAllLanguages => 'Todos los idiomas';
+
+  @override
+  String get modelsNeedsVoice =>
+      'Un libro de tu biblioteca necesita una voz para este idioma';
+
+  @override
+  String modelsSizeMb(int size) {
+    return '$size MB';
+  }
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override

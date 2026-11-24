@@ -130,6 +130,7 @@ Future<(_ModelsConverter, SharedPreferences)> _pump(
         sharedPrefsProvider.overrideWithValue(prefs),
         embeddedConverterProvider.overrideWithValue(fake),
         ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+        systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -191,6 +192,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(fake),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -202,8 +204,8 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      final tile = find.byKey(const ValueKey('language-pt'));
-      expect(tile, findsOneWidget, reason: 'the requested language is built');
+      final tile = find.byKey(const ValueKey('model-pt-automatic'));
+      expect(tile, findsOneWidget, reason: 'the requested language page is open');
       final rect = tester.getRect(tile);
       expect(rect.top, greaterThanOrEqualTo(0));
       expect(
@@ -233,10 +235,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('model-pt-pt_BR-faber-medium')));
     await _settle(tester);
     expect(_stored(prefs).choiceFor('pt')?.modelId, 'pt_BR-faber-medium');
+    await tester.pageBack();
+    await _settle(tester);
     expect(
       find.textContaining('pt_BR-faber-medium · 3 models'),
       findsOneWidget,
     );
+    await tester.tap(find.byKey(const ValueKey('language-pt')));
+    await _settle(tester);
 
     await tester.tap(find.byKey(const ValueKey('model-pt-automatic')));
     await _settle(tester);
@@ -367,7 +373,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('language-pt')));
     await _settle(tester);
     final online = find.byKey(const ValueKey('model-pt-edge-pt'));
-    expect(find.text('Online'), findsOneWidget);
+    expect(find.text('Edge (online)'), findsOneWidget);
     expect(find.textContaining('Allow online fallback'), findsWidgets);
     await tester.tap(online);
     await _settle(tester);
@@ -384,6 +390,7 @@ void main() {
       secondary: TtsSelection(engine: 'system'),
       allowOnlineFallback: true,
     );
+    await tester.pumpWidget(const SizedBox());
     final (_, prefs2) = await _pump(
       tester,
       prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
@@ -411,6 +418,54 @@ void main() {
     );
   });
 
+  testWidgets('the root lists a row per language with its voice, and a language page with the sections', (tester) async {
+    await _pump(tester);
+    await tester.pageBack();
+    await _settle(tester);
+    // Portuguese has an installed model: it has a row with the voice that will play it.
+    final row = find.byKey(const ValueKey('models-language-pt'));
+    expect(row, findsOneWidget);
+    expect(find.descendant(of: row, matching: find.textContaining('Automatic · pt_BR-faber-medium')), findsOneWidget);
+    expect(find.text('Voice for each language'), findsOneWidget);
+    await tester.tap(row);
+    await _settle(tester);
+    // The page: Automatic first, then the Piper models of this device, then Edge (online).
+    expect(find.byKey(const ValueKey('model-pt-automatic')), findsOneWidget);
+    expect(find.text('Piper (on this device)'), findsOneWidget);
+    expect(find.text('Edge (online)'), findsOneWidget);
+    expect(find.text('System'), findsNothing, reason: 'this platform has no system voice for Portuguese');
+    expect(find.textContaining('MB'), findsWidgets, reason: 'the size is a subtitle of each model');
+  });
+
+  testWidgets('a system voice for the language is its own section and can be chosen', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    tester.view.physicalSize = const Size(1000, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPrefsProvider.overrideWithValue(prefs),
+          embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
+          ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+          systemVoiceLanguagesProvider.overrideWith((_) async => const ['pt-BR']),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const ModelsScreen(initialLanguage: 'pt'),
+        ),
+      ),
+    );
+    await _settle(tester);
+    await _settle(tester);
+    expect(find.text('System'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('model-pt-system')));
+    await _settle(tester);
+    expect(_stored(prefs).choiceFor('pt')?.engine, 'system');
+  });
+
   testWidgets(
     'an unavailable converter shows a message instead of an empty screen',
     (tester) async {
@@ -424,6 +479,7 @@ void main() {
               UnavailableEmbeddedConverter(),
             ),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -451,6 +507,7 @@ void main() {
           sharedPrefsProvider.overrideWithValue(prefs),
           embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
           ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+          systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -487,6 +544,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(fake),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
             // The system asks for Icelandic first, then Portuguese.
             systemLocalesProvider.overrideWithValue(const [
               Locale('is'),
@@ -548,6 +606,7 @@ void _languagesRowIsFirstTest() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -557,15 +616,16 @@ void _languagesRowIsFirstTest() {
         ),
       );
       await _settle(tester);
-      final row = find.byKey(const ValueKey('models-languages-row'));
-      expect(row, findsOneWidget);
-      final rect = tester.getRect(row);
+      final installedLanguage = find.byKey(const ValueKey('models-language-pt'));
+      expect(installedLanguage, findsOneWidget, reason: 'a language with an installed voice has its row');
       expect(
-        rect.top,
+        tester.getRect(installedLanguage).top,
         lessThan(200),
         reason: 'right under the app bar, above the voice settings',
       );
-      expect(rect.bottom, lessThanOrEqualTo(700));
+      final row = find.byKey(const ValueKey('models-languages-row'));
+      expect(row, findsOneWidget);
+      expect(tester.getRect(row).bottom, lessThanOrEqualTo(700));
       await tester.tap(row);
       await _settle(tester);
       await _settle(tester);
