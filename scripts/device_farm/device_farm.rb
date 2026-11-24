@@ -109,6 +109,7 @@ module DeviceFarm
     status = nil
     Timeout.timeout(timeout) do
       out, status = Open3.capture2e(env, 'adb', '-s', resolve(serial), *args)
+      out = out.scrub
     end
     [out, status.success?]
   rescue Timeout::Error
@@ -193,7 +194,8 @@ module DeviceFarm
   end
 
   def self.crash_lines(logcat)
-    logcat.lines.select { |line| line.match?(/FATAL EXCEPTION|ANR in |Fatal signal|Process: #{Regexp.escape(PACKAGE)}/) }
+    # logcat carries bytes that are not UTF-8 (device logs of other apps): scrub, never raise.
+    logcat.scrub.lines.select { |line| line.match?(/FATAL EXCEPTION|ANR in |Fatal signal|Process: #{Regexp.escape(PACKAGE)}/) }
   end
 
   def self.signature(lines)
