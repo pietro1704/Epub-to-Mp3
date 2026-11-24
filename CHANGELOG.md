@@ -1,5 +1,268 @@
 # Changelog
 
+## [0.11.0] — 2026-11-24
+
+### Bug Fixes
+
+- Stop tracking the built libconverter_ffi.so (committed by mistake in #1489) (#1495) ([c7a8245](https://github.com/pietro1704/Epub-to-Mp3/commit/c7a824510fe3e473e7e3bff80369501eb235def2))
+- The verification build has no launcher icon and the farm removes it from a personal device after each round (#1494) ([0917866](https://github.com/pietro1704/Epub-to-Mp3/commit/0917866eeccd4523855c5bbc6056ac97bb53cfa9))
+- The narration pause join falls back to a writable scratch directory (Android os error 13) (#1483) ([c1e422e](https://github.com/pietro1704/Epub-to-Mp3/commit/c1e422e50ea01e9dccf7ca22c1cb133e3ccb16bd))
+- The farm reads logcat that is not valid UTF-8 (#1484) ([99751ca](https://github.com/pietro1704/Epub-to-Mp3/commit/99751ca4409c05fd273e3571f6b6a0e497e5c813))
+- Resolve the model for the user's correction, else the profile's primary language (A0) (#1478) ([7d9ade2](https://github.com/pietro1704/Epub-to-Mp3/commit/7d9ade249f5dfb2cfa41e3eb3fd8d79f8ffbe4c8))
+- Play starts at the chapter the reader shows when the converter cannot start inside a chapter (A8 LOTR) (#1475) ([65a832c](https://github.com/pietro1704/Epub-to-Mp3/commit/65a832c8a55e23478185727ea2eeec82820fcab9))
+- The book language is the user correction, then the profile primary, then confirmed (F0) (#1472) ([6190fe7](https://github.com/pietro1704/Epub-to-Mp3/commit/6190fe7ea9eb3e48f8e89f1004c7e8d591c148e9))
+- The media notification is dismissible, so it cannot outlive the app as a ghost (#1471) ([2bae058](https://github.com/pietro1704/Epub-to-Mp3/commit/2bae05889f3795ef9c443ebcf527c78234e133b9))
+- Per-book reading preferences use the Apple wording and hints in both modes (G4) (#1468) ([838233c](https://github.com/pietro1704/Epub-to-Mp3/commit/838233cae7808a953e6e2263ce32785e9e3fed78))
+- Farm accepts the A8 by USB serial or Wi-Fi address and never touches personal files or VLC (#1465) ([060f4e2](https://github.com/pietro1704/Epub-to-Mp3/commit/060f4e2e5f5768fdee7095363990c41ed4db8ec7))
+- Untitled chapters are named in the app language (Apple #1428), WIP without PR (#1463) ([ca0ca36](https://github.com/pietro1704/Epub-to-Mp3/commit/ca0ca36d3661cf149108799d49f2fd62ceb2781d))
+- Contrast audit areas 5-7 (tablet, reader chrome menu, cover badges) (#1460) ([6ac2456](https://github.com/pietro1704/Epub-to-Mp3/commit/6ac2456cda6ff7e39b42ca9a7a910cd4da6d70f3))
+- Next button reaches a chapter that is still being synthesized (CAR-REMOTE-CHAPTERS) (#1457) ([2fd3927](https://github.com/pietro1704/Epub-to-Mp3/commit/2fd39277796a1356c71faa70de0d7a4df4795bf0))
+- Dialog surface and not-installed model names meet WCAG AA (#1455) ([53f743e](https://github.com/pietro1704/Epub-to-Mp3/commit/53f743eb623e9de8ce7b361e6e43a1167d73692b))
+- The expanded player's cover placeholder icon meets WCAG AA (#1454) ([aa8ce93](https://github.com/pietro1704/Epub-to-Mp3/commit/aa8ce938ef3280509d0d2eb20e8d45e3c7e1f4e3))
+- The reader's chapter header label meets WCAG AA in every reader theme (#1453) ([23b5179](https://github.com/pietro1704/Epub-to-Mp3/commit/23b5179bd5c4f0b4a95a82aea90b9f5d726d72bb))
+- Close the temporary MP3 before it is replaced (Windows os error 5) (#1449) ([97829d2](https://github.com/pietro1704/Epub-to-Mp3/commit/97829d2f8cdef373cb8dfdf0623ae47263776389))
+- The Languages row is first on the Models screen (#1441) ([4dbac92](https://github.com/pietro1704/Epub-to-Mp3/commit/4dbac92575b41fff84f5e3dd340bfe28e5d436b3))
+- Car and headset next/previous move between chapters while streaming (#1438) ([29b6fc6](https://github.com/pietro1704/Epub-to-Mp3/commit/29b6fc66bf6e04f7db03165ab9c2bc4692ba228c))
+- Waiting for an unlock no longer holds the heavy native lease (#1435) ([26a0754](https://github.com/pietro1704/Epub-to-Mp3/commit/26a0754f9eaa5bfe7397f6275f3475d81e4fdc84))
+- Honor 3 and 4 requested columns on a phone (#1429) ([2c6061c](https://github.com/pietro1704/Epub-to-Mp3/commit/2c6061cca4413d998ab2b0bab5ab9be91e523080))
+- Name untitled chapters in the app language (#1428) ([a47a997](https://github.com/pietro1704/Epub-to-Mp3/commit/a47a997632f8ec2a8b0610588af64a94d979ec43))
+- Play from here leaves the selection mode (#1427) ([9b8735e](https://github.com/pietro1704/Epub-to-Mp3/commit/9b8735e5e78fc6b64929b0610ee36524e8fb5383))
+- Isolated launches no longer touch the real library, caches or App Group (#1424) ([c85b9d3](https://github.com/pietro1704/Epub-to-Mp3/commit/c85b9d38283dbda93f327b8d2816ff6c04c14412))
+- Android model install treats a tagged-pointer handle as a live operation (#1422) ([c19ea2d](https://github.com/pietro1704/Epub-to-Mp3/commit/c19ea2dffcec0349fbad62dbb35fae8817638f30))
+- Opening a book no longer modifies a provider while building (#1421) ([c44f428](https://github.com/pietro1704/Epub-to-Mp3/commit/c44f4283fa2b105b5984c4875d7db6fdbe4b6237))
+- Paginated reader shows whole lines only, no blank last page (#1420) ([d8819bb](https://github.com/pietro1704/Epub-to-Mp3/commit/d8819bb1f3aec34c21a404b88c44fb8942d718c1))
+- The page indicator uses the reader theme colors on a solid background (#1419) ([030107d](https://github.com/pietro1704/Epub-to-Mp3/commit/030107dadbceed08c802b9c709fdbea820b12898))
+- Opening a book puts it first in the recently read or played order (#1417) ([44bf778](https://github.com/pietro1704/Epub-to-Mp3/commit/44bf778187162dee25de9711ccb2cf9eb2721002))
+- A voice change continues from the same text and cannot leave the player stuck (#1412) ([8cc98fd](https://github.com/pietro1704/Epub-to-Mp3/commit/8cc98fdca004022e99dd0abb4127cf5df25d05b4))
+- Opening a book (to read or to listen) puts it first in the recent order at once (#1410) ([9523ad2](https://github.com/pietro1704/Epub-to-Mp3/commit/9523ad25124fc0d9539475e28952e2509a7bd338))
+- The Models screen scrolls to the language that opened it (#1404) ([950004d](https://github.com/pietro1704/Epub-to-Mp3/commit/950004d6c91b1c4447d23ee64e1b606e98091985))
+- Edge taps keep working when a paginated chapter falls back to scrolling (#1391) ([2e04f34](https://github.com/pietro1704/Epub-to-Mp3/commit/2e04f34c3aa8e6b5eaec142ea62249c6d7808727))
+- Play from here leaves selection mode (#1400) ([e0aa103](https://github.com/pietro1704/Epub-to-Mp3/commit/e0aa1037c10c1039e50d111f6d5c1eaf8cb5c43a))
+- The model switch menu opens instantly (#1395) ([92b24c2](https://github.com/pietro1704/Epub-to-Mp3/commit/92b24c23812b0b918f7b4065fefb6945e0ee91b3))
+- The reader page area keeps its place and size when the chrome hides (#1394) ([b48069f](https://github.com/pietro1704/Epub-to-Mp3/commit/b48069f727726af37599cff47643da5c656d87bd))
+- Skipping over a growing chapter restarts synthesis instead of waiting for it (#1392) ([dd0684a](https://github.com/pietro1704/Epub-to-Mp3/commit/dd0684ab73c655214b226411099589ae551d7e77))
+- List every catalog language by its own name (#1390) ([0873362](https://github.com/pietro1704/Epub-to-Mp3/commit/0873362670237831cc46ca057a094fd99e4b0b86))
+- Keep the accents in two Portuguese strings (esta -> está, nao -> não) (#1389) ([89e976d](https://github.com/pietro1704/Epub-to-Mp3/commit/89e976d8fe97242c1a3df4876d57dfd47023c195))
+- Switching the voice model while listening keeps playing (#1384) ([e770eb6](https://github.com/pietro1704/Epub-to-Mp3/commit/e770eb6a8e7c20a64e0f0bf44d8c51dd3fed6b33))
+- A finished install refreshes the installed models the resolver and reader menu read (#1388) ([73b16fa](https://github.com/pietro1704/Epub-to-Mp3/commit/73b16faaf31e9cda9e8dc2eda9b5eb035c589e94))
+- A backward skip that leaves the generated audio restarts from the estimated text position (#1386) ([931aade](https://github.com/pietro1704/Epub-to-Mp3/commit/931aade19102d9f292104a401ed707f0e18f7302))
+- Clearing the player queue is not a failure (mini-player Play after switching books) (#1385) ([e0e1ad8](https://github.com/pietro1704/Epub-to-Mp3/commit/e0e1ad81d48cfd6ba2fbc18e0f9a021914a0799a))
+- Opening a book no longer jumps it to the front; order by confirmed playback (#1381) ([d822992](https://github.com/pietro1704/Epub-to-Mp3/commit/d8229929c5034620ce3553f257744186974c1001))
+- Pace local Piper synthesis in the background (Rust core + FFI) (#1378) ([ba8d7a6](https://github.com/pietro1704/Epub-to-Mp3/commit/ba8d7a6d4067f9d61fd6584c8cd6236bc5393674))
+- Update url to 2.5.9 for RUSTSEC-2026-0592 (#1374) ([13c6f21](https://github.com/pietro1704/Epub-to-Mp3/commit/13c6f2162174edc4e4c6f9c593956bdc5caf886b))
+- Write the fixture sample queue atomically so concurrent status reads never see it empty (#1376) ([6a25dbf](https://github.com/pietro1704/Epub-to-Mp3/commit/6a25dbfe77be1619c7ce602ddc1ec19803470823))
+- Tapping a voice on the Models screen no longer crashes (duplicate UIAlertController cancel) (#1373) ([157dd18](https://github.com/pietro1704/Epub-to-Mp3/commit/157dd1806ba11595d674cf231cd6564dc083c32e))
+- Speak the contents list and keep secondary text legible (A11Y-01/02) (#1368) ([d62cdde](https://github.com/pietro1704/Epub-to-Mp3/commit/d62cdde4ec780f5311ebdf4522a55332c403b78d))
+- Honor an explicit revision-pinned Piper Low choice in the resolver; pin that Low never becomes automatic or suggested (#1366) ([acf8192](https://github.com/pietro1704/Epub-to-Mp3/commit/acf81925df54961e52bb8aaf9993418580efa7fd))
+- The resolver's automatic step follows the job's own automatic Piper ranking (#1361) ([15d07b4](https://github.com/pietro1704/Epub-to-Mp3/commit/15d07b4e41141ac48365bba1cb08f3fad0111498))
+- Resolve the narration from the book language for every new playback job (#1360) ([ac2eb8d](https://github.com/pietro1704/Epub-to-Mp3/commit/ac2eb8d37466efcbebbd0d8c45976e83e2911a0f))
+- Refuse Edge as the primary voice without online consent (#1344) ([8009535](https://github.com/pietro1704/Epub-to-Mp3/commit/8009535f3f881b60084c3fce3a8feccc45f5fea4))
+- Resolve highlight and sync chapters by their place in the book (#1345) ([1a7aef2](https://github.com/pietro1704/Epub-to-Mp3/commit/1a7aef211c0dec0cf1983a6e26176da0bbea9c43))
+- Resolve the playing chapter by its queue position for the narration switch (#1339) ([99b6ddf](https://github.com/pietro1704/Epub-to-Mp3/commit/99b6ddf88bfdbf2061dd377acc5d2c8799bafbe6))
+- Confirm a book with one inconclusive sample among unanimous ones (#1333) ([f9681a1](https://github.com/pietro1704/Epub-to-Mp3/commit/f9681a1f618c7c219e7b5634f91024880b1a206a))
+- Keep growing streamed audio advancing while the device is locked (#1326) ([c4cc9f6](https://github.com/pietro1704/Epub-to-Mp3/commit/c4cc9f62cc2aa35a3549b2218ff756b533c4f0c9))
+- Explain an inconclusive book language and hash the picked file inside its security scope (#1323) ([5f8aaa3](https://github.com/pietro1704/Epub-to-Mp3/commit/5f8aaa382e7afe97faf54f88abc0b37b250524c7))
+- Explain an inconclusive book language instead of dumping Rust evidence (#1320) ([2c60404](https://github.com/pietro1704/Epub-to-Mp3/commit/2c60404a5116b62f275383a0b0b45de730f3df80))
+- Keep the opening PDF line clear of reader chrome (#1315) ([cb41df7](https://github.com/pietro1704/Epub-to-Mp3/commit/cb41df7c873734ab3d6e8a98b5c33a78b499492a))
+- Hide footnotes when the current chapter has none (#1311) ([f5f551f](https://github.com/pietro1704/Epub-to-Mp3/commit/f5f551fd08b196052f4fbdc17f540482518f624d))
+- Start PDF playback at the selected text (#1310) ([3514e40](https://github.com/pietro1704/Epub-to-Mp3/commit/3514e408833e16f07a48eaddbd3890806e57349b))
+- Keep the macOS FFI downloader on managed Ruby (#1309) ([36db6e5](https://github.com/pietro1704/Epub-to-Mp3/commit/36db6e5bd2579419f578309be8e88689c69fde38))
+- Include native licenses and source notices (#1305) ([66fda0c](https://github.com/pietro1704/Epub-to-Mp3/commit/66fda0cba5f0315fdd0fe62448c47bd483368655))
+- Version and seal the macOS app bundle (#1303) ([b8df144](https://github.com/pietro1704/Epub-to-Mp3/commit/b8df1444e667bbe067d2df28814774c3c12ed453))
+
+### CI
+
+- Keep the Actions cache under 10 GB (master-only writes, closed-PR cleanup) and document worktree and cache policy (#1476) ([e1a363b](https://github.com/pietro1704/Epub-to-Mp3/commit/e1a363be5352f38f2568b8ad25762c2b7f905b78))
+- Overlap the macOS artifact build with the Linux host tests (#1481) ([6da0a07](https://github.com/pietro1704/Epub-to-Mp3/commit/6da0a07b31480479c7f910651b9e69b916cba618))
+- Route the release-desktop apt installs through the retrying helper (#1480) ([adede96](https://github.com/pietro1704/Epub-to-Mp3/commit/adede9602e17efad5939f279068a6e055c1aa70b))
+- Faster iOS Simulator job (Simulator boots during the Swift build, master Rust cache seed, safer concurrency) (#1473) ([c8e249f](https://github.com/pietro1704/Epub-to-Mp3/commit/c8e249f52c4341bc15c00f96aa3755c3a55f23cd))
+- Also decide on CI and merge completions, not only the throttled cron (#1474) ([a0535ac](https://github.com/pietro1704/Epub-to-Mp3/commit/a0535acd1f2e92b4ae571a607909f330f2ff347d))
+- Branch evidence run (workflow_dispatch + scripts/ci_branch_evidence.sh) (#1466) ([ffd624d](https://github.com/pietro1704/Epub-to-Mp3/commit/ffd624dc2b3b6f383fa759410e20e2e79c61d600))
+- Widen the simulator UIKit selection and fix the four skipped tests (#1462) ([e3e10e2](https://github.com/pietro1704/Epub-to-Mp3/commit/e3e10e203261438e6ad39924f14becba0c17f642))
+- Run iOS UIKit XCTest on an iOS Simulator (PR gate) (#1450) ([ac78373](https://github.com/pietro1704/Epub-to-Mp3/commit/ac78373b8432a3b0397d10e82e55513476721fd0))
+- Cache downloaded apt packages and bound the CLI apt step for a slow mirror (#1430) ([01e9297](https://github.com/pietro1704/Epub-to-Mp3/commit/01e9297ab2bea2296d0735786900fdc866d6758b))
+- Validate master in scheduled batches instead of once per merge (#1418) ([afa5a28](https://github.com/pietro1704/Epub-to-Mp3/commit/afa5a2824406174468f14e0db1ab4b4b1eed8d6f))
+- From eight macOS jobs to five (#1415) ([2808c78](https://github.com/pietro1704/Epub-to-Mp3/commit/2808c78019a8dcf98e5fdc40dbbd479a39f7c22e))
+- One bounded, retrying apt helper for every hosted install (#1408) ([5c1c0f5](https://github.com/pietro1704/Epub-to-Mp3/commit/5c1c0f5b7ada9f04261b71626e3e358af1172d8d))
+- Cache the checksum-pinned Faber test model (#1407) ([898ab47](https://github.com/pietro1704/Epub-to-Mp3/commit/898ab47c1357904cd72d4debd628f20c4f70a8c7))
+- Run on pull requests the checks that used to break master (#1413) ([2717a81](https://github.com/pietro1704/Epub-to-Mp3/commit/2717a81e1fd592a304dee7ff05e4aff879705654))
+- Bring Actions cache back under the 10 GB quota (#1406) ([94fc540](https://github.com/pietro1704/Epub-to-Mp3/commit/94fc54073796a40df41014e0e160bc5c193bf24d))
+- Dispatch publishers from Post-merge validation, drop workflow_run triggers (#1411) ([847e42e](https://github.com/pietro1704/Epub-to-Mp3/commit/847e42ece2b36569fd10e0697e3c6de2bfd819b4))
+- Let hosted-runner builds use more than one job (#1409) ([9446034](https://github.com/pietro1704/Epub-to-Mp3/commit/94460344c2e6abb9844b6f9fc2ac97bb8d73ec48))
+- Build Rust outside the tracer and parallelize Swift extraction build (#1405) ([0c45b4c](https://github.com/pietro1704/Epub-to-Mp3/commit/0c45b4cad143fac694400b15060be1d5046e066e))
+- Bump the actions group with 4 updates (#1382) ([bffd524](https://github.com/pietro1704/Epub-to-Mp3/commit/bffd52473fbfe61a5ef753d1b70012a94c43529a))
+- Retry Faber model downloads through transient Hugging Face errors (#1357) ([b121146](https://github.com/pietro1704/Epub-to-Mp3/commit/b1211461fd0054b6e239fd516518eb9f9da243f3))
+- Pin the new official release certificate (#1322) ([53f0555](https://github.com/pietro1704/Epub-to-Mp3/commit/53f0555a2b64e2ef640d91ccd95c113832e33193))
+- Pin official APK signing to v0.10.5 (#1312) ([8df00bd](https://github.com/pietro1704/Epub-to-Mp3/commit/8df00bd28e7a05bfd077b6c6ac7fe1590bb727c2))
+- Recover CodeQL builds from Maven Central throttling (#1308) ([0b8ab09](https://github.com/pietro1704/Epub-to-Mp3/commit/0b8ab0919a8de98429de5bfb86e6a111be2869bb))
+
+### Changes
+
+- Playback narration from the plan (F1c) (#1492) ([92f3cc2](https://github.com/pietro1704/Epub-to-Mp3/commit/92f3cc2aa74118e377b32f717460f2a30201ac84))
+- Switch the active narration model from the Flutter reader overflow menu (#1332)
+
+* feat(flutter): switch the narration model from the reader overflow menu
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+* fix(flutter): list only installed narration models in the reader menu
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+* fix(flutter): restart listening from the active chapter when the narration model changes
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com> ([020444b](https://github.com/pietro1704/Epub-to-Mp3/commit/020444bb3a9c66b384a64a2bf6f3ae21c4968ec3))
+- Remove all native host guards (owner decision) (#1321)
+
+* chore(native): remove all host guards at the owner's request
+
+Pietro ordered on 2026-11-22 to remove every native host guard on the Mac,
+permanently. Host load, memory pressure, thermal limits, foreign compilers,
+swap, the compressor, free-space floors (including the SE1 floor) and
+Simulator/SimMetalHost state no longer refuse, delay or stop a job; the Intel
+Simulator quarantine and its acknowledgement flags are gone. The readings stay
+as advisory notes in job logs and the flight recorder.
+
+The shared build lease remains as mutual exclusion for writers of the same
+DerivedData, Cargo target, .build and ONNX Runtime trees; it is the only
+refusal left and queues with --wait. The unused Codex tool guard, the native
+build and Simulator preflights and their tests are removed; the remaining host
+tests now assert that nothing refuses or waits. Docs record the decision and
+keep the kernel-panic history.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+* chore(device): make the physical-device host load check advisory
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com> ([6019718](https://github.com/pietro1704/Epub-to-Mp3/commit/601971814a515f7f79eb073e4476454cfd201dcd))
+- Document explicit fallback voice and model in CLI help (#1307) ([eb33098](https://github.com/pietro1704/Epub-to-Mp3/commit/eb330983693254d0d77f7b42c2db8d01cc595005))
+- Fix web reader readiness timing after rendering (#1306) ([c29a198](https://github.com/pietro1704/Epub-to-Mp3/commit/c29a198f0002957d304b7b13f901d2b0f9444c52))
+- Fix Flutter EPUB search result navigation (#1304) ([89e4be4](https://github.com/pietro1704/Epub-to-Mp3/commit/89e4be46aa373b57ab5d333c7fe565716b954f50))
+
+### Chores
+
+- Bump version to 0.11.0 ([eff7320](https://github.com/pietro1704/Epub-to-Mp3/commit/eff7320fd151c9c2f15e0aa73700e0082f46d30f))
+- Add clean:worktrees task and raise build budget warning to 15 GiB (#1403) ([e090d4a](https://github.com/pietro1704/Epub-to-Mp3/commit/e090d4a8eab1c085fa1d63ab1bce62bdea4670bb))
+- Audit device tests with one file per class (#1396) ([e6d7b91](https://github.com/pietro1704/Epub-to-Mp3/commit/e6d7b9182c744bf5c531a409d263aab3ed9b5cfc))
+- Drop fast mode and move three subagents to Sonnet (#1325) ([5e90875](https://github.com/pietro1704/Epub-to-Mp3/commit/5e90875cc60bbebbd65fa94dad65fa9a8da7c312))
+
+### Documentation
+
+- Device preflight, failure signatures and session skills from insights (#1496) ([4c93bb2](https://github.com/pietro1704/Epub-to-Mp3/commit/4c93bb20073737d5be9dee4041f74e31e2f21793))
+- Throughput and scheduling policy for the Mac, the Arch and devices (#1491) ([6133fa6](https://github.com/pietro1704/Epub-to-Mp3/commit/6133fa6d41737362e0da942f5239b4ce659b7acf))
+- Device supervised runs, lease behaviour and iPhone Mirroring results (#1461) ([d37ad4e](https://github.com/pietro1704/Epub-to-Mp3/commit/d37ad4efeecfc16883595113484db789acdd8a81))
+- Remove a stray merge marker from the language order section (#1448) ([743f9bb](https://github.com/pietro1704/Epub-to-Mp3/commit/743f9bb788ce33028b6bf46151c87f920f665ab9))
+- Contrast follows HIG/Material and WCAG 2.2 AA in every theme (#1414) ([2e0fd63](https://github.com/pietro1704/Epub-to-Mp3/commit/2e0fd63a1474093dc5650432b915a7220b5d19ff))
+- Worktree lifecycle and disk rules (#1402) ([6db6e74](https://github.com/pietro1704/Epub-to-Mp3/commit/6db6e74dc2c1c4023005f53d70b694584d334660))
+- Reported bugs need a red-then-green regression test (#1387) ([43e2269](https://github.com/pietro1704/Epub-to-Mp3/commit/43e2269e352f4c4ed852d0f7221bebdf9f3e5325))
+- Record the 2026-11-23 delivery lessons (#1372) ([4d6a442](https://github.com/pietro1704/Epub-to-Mp3/commit/4d6a442dd88acefceb1a55efde62dcbed9406101))
+- Run epub-android outside ai-jail (#1370) ([2e46871](https://github.com/pietro1704/Epub-to-Mp3/commit/2e468715d59cdbdaf08935999eefe4f3ec937ca2))
+- Rust/FFI contract for models by language (#1348) ([6701113](https://github.com/pietro1704/Epub-to-Mp3/commit/67011135099a9c69964a86bb7356a856be05eb25))
+- SE1 Simulator runs need Pietro's explicit permission (#1331) ([753253b](https://github.com/pietro1704/Epub-to-Mp3/commit/753253bd2705d5d9fa6a2113b96b5f2da1261782))
+- Pair every Apple card with a Flutter parity card (#1329) ([3d045f6](https://github.com/pietro1704/Epub-to-Mp3/commit/3d045f6640e03dbda0e1f61763a4d32d258e7371))
+- Make system TTS fallback a user setting, on by default (#1328) ([a657174](https://github.com/pietro1704/Epub-to-Mp3/commit/a657174b36d115a3b8edbdcb36fb9c7ba8aa24bc))
+- Record Apple-led platform parity and Edge-primary consent rules (#1327) ([1b4a2d6](https://github.com/pietro1704/Epub-to-Mp3/commit/1b4a2d639b8454b9d3be47c9381e7e440fc2cab9))
+- Record epub-coord/epub-apple/epub-android roles and models (#1324) ([5f12886](https://github.com/pietro1704/Epub-to-Mp3/commit/5f12886df16d4d0eb47c73c2a50e498d780f2545))
+- Record what worked across the three agent terminals (#1319) ([61b7fbf](https://github.com/pietro1704/Epub-to-Mp3/commit/61b7fbfa54ed813f5bd1ddca619392dd88d69b7a))
+
+### Features
+
+- The reader's voice picker sets the voice of this book, with Use the default (F4) (#1493) ([3d106be](https://github.com/pietro1704/Epub-to-Mp3/commit/3d106be41b02d86033b6b686687770661fdfc7d0))
+- Narration plan through JNI, Kotlin and the Dart channel (F1b) (#1489) ([c553b36](https://github.com/pietro1704/Epub-to-Mp3/commit/c553b362487562bce91dc0c06102e80afb7165dc))
+- The book language sheet shows what was detected, the declared-language conflict and the languages in Models order (F3) (#1490) ([bd21882](https://github.com/pietro1704/Epub-to-Mp3/commit/bd218821bfde3ac9b382f94d6a718523e2b62708))
+- Narration plan types and desktop binding of converter_book_narration_plan_json_v1 (F1a) (#1488) ([6408698](https://github.com/pietro1704/Epub-to-Mp3/commit/6408698a76a671a1623ea8e65a21e5fc3bb9ad1e))
+- Narration plan (decision, main and per-language voices, book voice, missing notices) (R2) (#1485) ([cc87f2d](https://github.com/pietro1704/Epub-to-Mp3/commit/cc87f2dc7776cf16dde1d13266c65be0a9e343f4))
+- With 'Show low-quality voices' on, the language page lists the installed Piper Low voices and chooses them with their revision (F2b) (#1486) ([6ccbfef](https://github.com/pietro1704/Epub-to-Mp3/commit/6ccbfef21daf3e93bd6fcc104a2de931265a7de1))
+- One book language decision, roles and the declared tie-break (R1) (#1479) ([0f374ed](https://github.com/pietro1704/Epub-to-Mp3/commit/0f374ed9a916b5bb0bc90893586f3484273c5a66))
+- The global primary and reserve voice menus give way to the two fallbacks, with a one-time migration (F2b) (#1482) ([210a018](https://github.com/pietro1704/Epub-to-Mp3/commit/210a0185ee5d34b3c961e1cd9b9f6a003c3def34))
+- Models is language-first: a row per language and a language page with Automatic, System, Piper and Edge (F2a) (#1477) ([0396287](https://github.com/pietro1704/Epub-to-Mp3/commit/03962870bb096e1980805e305c06f07aa8ca54ff))
+- MacOS reader follows the narration until the user scrolls or turns a page (#1470) ([0d504c2](https://github.com/pietro1704/Epub-to-Mp3/commit/0d504c2bf7a0874cd9ccf2411cde622bb139414a))
+- Follow the narration until the user turns a page by hand (#1469) ([f32a021](https://github.com/pietro1704/Epub-to-Mp3/commit/f32a0218aa050735864e9bc4b2d4c650123d58b5))
+- Ask for the book language when it cannot be detected, and let the user correct it (Apple BookLanguageCorrections) (#1467) ([1fe71eb](https://github.com/pietro1704/Epub-to-Mp3/commit/1fe71eb7769213f08e48d4531050d1e2dc64a2a7))
+- Choose how many library columns to show (Apple #1429) (#1464) ([dc34645](https://github.com/pietro1704/Epub-to-Mp3/commit/dc346454f37533b7d025f192edd9911602a81e12))
+- Choose what the car and headset next/previous buttons do (#1459) ([0201f32](https://github.com/pietro1704/Epub-to-Mp3/commit/0201f32262822bb674d89d42671c8ee2b6d711d0))
+- MPRIS transport for the Linux desktop (playerctl, media keys) (#1458) ([b1a00cc](https://github.com/pietro1704/Epub-to-Mp3/commit/b1a00cca2b812034332601b5dd825fa81dfc5547))
+- Setting for what the external next/previous buttons do (REMOTE-BUTTON-MODE) (#1456) ([a1d3b1c](https://github.com/pietro1704/Epub-to-Mp3/commit/a1d3b1ce6eaf55872e550523a916a6e7e2d4157a))
+- A book can keep its own reader settings; the Aa states its mode (#1452) ([9a432cb](https://github.com/pietro1704/Epub-to-Mp3/commit/9a432cb4019375b832683ec53489ce7d93aaaa35))
+- WCAG AA contrast audit and an accessible app theme (light, dark, Increase Contrast) (#1451) ([37e5c02](https://github.com/pietro1704/Epub-to-Mp3/commit/37e5c02a92e78562e49700e5a5440e2fee938cbb))
+- Warn before playing about the profile's languages that have no voice (#1447) ([c00db23](https://github.com/pietro1704/Epub-to-Mp3/commit/c00db23d658c70b0a18d60ae725c1f9928143123))
+- Warn before playing which languages of a bilingual book have no voice (#1446) ([61ca342](https://github.com/pietro1704/Epub-to-Mp3/commit/61ca34276baa35736df6c9d48ed6afe91eb956dd))
+- A seek or chapter change is the top priority of the streaming job (#1445) ([cca9513](https://github.com/pietro1704/Epub-to-Mp3/commit/cca95137a045ebd098bc2558b404b69f17bbe3a7))
+- Every streaming playback request holds background jobs until its first segment (#1444) ([0359b88](https://github.com/pietro1704/Epub-to-Mp3/commit/0359b882829fc1acdf8580eb2c610f4689ae28b2))
+- The reader follows the narration + "Go to narrated page" button (#1443) ([b82f894](https://github.com/pietro1704/Epub-to-Mp3/commit/b82f894ffd9b413e662e876c329fafee653379c1))
+- The language list is its own screen, ordered by system, popularity and alphabet (#1440) ([553e237](https://github.com/pietro1704/Epub-to-Mp3/commit/553e237793083f1a987db790174be526392b9a81))
+- Android device test farm (A8 + tablet run tests, never compile) (#1442) ([308d9d1](https://github.com/pietro1704/Epub-to-Mp3/commit/308d9d1ea8b787022432f901d8c488c13869945e))
+- The Models languages on their own route, ordered system / popular / rest (#1439) ([7f3b7e5](https://github.com/pietro1704/Epub-to-Mp3/commit/7f3b7e5fca773303abf5129805aa7a63652b5834))
+- Shared language popularity rank for the Models screen order (#1437) ([16b7622](https://github.com/pietro1704/Epub-to-Mp3/commit/16b7622b427787b69d222d8eca80a9b8637a5184))
+- Whole-book language profile; a quotation never stops the narration (#1436) ([673147d](https://github.com/pietro1704/Epub-to-Mp3/commit/673147d21784197a2eaf9e54c07b1ca66f1be1ea))
+- Footnote narration option and spoken-note highlight (#1434) ([abe77c4](https://github.com/pietro1704/Epub-to-Mp3/commit/abe77c44189d8b56c59cb2129b17926e3250672d))
+- Engine-first narration menus (System / Piper / Edge, voice inside the engine) (#1432) ([e000b1b](https://github.com/pietro1704/Epub-to-Mp3/commit/e000b1bbddac09a6833ecd8ff9723ccee28e8d99))
+- Streaming seek is the top priority (preempt, rest background jobs) (#1433) ([1ce5bee](https://github.com/pietro1704/Epub-to-Mp3/commit/1ce5bee48ee6e66b904c45f035f46a00f8543e62))
+- Inline footnote narration with a spoken layer mapped back to the source text (#1431) ([8e1f24b](https://github.com/pietro1704/Epub-to-Mp3/commit/8e1f24b145e2dadbfa84926bad20a832b0a2a4dd))
+- Explicit narration pauses (paragraph 0.45/0.55 s, chapter end 1.0 s) (#1425) ([df07f10](https://github.com/pietro1704/Epub-to-Mp3/commit/df07f100e282d0f37fe6c895ae88fe7da0ede3e2))
+- An Edge primary without consent migrates to Piper (#1423) ([e16c7db](https://github.com/pietro1704/Epub-to-Mp3/commit/e16c7db9f42e409392b17e58c79f1ad0a3bd5524))
+- Paginated text reserves the bars' space and the page indicator is readable (#1416) ([c96eff2](https://github.com/pietro1704/Epub-to-Mp3/commit/c96eff2daa70e4d64cecaf6b38a48f0cf892e780))
+- Edge as primary without the online consent migrates to the default Piper (#1401) ([2bde1f9](https://github.com/pietro1704/Epub-to-Mp3/commit/2bde1f988283b21742b7b6e4ff914768aec0014f))
+- Go to reading button when the reader and the narration have diverged (#1398) ([89db84e](https://github.com/pietro1704/Epub-to-Mp3/commit/89db84ef44da5327bcf752dba92198010b1c9196))
+- Pace Piper synthesis while the app is backgrounded (#1399) ([240fd11](https://github.com/pietro1704/Epub-to-Mp3/commit/240fd11f064673f0868440dc6c582c41c9afe5ef))
+- One reading preferences screen: default for all books and only for this book (#1397) ([afe9d52](https://github.com/pietro1704/Epub-to-Mp3/commit/afe9d52f908455727127017c95525c43dcdb2a3c))
+- Pace background synthesis through converter_set_background_cpu_limit_v1 (#1383) ([e7bd226](https://github.com/pietro1704/Epub-to-Mp3/commit/e7bd226a463df42b735e10327c34e7d308c66cd4))
+- Engine-first narration picker on the Models screen (#1380) ([4011241](https://github.com/pietro1704/Epub-to-Mp3/commit/4011241386a08033df736e542b01f810a7c76dc4))
+- Reader narration switch lists only the book language's ready models (#1379) ([7ef7ef9](https://github.com/pietro1704/Epub-to-Mp3/commit/7ef7ef9962fe6f271f0012835059f4799d51051a))
+- Automatic system voice fallback setting (on by default) (#1377) ([3d9581c](https://github.com/pietro1704/Epub-to-Mp3/commit/3d9581ca0e8e31ec649f6920c1a903036979df9d))
+- Settings keeps one Models row; narration voices and consent move to the Models screen (#1371) ([a796bf0](https://github.com/pietro1704/Epub-to-Mp3/commit/a796bf0c73f635f9d6bebbf3dd6defe83040ed75))
+- Discover and import public-domain books (Apple) (#1369) ([e862cfa](https://github.com/pietro1704/Epub-to-Mp3/commit/e862cfa2ef3e965590a815af5ad55bb9c43f4cd2))
+- Optional Show low-quality voices filter on the Models screen (iOS and macOS) (#1367) ([06d3e8a](https://github.com/pietro1704/Epub-to-Mp3/commit/06d3e8a99dc03d22c8ae6ba69e0919daf88a8865))
+- Order the library by confirmed playback and keep the chosen sort (#1365) ([55bdf3b](https://github.com/pietro1704/Epub-to-Mp3/commit/55bdf3b45967861d072dee2524444dac109fe565))
+- Bind the language model exports in JNI, Kotlin and WASM (#1354) ([266043e](https://github.com/pietro1704/Epub-to-Mp3/commit/266043e5294ed40794ca3c2f0684258c19f0bec4))
+- Apply the language model at listening start; macOS missing-model alert (#1362) ([60c4e37](https://github.com/pietro1704/Epub-to-Mp3/commit/60c4e3709452164b14f22e69f8323a99656d7340))
+- Model switch lists only the book language's ready models and leads to Models (#1359) ([e650bfe](https://github.com/pietro1704/Epub-to-Mp3/commit/e650bfe9579f5d793f3cfa67e22936f0aadd51b3))
+- Models screen by language replaces the Voice models list in Settings (#1353) ([64d43eb](https://github.com/pietro1704/Epub-to-Mp3/commit/64d43eb9642061b722f756ca03eb6025b36801d9))
+- Resolve the narration from the book language when a playback job starts (#1358) ([9cf451a](https://github.com/pietro1704/Epub-to-Mp3/commit/9cf451a12d4075b5dcb0b589b8459253b39b485a))
+- Model install progress through the JNI install operation (#1352) ([3f2d179](https://github.com/pietro1704/Epub-to-Mp3/commit/3f2d1792c5b6c6728b33877e6c99c7db0da95750))
+- Models screen grouped by book language (#1356) ([4cf85fa](https://github.com/pietro1704/Epub-to-Mp3/commit/4cf85fa33406a75cbe52735b4a572dd2a85e5f24))
+- Bind catalog languages, language model resolution and book language (#1355) ([4452f9f](https://github.com/pietro1704/Epub-to-Mp3/commit/4452f9f52f8a9c684255ed4f78e743bb4e7e5d2a))
+- Edge as primary requires online consent in Flutter and web (#1351) ([db48acd](https://github.com/pietro1704/Epub-to-Mp3/commit/db48acde0d2f543a2b1d4e458d6364dee208fa93))
+- Show model install progress through the converter install operation (#1350) ([2393a01](https://github.com/pietro1704/Epub-to-Mp3/commit/2393a01f7f57f07251bd8c9e443d1e809644dbbb))
+- Language model resolution and book language exports (#1349) ([7dd33e2](https://github.com/pietro1704/Epub-to-Mp3/commit/7dd33e243d396de37be62385dd371f458b1004e6))
+- Add stable error codes to conversion failures (#1346) ([da200f9](https://github.com/pietro1704/Epub-to-Mp3/commit/da200f91819e765f717f154b15fbaff96e9cc7a7))
+- Localize conversion failures from the converter's error codes (#1347) ([27e95d6](https://github.com/pietro1704/Epub-to-Mp3/commit/27e95d6ef361d68de8701f3397f12ea5f7157704))
+- Play from the selected text in the reader (#1343) ([8c41654](https://github.com/pietro1704/Epub-to-Mp3/commit/8c4165448265f8a16ccea1d82f6839bbe71e95bf))
+- Put the recent tool beside More in the reader chrome (#1342) ([06b7162](https://github.com/pietro1704/Epub-to-Mp3/commit/06b71620c49e5dc9436ca8b243caf14374c783c8))
+- Open the reader at the playing chapter from the player cover (#1340) ([6b77f8f](https://github.com/pietro1704/Epub-to-Mp3/commit/6b77f8f9ee22e9f86330fe0167e8212ec5813b4a))
+- Remove a book's derived data with the book (#1338) ([45a7280](https://github.com/pietro1704/Epub-to-Mp3/commit/45a7280b406ef35ed2128eb6f6522a5b8b80ff08))
+- Show Footnotes only for chapters with notes (#1337) ([3853910](https://github.com/pietro1704/Epub-to-Mp3/commit/3853910fe5de29dd99461eb237030b9d1b199e26))
+- Extract per-chapter footnotes in converter-core and expose them in FFI metadata (#1336) ([69a7eea](https://github.com/pietro1704/Epub-to-Mp3/commit/69a7eea291e659ea5110d2e585b95ee7f76a86a5))
+- Resume the narration switch at the sentence being read (#1335) ([a9da3f3](https://github.com/pietro1704/Epub-to-Mp3/commit/a9da3f347f58a767c081afbe6712c25674b37af2))
+- Wait for the iPhone to unlock instead of refusing a locked device (#1330) ([75d3e0f](https://github.com/pietro1704/Epub-to-Mp3/commit/75d3e0f0318fb5af530bce944fdda702ae7f4223))
+- Reveal and select revision-pinned Piper Low voices explicitly (#1318) ([cfa1b0b](https://github.com/pietro1704/Epub-to-Mp3/commit/cfa1b0b1a5e3dde3abc36c88c61e648b86b4d386))
+- Select explicitly revealed Piper Low voices (#1317) ([8bcbb97](https://github.com/pietro1704/Epub-to-Mp3/commit/8bcbb977262c5906f4d5d187a768c0499723f7a6))
+- Allow explicitly selected revision-pinned low-quality voices (#1316) ([a6ef73d](https://github.com/pietro1704/Epub-to-Mp3/commit/a6ef73d42db86ad4c264eddc073746d5cb04ddf8))
+- Discover and import public-domain books (#1313) ([effd239](https://github.com/pietro1704/Epub-to-Mp3/commit/effd23900e954a78cb3dd101f68dd9f4753b4878))
+- Switch the active reader voice at the current position (#1314) ([3a525fa](https://github.com/pietro1704/Epub-to-Mp3/commit/3a525faec60129ac6150d5a62abd21c43eee8b71))
+
+### Refactoring
+
+- Offline chapters use the language resolver; remove the macOS inline voice-model panel (#1364) ([1494745](https://github.com/pietro1704/Epub-to-Mp3/commit/14947450cb61e936e143e70517692b5cf0a22221))
+
+### Tests
+
+- The resolution source book_voice (Rust R2) is decoded and used (#1487) ([b55510c](https://github.com/pietro1704/Epub-to-Mp3/commit/b55510cd5e86285ae77144237b27e1257ba1c9d6))
+- Device automation with screenshots for the Go to reading button (#1426) ([e664dd6](https://github.com/pietro1704/Epub-to-Mp3/commit/e664dd679d1044694155453c946c2d92948545dd))
+- The reader model menu opens from cache, without any converter call (#1393) ([61625bc](https://github.com/pietro1704/Epub-to-Mp3/commit/61625bc98b8521a35403751d3e4815fee79b78d7))
+- Open Model downloads before the real-browser Faber install (#1375) ([e704c0b](https://github.com/pietro1704/Epub-to-Mp3/commit/e704c0b83d794330583f381490a60a635074d994))
+- Make two order- and machine-dependent reader tests hermetic (#1363) ([606268d](https://github.com/pietro1704/Epub-to-Mp3/commit/606268d9bc74ab4b4b439efd98dc5441bcdcabda))
+- Run the settings UI test on an isolated, launch-only defaults suite (#1341) ([fe98423](https://github.com/pietro1704/Epub-to-Mp3/commit/fe984230d84de23e7ce8dce71b1cbe48f2bed687))
+- Isolate every test from the real app preferences (#1334) ([dc793d5](https://github.com/pietro1704/Epub-to-Mp3/commit/dc793d5ba6d92aea2ff9af862894a00b76b03cdf))
+
 ## [0.10.5] — 2026-11-22
 
 ### Bug Fixes
@@ -8,7 +271,7 @@
 
 ### Chores
 
-- Bump version to 0.10.5 ([23166aa](https://github.com/pietro1704/Epub-to-Mp3/commit/23166aadf9a6718061bfb21b03781b69b5d95aac))
+- V0.10.5 (#1302) ([1ac7853](https://github.com/pietro1704/Epub-to-Mp3/commit/1ac785364077a8509d91b0cad2fbe81e5e838d9e))
 
 ## [0.10.4] — 2026-11-21
 
