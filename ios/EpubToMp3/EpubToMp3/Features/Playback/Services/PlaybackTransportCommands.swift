@@ -199,7 +199,7 @@ final class PlaybackTransportCommands {
         }
     }
 
-    func navigateChapter(_ direction: PlaybackChapterQueue.ChapterNavigationDirection) {
+    func navigateChapter(_ direction: PlaybackChapterQueue.ChapterNavigationDirection, restartsCurrentChapter: Bool = true) {
         clock.audioOutput.clear()
         // Keep a waiting page seek and its Pause intent until the first file.
         if player == nil, pendingSeek.chapter != nil { return }
@@ -211,7 +211,7 @@ final class PlaybackTransportCommands {
         }
         let move = PlaybackChapterQueue.navigation(direction: direction, snapshot: snapshot,
             chapters: chapterSession.chapters, currentIndex: currentChapterIndex, position: positionSeconds,
-            segmentMode: isSegmentMode, hasPlayer: player != nil)
+            segmentMode: isSegmentMode, hasPlayer: player != nil, restartsCurrentChapter: restartsCurrentChapter)
         switch move {
         case .none: return
         case .segment(let index): seeking.navigateToSegmentChapter(index)

@@ -163,22 +163,33 @@ enum PlaybackChapterQueue {
         return playing
     }
     enum Move { case none, segment(Int), seekStart, load(Int), reload(Int), advance }
+    /// `restartsCurrentChapter == false` is the car / headset "previous track" contract: the button always goes to the
+    /// previous chapter instead of first restarting the current one after three seconds.
     static func navigation(direction: ChapterNavigationDirection, snapshot: JobSnapshot?,
                            chapters liveChapters: [JobSnapshot.Chapter], currentIndex: Int,
-                           position: TimeInterval, segmentMode: Bool, hasPlayer: Bool) -> Move {
+                           position: TimeInterval, segmentMode: Bool, hasPlayer: Bool,
+                           restartsCurrentChapter: Bool = true) -> Move {
         let chapters = liveChapters.isEmpty ? (snapshot?.playableChapters ?? []) : liveChapters
         if segmentMode {
             switch direction {
             case .forward:
-                return nextCanonicalIndex(snapshot: snapshot, playbackChapters: liveChapters,
-                                          currentChapterIndex: currentIndex, isSegmentMode: true).map(Move.segment) ?? .none
+                if let next = nextCanonicalIndex(snapshot: snapshot, playbackChapters: liveChapters,
+                                                 currentChapterIndex: currentIndex, isSegmentMode: true) {
+                    return .segment(next)
+                }
+                // The next chapter is not synthesized yet, so it is not in `chapterProgress`: it still exists in the
+                // book. Request it (the player waits for its audio) instead of ignoring the button.
+                if let total = snapshot?.chaptersTotal, currentIndex + 1 < total { return .segment(currentIndex + 1) }
+                return .none
             case .backward:
-                if position > 3 { return .seekStart }
+                if restartsCurrentChapter && position > 3 { return .seekStart }
                 guard let snapshot else { return .none }
                 let offset = PlaybackSegmentSession.segmentManifestIndexOffset(snapshot)
                 let previous = (snapshot.chapterProgress ?? []).map { $0.index - offset }
                     .filter { $0 < currentIndex }.max()
-                return .segment(previous ?? currentIndex)
+                if let previous { return .segment(previous) }
+                // An earlier chapter that this job never started still exists in the book.
+                return currentIndex > 0 ? .segment(currentIndex - 1) : .seekStart
             }
         }
         if !hasPlayer {
@@ -191,7 +202,7 @@ enum PlaybackChapterQueue {
             if snapshot != nil, currentIndex + 1 >= chapters.count { return .none }
             return .advance
         case .backward:
-            if position > 3 || currentIndex <= 0 { return .seekStart }
+            if (restartsCurrentChapter && position > 3) || currentIndex <= 0 { return .seekStart }
             return snapshot == nil ? .seekStart : .reload(currentIndex - 1)
         }
     }
