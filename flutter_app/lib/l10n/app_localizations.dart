@@ -646,6 +646,36 @@ abstract class AppLocalizations {
   /// **'Columns'**
   String get libraryColumns;
 
+  /// No description provided for @bookLanguageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Book language'**
+  String get bookLanguageTitle;
+
+  /// No description provided for @bookLanguageAutomatic.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic detection'**
+  String get bookLanguageAutomatic;
+
+  /// No description provided for @bookLanguageHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'This choice applies to this book or passage. Choose Automatic detection to remove your correction.'**
+  String get bookLanguageHelp;
+
+  /// No description provided for @bookLanguageInconclusive.
+  ///
+  /// In en, this message translates to:
+  /// **'The language could not be identified after analyzing additional passages. Choose the language for this book or passage.'**
+  String get bookLanguageInconclusive;
+
+  /// No description provided for @bookLanguageMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Book language'**
+  String get bookLanguageMenu;
+
   /// No description provided for @sortLibrary.
   ///
   /// In en, this message translates to:

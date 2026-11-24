@@ -114,6 +114,11 @@
   "searchResultsCapped": "Mostrando los primeros 100 resultados",
 
   "libraryColumns": "Columnas",
+  "bookLanguageTitle": "Idioma del libro",
+  "bookLanguageAutomatic": "Detección automática",
+  "bookLanguageHelp": "Esta elección vale para este libro o fragmento. Elige Detección automática para quitar tu corrección.",
+  "bookLanguageInconclusive": "No se pudo identificar el idioma tras analizar otros fragmentos. Elige el idioma de este libro o fragmento.",
+  "bookLanguageMenu": "Idioma del libro",
   "sortLibrary": "Ordenar biblioteca",
   "playbackPosition": "Posición de reproducción",
   "playbackSpeed": "Velocidad de reproducción",

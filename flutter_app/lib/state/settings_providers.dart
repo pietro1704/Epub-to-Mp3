@@ -7,6 +7,11 @@ final sharedPrefsProvider = Provider<SharedPreferences>(
   (ref) => throw UnimplementedError('Override at runApp scope'),
 );
 
+/// The user's per-book language corrections (Apple `BookLanguageCorrections`).
+final bookLanguageCorrectionsProvider = Provider<BookLanguageCorrections>(
+  (ref) => BookLanguageCorrections(ref.watch(sharedPrefsProvider)),
+);
+
 /// Re-export of the iOS-mirror settings under the legacy `AppSettings`
 /// name so existing call sites compile unchanged after the migration.
 /// Behaviour is identical to `MirrorAppSettings` — the rename keeps

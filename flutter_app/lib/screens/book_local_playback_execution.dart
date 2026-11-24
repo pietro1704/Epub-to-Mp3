@@ -105,8 +105,10 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       }
       final ttsSupport = await getApplicationSupportDirectory();
       if (!_isCurrentConversion(generation)) return;
-      final requestedOptionsJson = ttsSnapshot.optionsJson(
-        modelsRoot: '${ttsSupport.path}/tts-models',
+      final corrections = ref.read(bookLanguageCorrectionsProvider);
+      final requestedOptionsJson = corrections.applying(
+        ttsSnapshot.optionsJson(modelsRoot: '${ttsSupport.path}/tts-models'),
+        bookId: widget.bookId,
       );
       late LocalConversionJob job;
       if (existingJob == null ||
@@ -134,6 +136,16 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
               )
               .toList(),
         );
+        // A language the user corrected since this job was created applies to
+        // its remaining chapters too.
+        final corrected = corrections.applying(
+          job.conversionOptionsJson ?? requestedOptionsJson,
+          bookId: widget.bookId,
+        );
+        if (corrected != job.conversionOptionsJson) {
+          job = job.copyWith(conversionOptionsJson: corrected);
+          await coordinator.store.save(job);
+        }
         job = await coordinator.watchdog(job);
         for (final chapter in job.chapters.where((c) => c.status == 'failed')) {
           job = await coordinator.retryChapter(job, chapter.index);
@@ -310,6 +322,17 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
         _localJob = failed;
       }
       if (!_isCurrentConversion(generation)) return;
+      if (isBookLanguageUncertain(e) && await _recoverBookLanguage(e)) {
+        if (!_isCurrentConversion(generation)) return;
+        await _runLocalPlaybackConversion(
+          playbackChapterIndex: playbackChapterIndex,
+          generation: generation,
+          readerPosition: readerPosition,
+          explicitNarration: explicitNarration,
+        );
+        return;
+      }
+      if (!_isCurrentConversion(generation)) return;
       _showConversionError(e);
       setState(() => _isConverting = false);
     } finally {
@@ -320,6 +343,26 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     }
   }
 
+
+  /// Asks which language the undetectable passage (or book) is in and stores
+  /// the answer; true when the conversion should run again with it.
+  Future<bool> _recoverBookLanguage(Object error) async {
+    if (!mounted) return false;
+    final choice = await showBookLanguagePicker(
+      context,
+      allowsAutomatic: false,
+      inconclusive: true,
+    );
+    if (choice == null || choice.isEmpty || !mounted) return false;
+    await ref
+        .read(bookLanguageCorrectionsProvider)
+        .set(
+          choice,
+          bookId: widget.bookId,
+          passage: BookLanguageUncertain.decode(error)?.passage(choice),
+        );
+    return true;
+  }
 
   /// The narration this NEW job should use for the book's language. Only a
   /// per-language choice changes anything; see [resolvePlaybackNarration].
