@@ -38,6 +38,15 @@ impl Drop for ForegroundHold {
     }
 }
 
+/// A streaming playback request holds background work from its start until its first segment has
+/// been published (dropped then, or when the request ends). Independent of any control, so every
+/// client's seek (a new request from a text position, or a chapter change) is served first.
+pub(crate) struct StreamingRequestHold(#[allow(dead_code)] ForegroundHold);
+
+pub(crate) fn hold_foreground() -> StreamingRequestHold {
+    StreamingRequestHold(ForegroundHold::new())
+}
+
 /// Background work (jobs that are not streaming playback) rests while a streaming seek has
 /// not produced its first segment yet, so the CPU and the TTS session go to the listener.
 /// Cancellation and `max` bound the wait; the browser build has no blocking sleep and skips it.
@@ -369,6 +378,10 @@ impl ConversionControl {
         if changed && queue.attached && !queue.remaining.contains(&chapter) {
             queue.remaining.push_front(chapter);
         }
+        if changed {
+            // The listener moved: background work rests until this chapter delivers a segment.
+            queue.hold = Some((chapter, ForegroundHold::new()));
+        }
         self.ready.notify_all();
         Ok(())
     }
@@ -612,6 +625,44 @@ mod tests {
         let started = std::time::Instant::now();
         wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
         assert!(started.elapsed() < std::time::Duration::from_millis(100));
+    }
+
+    #[test]
+    fn a_listening_seek_also_holds_background_work_until_its_first_segment() {
+        let _serial = SEEK_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let position = |chapter| crate::tts_session::ListeningPosition {
+            version: 2,
+            chapter_index: chapter,
+            text_offset: 0,
+        };
+        let control = ConversionControl::new();
+        control.set_listening_position(position(0)).unwrap();
+        let release = control.clone();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            release.note_segment_done(0);
+        });
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(240));
+        releaser.join().unwrap();
+        // The same position again changes nothing and holds nothing.
+        control.set_listening_position(position(0)).unwrap();
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        // Moving to another chapter holds again, until that chapter delivers a segment.
+        control.set_listening_position(position(3)).unwrap();
+        control.note_segment_done(0);
+        let release = control.clone();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            release.note_segment_done(3);
+        });
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(240));
+        releaser.join().unwrap();
     }
 
     #[test]
