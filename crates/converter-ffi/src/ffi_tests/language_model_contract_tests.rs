@@ -14,6 +14,14 @@ fn catalog_languages_are_exposed_as_versioned_json() {
             .map(|language| language["tag"].as_str().unwrap().to_owned())
             .collect();
         assert!(tags.contains(&"pt".to_owned()) && tags.contains(&"en".to_owned()));
+        // Additive: the shared popularity rank travels with each ranked language.
+        let english = value["languages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|language| language["tag"] == "en")
+            .unwrap();
+        assert_eq!(english["popularity_rank"], 1);
         let unsupported = converter_tts_catalog_languages_json_v1(c"plan9".as_ptr(), 0);
         assert!(unsupported.is_null());
         let error = converter_last_error();

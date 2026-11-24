@@ -119,6 +119,16 @@ total_chars, undetermined_chars}`. A client warns BEFORE playing which models ar
 resolving each `languages[].language` with the existing language-model-resolution contract
 (installing a model stays an explicit action).
 
+||||||| parent of 1af7a527 (feat(core): shared language popularity rank for the Models screen order)
+## Models screen language order
+
+Clients list the languages of the Models screen in this order (card MODELS-LANGUAGE-SUBSCREEN):
+(1) the languages of the system, in the system's own order (Android `LocaleList`; the user's
+locales on Windows/Linux; macOS/iOS preferred languages); (2) the most popular languages, by
+`popularity_rank` (the position in `model_catalog::LANGUAGE_POPULARITY`, the one shared list:
+edit it only there); (3) every other language in alphabetical order. `popularity_rank` is additive
+in `converter_tts_catalog_languages_json_v1` and absent for languages outside the list.
+
 ## Provider feedback
 
 **Provider pressure**:
