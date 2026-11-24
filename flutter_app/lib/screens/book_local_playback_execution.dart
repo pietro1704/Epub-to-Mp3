@@ -229,7 +229,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                   return;
                 }
                 // An on-demand seek needs the finished, seekable chapter.
-                if (_chapterPreparation?.$1 == chapter.index) return;
+                if (_chapterPreparation.holdsStreaming(chapter.index)) return;
                 (player as StreamingChapterPlayer).registerGrowingChapter(
                   chapter.index,
                   source,
@@ -256,6 +256,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                 _playableChapters.sort((a, b) => a.index.compareTo(b.index));
                 await player.setQueue(List.of(_playableChapters));
                 if (!_isCurrentConversion(generation)) return;
+                // A next/previous button waits for exactly this: the chapter is queued.
+                _chapterQueueUpdated();
                 _scheduleRequestedPlayback(player, generation);
               }
             : null,

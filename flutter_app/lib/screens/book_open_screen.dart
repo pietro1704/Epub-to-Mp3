@@ -28,6 +28,7 @@ import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
 import '../services/playback/audio_player_service.dart';
+import '../services/playback/chapter_preparation.dart';
 
 import '../services/conversion/local_conversion_job.dart';
 import '../services/conversion/embedded_converter.dart';

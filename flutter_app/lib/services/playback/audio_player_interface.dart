@@ -29,15 +29,19 @@ abstract class AudioPlayerInterface {
   int seekForwardSeconds = 15;
   int seekBackwardSeconds = 15;
   List<int> sourceChapterIndices = const [];
+
   /// Adds the requested source chapter to the playback queue when available.
-  Future<bool> Function(int sourceChapter)? onPrepareSourceChapter;
+  ///
+  /// [seekable] is true when the caller will seek inside the chapter (it needs the finished
+  /// audio) and false for plain next/previous (listening may start while it is synthesized).
+  Future<bool> Function(int sourceChapter, {required bool seekable})?
+  onPrepareSourceChapter;
 
   /// A skip landed outside the audio that exists (the playing chapter is still
   /// being synthesized, so it cannot be sought). The owner restarts synthesis at
   /// the estimated text position of [target] (media time in that chapter's audio)
   /// and returns true; false lets the skip continue into the next chapter.
-  Future<bool> Function(int sourceChapter, Duration target)?
-  onSkipOutsideCache;
+  Future<bool> Function(int sourceChapter, Duration target)? onSkipOutsideCache;
   PlaybackPhase get phase => isLoading
       ? PlaybackPhase.loading
       : isPlaying
