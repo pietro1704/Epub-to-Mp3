@@ -201,17 +201,30 @@ pub fn finalize_mp3(path: &Path) -> Result<bool, AudioError> {
 /// decoders take the length from the first header, so a second header-bearing stream
 /// would play past the declared length.
 pub fn join_mp3_segments(parts: &[&[u8]]) -> Result<Vec<u8>, AudioError> {
+    join_mp3_segments_with(parts, finalize_mp3)
+}
+
+fn join_mp3_segments_with(
+    parts: &[&[u8]],
+    finalize: impl FnOnce(&Path) -> Result<bool, AudioError>,
+) -> Result<Vec<u8>, AudioError> {
     if let [only] = parts {
         return Ok(only.to_vec());
     }
-    let mut joined = tempfile::NamedTempFile::new()?;
-    for part in parts {
-        joined.write_all(part)?;
-    }
-    joined.as_file_mut().sync_all()?;
-    finalize_mp3(joined.path())?;
+    // The handle is closed (`into_temp_path`) BEFORE `finalize` replaces the file by an atomic
+    // rename: Windows refuses to rename over, or delete, a file that still has an open handle
+    // (`Access is denied`, os error 5). The path still deletes the file when it is dropped.
+    let path = {
+        let mut joined = tempfile::NamedTempFile::new()?;
+        for part in parts {
+            joined.write_all(part)?;
+        }
+        joined.as_file_mut().sync_all()?;
+        joined.into_temp_path()
+    };
+    finalize(&path)?;
     let mut bytes = Vec::new();
-    File::open(joined.path())?.read_to_end(&mut bytes)?;
+    File::open(&path)?.read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -243,6 +256,31 @@ mod tests {
         if let Some(output) = std::env::var_os("EPUB_MP3_ASSEMBLY_TEST_OUTPUT") {
             std::fs::copy(&path, output).unwrap();
         }
+    }
+
+    /// Windows refuses to replace or rename a file that still has an open handle in this process
+    /// (`Access is denied`, os error 5): `finalize_mp3` replaces the file it is given by an atomic
+    /// rename, so the join must have closed every handle of its own on it by then. Linux does not
+    /// refuse, so the open descriptors of this process are inspected instead.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn joining_never_holds_the_file_open_while_it_is_replaced() {
+        let held = std::cell::Cell::new(None);
+        let joined = join_mp3_segments_with(&[AUDIO, AUDIO], |path| {
+            let open = std::fs::read_dir("/proc/self/fd")
+                .unwrap()
+                .filter_map(|entry| std::fs::read_link(entry.ok()?.path()).ok())
+                .any(|target| target == path);
+            held.set(Some(open));
+            finalize_mp3(path)
+        })
+        .unwrap();
+        assert_eq!(
+            held.get(),
+            Some(false),
+            "the temporary file must be closed before it is replaced (Windows os error 5)"
+        );
+        assert!(joined.len() > AUDIO.len());
     }
 
     #[test]
