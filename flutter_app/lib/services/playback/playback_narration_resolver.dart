@@ -39,7 +39,8 @@ final class MissingNarration extends PlaybackNarration {
 class BookLanguageCache {
   BookLanguageCache(this._prefs);
 
-  static const storageKey = 'bookLanguageAnalysis.v1';
+  // v2: the analysis is stored with its whole Rust JSON (the narration plan needs the profile's details).
+  static const storageKey = 'bookLanguageAnalysis.v2';
 
   final SharedPreferences _prefs;
   final Map<String, ({String stamp, BookLanguageAnalysis analysis})> _memory =

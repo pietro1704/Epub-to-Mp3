@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../models/ebook_fulltext.dart';
 import '../../models/language_model_resolution.dart';
+import '../../models/narration_plan.dart';
 import 'model_install/model_install_models.dart';
 import 'model_install/model_install_runner.dart' show ModelInstallCancellation;
 import 'embedded_conversion_result.dart';
@@ -119,6 +120,17 @@ abstract interface class EmbeddedConverter {
     required String root,
     ModelInstallCancellation? cancellation,
   });
+}
+
+/// Rust's narration plan of one book (`converter_book_narration_plan_json_v1`): the language
+/// decision, the main voice, the other languages' voices and the missing-voice notices. Pure and
+/// fast; never downloads. A converter without it (a Rust that predates it) is not capable, and the
+/// caller keeps the per-language resolver.
+abstract interface class NarrationPlanCapable {
+  /// Whether the native library behind this converter exports the plan.
+  bool get supportsNarrationPlan;
+
+  Future<NarrationPlan> bookNarrationPlan(NarrationPlanRequest request);
 }
 
 abstract interface class CancellableEmbeddedConverter {

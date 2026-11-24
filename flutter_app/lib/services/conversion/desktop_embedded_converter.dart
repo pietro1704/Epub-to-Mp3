@@ -13,6 +13,7 @@ import 'package:ffi/ffi.dart';
 
 import '../../models/ebook_fulltext.dart';
 import '../../models/language_model_resolution.dart';
+import '../../models/narration_plan.dart';
 import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
 import '../playback/growing_chapter_audio_source.dart';
@@ -35,7 +36,8 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
         ListeningScheduleFactory,
         ManualTtsModelCatalog,
         BackgroundPacingCapable,
-        PositionedChapterConverter {
+        PositionedChapterConverter,
+        NarrationPlanCapable {
   DesktopEmbeddedConverter({ffi.DynamicLibrary? library, String? libraryPath})
     : _libraryPath = libraryPath ?? _resolveLibraryPath(),
       _workerLibraryAvailable = library == null || libraryPath != null,
@@ -123,6 +125,13 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   ) async => LanguageModelResolution.parse(
     _languageModels.resolveJson(jsonEncode(request.toJson())),
   );
+
+  @override
+  bool get supportsNarrationPlan => _languageModels.hasNarrationPlan;
+
+  @override
+  Future<NarrationPlan> bookNarrationPlan(NarrationPlanRequest request) async =>
+      NarrationPlan.parse(_languageModels.narrationPlanJson(jsonEncode(request.toJson())));
 
   @override
   Future<BookLanguageAnalysis> bookLanguage(String path) async {
