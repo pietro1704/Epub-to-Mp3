@@ -683,6 +683,9 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
+  String get modelsFallbackSection => 'Voces de reserva';
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override

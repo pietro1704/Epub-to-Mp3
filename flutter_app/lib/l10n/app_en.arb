@@ -241,6 +241,7 @@
   "modelsNeedsVoice": "A book in your library needs a voice for this language",
   "@modelsSizeMb": {"placeholders": {"size": {"type": "int"}}},
   "modelsSizeMb": "{size} MB",
+  "modelsFallbackSection": "Fallback voices",
   "modelsAutomatic": "Automatic",
   "modelsAutomaticDesc": "Uses the best installed model for the book",
   "modelsLocalSection": "On this device",

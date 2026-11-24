@@ -682,6 +682,9 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get modelsFallbackSection => 'Vozes de reserva';
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override
