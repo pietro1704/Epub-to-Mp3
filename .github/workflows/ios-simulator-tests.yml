@@ -64,10 +64,13 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          xcrun simctl list devicetypes runtimes | head -30
-          udid="$(xcrun simctl list devices available -j | ruby -rjson -e '
+          xcrun simctl list runtimes
+          sdk_version="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          # Xcode 16.4 only lists Simulators whose runtime is not newer than its SDK.
+          udid="$(xcrun simctl list devices available -j | SDK_VERSION="$sdk_version" ruby -rjson -e '
             d = JSON.parse(STDIN.read)["devices"]
-            hit = d.select { |k, _| k.include?("iOS") }.sort_by { |k, _| k[/iOS-([\d-]+)/, 1].split("-").map(&:to_i) }.reverse
+            max = ENV.fetch("SDK_VERSION").split(".").map(&:to_i)
+            hit = d.select { |k, _| k.include?("iOS") && ((k[/iOS-([\d-]+)/, 1].split("-").map(&:to_i) <=> max) <= 0) }.sort_by { |k, _| k[/iOS-([\d-]+)/, 1].split("-").map(&:to_i) }.reverse
                    .flat_map { |_, v| v }.find { |x| x["name"].start_with?("iPhone") && x["isAvailable"] }
             abort "No iPhone Simulator" unless hit
             puts hit["udid"]')"

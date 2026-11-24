@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[rust flutter android-jvm apple-app rails-web jni-contracts rails-browser rust-audit]
+    runtimes = %w[rust flutter android-jvm apple-app ios-simulator rails-web jni-contracts rails-browser rust-audit]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -194,7 +194,7 @@ class CiRuntimeScopeTest < Minitest::Test
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
     { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android',
-      'apple-app' => 'apple', 'rails-web' => 'rails', 'jni-contracts' => 'rust', 'rails-browser' => 'rails',
+      'apple-app' => 'apple', 'ios-simulator' => 'apple', 'rails-web' => 'rails', 'jni-contracts' => 'rust', 'rails-browser' => 'rails',
       'rust-audit' => 'lockfile' }.each do |job, name|
       selected = scopes[name] == 'true' && !(%w[apple-app android-jvm jni-contracts rails-browser rust-audit].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
@@ -208,6 +208,8 @@ class CiRuntimeScopeTest < Minitest::Test
     scopes = %w[rust flutter android apple rails lockfile native_host].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
+    %w[failure cancelled skipped].each { |result| refute gate(scopes, 'ios-simulator' => result).success? }
+    refute gate(scopes, { 'ios-simulator' => 'skipped' }, true).success?
     assert gate(scopes, {}, true).success?
     refute gate(scopes, { 'apple-app' => 'success' }, true).success?
     refute gate(scopes, {}, 'unknown').success?
