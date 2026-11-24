@@ -87,6 +87,13 @@ struct BookLanguageAnalysis: Decodable, Sendable, Equatable {
     let inconclusiveSamples: Int
     /// The whole-book profile (additive; absent from an older library).
     var profile: BookLanguageProfile? = nil
+
+    /// The language a book is read in: the user's correction, else the whole-book profile's primary language, else
+    /// the confirmed one. Never `languages.first` (an alphabetical set of the sampled languages: a Portuguese book with
+    /// a French quotation resolved French) and never the declared tag alone.
+    func resolvedLanguage(userCorrection: String?) -> String? {
+        userCorrection.flatMap { $0.isEmpty ? nil : $0 } ?? profile?.primary ?? confirmed
+    }
     enum CodingKeys: String, CodingKey {
         case declared, confirmed, languages, profile
         case samplesExamined = "samples_examined"
