@@ -9,6 +9,15 @@ struct PlaybackSettingsRows {
     func cell(for indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
+        if indexPath.row == 2 {
+            content.text = L10n.string("settings.remoteButtons")
+            content.secondaryText = settings.remoteButtonMode.title
+            content.image = UIImage(systemName: "car")
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
+            cell.accessibilityIdentifier = "settings.remoteButtons"
+            return cell
+        }
         content.text = indexPath.row == 0
             ? L10n.string("settings.skipForward")
             : L10n.string("settings.skipBackward")

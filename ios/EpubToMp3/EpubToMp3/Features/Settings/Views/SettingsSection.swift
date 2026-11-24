@@ -14,7 +14,7 @@ enum SettingsSection: Int, CaseIterable {
         case .runtime:
             return RuntimeSettingsRows.rowCount(speechModels: speechModels, disclosure: disclosure)
         case .playback:
-            return 2
+            return 3
         case .reader:
             return 8
         case .storage:

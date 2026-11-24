@@ -419,6 +419,9 @@
 "settings.skipForward" = "Skip forward";
 "settings.skipBackward" = "Skip backward";
 "settings.seconds" = "%d seconds";
+"settings.remoteButtons" = "Headset and car buttons";
+"settings.remoteButtons.chapter" = "Next / previous chapter";
+"settings.remoteButtons.skip" = "Skip forward / back by seconds";
 
 "conversion.systemVoiceFallback" = "Using an installed device voice temporarily. The primary voice will be retried automatically.";
 "conversion.profileMissingVoices" = "This book also has passages in %@. No voice is installed for them, so the main voice reads them. You can install one in Models.";

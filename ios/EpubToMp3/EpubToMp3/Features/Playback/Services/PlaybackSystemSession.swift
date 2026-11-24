@@ -133,13 +133,13 @@ final class PlaybackSystemSession {
         remoteCommandRemovers.append { center.togglePlayPauseCommand.removeTarget(toggleTarget) }
 
         let nextTarget = center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.actions.next() }
+            Task { @MainActor in self?.handleTrackCommand(forward: true) }
             return .success
         }
         remoteCommandRemovers.append { center.nextTrackCommand.removeTarget(nextTarget) }
 
         let previousTarget = center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.actions.previous() }
+            Task { @MainActor in self?.handleTrackCommand(forward: false) }
             return .success
         }
         remoteCommandRemovers.append { center.previousTrackCommand.removeTarget(previousTarget) }
@@ -179,6 +179,18 @@ final class PlaybackSystemSession {
             return .success
         }
         remoteCommandRemovers.append { center.changePlaybackRateCommand.removeTarget(rateTarget) }
+    }
+
+    /// Next / previous track from a car, headset or lock screen: a chapter move, or ±N seconds when the user chose that.
+    private func handleTrackCommand(forward: Bool) {
+        let resolution = RemoteButtonMode.stored().resolve(
+            forward: forward,
+            forwardSeconds: Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey),
+            backwardSeconds: Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey))
+        switch resolution {
+        case .chapter(let forward): forward ? actions.next() : actions.previous()
+        case .skip(let seconds): actions.skip(seconds)
+        }
     }
 
     static func configuredSkipInterval(forKey key: String) -> Double {
