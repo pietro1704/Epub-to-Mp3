@@ -82,4 +82,33 @@ void main() {
     expect(shown['name'], 'O mapa antigo');
     expect(shown['head'], startsWith('um mapa antigo, dobrado'));
   });
+
+  testWidgets('the semantics snapshot lists what is on screen with its place, replacing the accessibility tree', (tester) async {
+    final file = File('${dir.path}/semantics.jsonl');
+    final trace = UiTrace(file.path);
+    UiTrace.override(trace);
+    final handle = trace.keepSemanticsOn();
+    trace.startSemanticsSnapshots();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ElevatedButton(onPressed: () {}, child: const Text('Add a book')),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    final events = file.readAsLinesSync().map((l) => jsonDecode(l) as Map).where((e) => e['event'] == 'ui.semantics').toList();
+    expect(events, isNotEmpty);
+    final nodes = (events.last['nodes'] as List).cast<Map>();
+    final add = nodes.singleWhere((n) => n['label'] == 'Add a book');
+    expect(add['button'], isTrue);
+    expect(add['width'] as num, greaterThan(20));
+    expect(add['height'] as num, greaterThan(20));
+    expect(add['left'] as num, greaterThan(0), reason: 'a place in logical pixels, from the window origin');
+    expect(events.last['dpr'], isA<num>());
+    handle?.dispose();
+  });
 }

@@ -355,7 +355,38 @@ function Read-FlutterPointElements {
   $found.ToArray()
 }
 
+# The app's own record of what is on screen (ui.semantics, from Flutter's semantics tree): the
+# labelled node whose text matches, placed in screen pixels from the Flutter view's origin. Windows
+# can expose an empty native accessibility tree on a runner; this never depends on it.
+function Find-TraceNode([string]$Pattern) {
+  if (-not (Test-Path -LiteralPath $tracePath)) { return $null }
+  $snapshot = $null
+  # Only the newest records matter: every snapshot is the whole screen.
+  foreach ($line in Get-Content -LiteralPath $tracePath -Tail 40 -Encoding UTF8) {
+    if ($line -notlike '*"event":"ui.semantics"*') { continue }
+    try { $snapshot = $line | ConvertFrom-Json } catch { continue }
+  }
+  if ($null -eq $snapshot) { return $null }
+  $origin = [System.Windows.Automation.AutomationElement]::FromHandle($flutterView).Current.BoundingRectangle
+  foreach ($node in $snapshot.nodes) {
+    if ($node.label -match $Pattern -and $node.width -gt 0 -and $node.height -gt 0) {
+      $element = New-Object ReaderTestDesktop+FlutterElement
+      $element.Name = [string]$node.label
+      $element.Role = if ($node.button) { 'button' } else { 'text' }
+      $element.State = 0
+      $element.Left = [int]($origin.X + $node.left * $snapshot.dpr)
+      $element.Top = [int]($origin.Y + $node.top * $snapshot.dpr)
+      $element.Width = [int]($node.width * $snapshot.dpr)
+      $element.Height = [int]($node.height * $snapshot.dpr)
+      return $element
+    }
+  }
+  return $null
+}
+
 function Find-AppText([string]$Pattern) {
+  $traced = Find-TraceNode $Pattern
+  if ($null -ne $traced) { return $traced }
   foreach ($element in [ReaderTestDesktop]::ReadFlutterAccessibility($flutterView)) {
     if ($element.IsVisible -and $element.Name -match $Pattern) {
       return $element

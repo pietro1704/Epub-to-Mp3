@@ -31,6 +31,7 @@ import 'views/reader_theme_colors.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   UiTrace.instance.keepSemanticsOn();
+  UiTrace.instance.startSemanticsSnapshots();
   initializeDesktopAudioBackend(defaultTargetPlatform);
   // Register the Android platform adapter before Riverpod can resolve the
   // embedded converter. Without this registration, opening a book fails with

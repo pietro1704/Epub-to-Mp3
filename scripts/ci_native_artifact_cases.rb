@@ -25,6 +25,17 @@ class CiRuntimeScopeTest
     refute_match(/Find-AppText 'um mapa antigo, dobrado'/, script)
   end
 
+  def test_windows_journey_finds_and_places_controls_from_the_app_semantics_trace_before_the_native_tree
+    script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    assert_match(/function Find-TraceNode/, script)
+    find_app_text = script[/function Find-AppText.*?\n\}/m]
+    refute_nil find_app_text
+    assert_operator find_app_text.index('Find-TraceNode'), :<, find_app_text.index('ReadFlutterAccessibility'),
+                    'the trace is asked first; the native accessibility tree is only the fallback'
+    assert_includes script, '"event":"ui.semantics"'
+    assert_includes script, '$snapshot.dpr', 'logical pixels are scaled by the device pixel ratio'
+  end
+
   def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
     workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
     job = workflow.fetch('jobs').fetch('windows-package-faber')
