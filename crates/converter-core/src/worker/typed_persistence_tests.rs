@@ -22,6 +22,7 @@ fn fallback_metadata_tracks_actual_role_when_primary_and_secondary_resolve_to_sa
         let mut request = preference_test_request();
         request.input = input;
         request.tts_preferences = Some(TtsPreferences {
+            footnote_narration: Default::default(),
             policy_version: None,
             primary: TtsSelection {
                 session: None,
@@ -148,6 +149,7 @@ fn typed_primary_success_persists_zero_before_resuming_after_another_failure() {
     request.input = input;
     request.job_id = "recovered-primary".into();
     request.tts_preferences = Some(TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -191,6 +193,7 @@ fn typed_primary_success_persists_zero_before_resuming_after_another_failure() {
     next.input = next_input;
     next.job_id = "next-resumed".into();
     next.tts_preferences = Some(TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -247,6 +250,7 @@ fn typed_failure_policy_survives_separate_single_chapter_requests() {
         request.input = input;
         request.job_id = format!("separate-chapter-{chapter}");
         request.tts_preferences = Some(TtsPreferences {
+            footnote_narration: Default::default(),
             policy_version: None,
             primary: TtsSelection {
                 session: None,

@@ -102,6 +102,30 @@ impl ConversionWorker {
             model.is_file() && config.is_file()
         });
         let preferences = resolved.as_ref().unwrap_or(preferences);
+        // Footnote narration: a spoken layer (notes read at their references) derived from the
+        // source text; chapters without notes narrate the source text unchanged.
+        // Coverage and progress stay on the source text axis, whatever is spoken.
+        let source_text_chars = text.chars().count();
+        let spoken_chapter = crate::epub::footnote_narration::SpokenChapter::derive(
+            text,
+            text_offset,
+            &paragraph_ends,
+            &heading_ends,
+            &chapter.note_marks,
+            preferences.footnote_narration,
+            language,
+        );
+        let (text, paragraph_ends, heading_ends) = match &spoken_chapter {
+            Some(spoken) => (
+                spoken.text.as_str(),
+                spoken.paragraph_ends.clone(),
+                spoken.heading_ends.clone(),
+            ),
+            None => (text, paragraph_ends, heading_ends),
+        };
+        let note_edges: &[usize] = spoken_chapter
+            .as_ref()
+            .map_or(&[], |spoken| &spoken.note_edges);
         let engine = &preferences.primary.engine;
         let base_request_key = chapter_audio_request_key(
             &book_key,
@@ -136,7 +160,8 @@ impl ConversionWorker {
         };
         let base_request_key = super::heading_pauses::request_key(
             &base_request_key,
-            &super::heading_pauses::Structure::new(text, &heading_ends, &paragraph_ends),
+            &super::heading_pauses::Structure::new(text, &heading_ends, &paragraph_ends)
+                .with_note_edges(note_edges),
         );
         let request_key =
             self.typed_cache_request_key(request, preferences, language, &base_request_key)?;
@@ -226,6 +251,7 @@ impl ConversionWorker {
                     generation,
                     &paragraph_ends,
                     &heading_ends,
+                    spoken_chapter.as_ref(),
                 );
                 if stale_window_cancelled.load(Ordering::Acquire) {
                     return Err(WorkerError::PlaybackWindowChanged);
@@ -317,7 +343,7 @@ impl ConversionWorker {
                 chapter_title: chapter.name.clone(),
                 filename: name.clone(),
                 audio_path: mp3.clone(),
-                text_chars: text.chars().count(),
+                text_chars: source_text_chars,
             });
         }
         let result_entry = (
@@ -329,7 +355,7 @@ impl ConversionWorker {
                 source_index,
                 title: chapter.name.clone(),
                 filename: name,
-                text_chars: text.chars().count(),
+                text_chars: source_text_chars,
                 text_offset,
             },
         );

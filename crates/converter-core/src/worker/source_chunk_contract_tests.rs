@@ -60,6 +60,7 @@ impl TtsSession for ChunkRecordingSession {
             text: text.to_owned(),
             audio_start: 0.0,
             source_offset: None,
+            note: None,
             words: vec![crate::speech_alignment::Word {
                 location: 0,
                 length: text
@@ -79,6 +80,7 @@ impl TtsSession for ChunkRecordingSession {
 }
 fn chunk_preferences() -> TtsPreferences {
     TtsPreferences {
+        footnote_narration: Default::default(),
         primary: TtsSelection {
             engine: "chunk-contract".into(),
             model_id: None,
@@ -137,6 +139,7 @@ fn typed_worker_consumes_boundary_whitespace_and_uses_paragraph_metadata() {
             None,
             &[paragraph_end],
             &[],
+            None,
         )
         .unwrap();
     assert_eq!(calls.lock().unwrap()[0], first);
@@ -246,6 +249,7 @@ fn heading_pause_reaches_streamed_bytes_and_final_artifact_once() {
                 None,
                 &[5, text.chars().count()],
                 &[5],
+                None,
             )
             .unwrap()
     };
@@ -299,6 +303,7 @@ fn cached_equal_speech_is_bound_to_each_source_occurrence_after_reuse() {
             None,
             &[5, 11, 17],
             &[5, 11],
+            None,
         )
         .unwrap();
     assert_eq!(

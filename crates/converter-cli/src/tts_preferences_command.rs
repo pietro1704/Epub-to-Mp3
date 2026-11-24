@@ -104,6 +104,7 @@ pub(super) fn parse_captured_preferences(
     let captured: CapturedTtsPreferences = serde_json::from_str(json)
         .map_err(|error| format!("Invalid --tts-preferences-json: {error}"))?;
     let preferences = converter_core::tts_preferences::TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: captured.policy_version,
         primary: captured.primary.into_selection(),
         secondary: captured.secondary.map(CapturedTtsSelection::into_selection),

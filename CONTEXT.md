@@ -50,8 +50,37 @@ the reader's text axis. Approved by Pietro (2026-11-23), totals measured with
 difference to the voice's natural gap, 0.14 s / 0.30 s); a heading keeps 0.8 s; the end
 of a chapter is 1.0 s; sentences keep the voice's own pacing. Each paragraph is its own
 segment. The policy is part of the cache identity (`narration-pause-v1`), so audio made
-without it is never reused. Inline footnotes get 0.5 s before and after (footnote
-narration, separate change).
+without it is never reused. A narrated footnote gets 0.5 s (total) before its start marker
+and after its end marker (see "Footnote narration").
+
+## Footnote narration
+
+Footnotes are read inline by default (approved by Pietro, 2026-11-23). The source text axis
+never changes (highlight, seek and "follow the speech" use it); the Rust worker derives a
+second, spoken text (`epub/footnote_narration.rs`): each note reference is followed by
+"Início da nota de rodapé N." + the note + "Fim da nota de rodapé N." (en: "Footnote N." …
+"End of footnote N."; es: "Nota al pie N." … "Fin de la nota al pie N."; other languages use
+the English markers), set off by 0.5 s on both sides. A note whose body sits in the same
+document is read at its reference and not again where it appears; a note from another
+document is read from its extracted text. `N` is the reference label when it is a plain
+number, else the note's position in the chapter. Chapters without notes narrate exactly as
+before and keep their cache identity; chapters with notes add `narration-footnote-v1` (and
+the spoken text itself) to it, so audio made without notes is never reused.
+
+Contract for clients (additive, shared Rust):
+- Preference `footnote_narration` in `TtsPreferences`: `"inline"` (default, not serialized)
+  or `"skip"` (note bodies are left out of the narration; no markers).
+- Each published audio segment carries its alignment passage in the ID3 `PRIV` tag. Source
+  text passages keep `sourceOffset` (scalar offset in the chapter text). A narrated note is a
+  passage with `"note": {"number", "sourceStart", "sourceEnd"}` and no `sourceOffset`: its
+  text is the spoken note (markers included), not source text; `sourceStart..sourceEnd` is the
+  note body in the chapter text when it lives there (highlight it and follow the speech
+  there while the passage plays), or the empty range at the reference when the body is in
+  another document. After the passage, highlighting returns to the next `sourceOffset`
+  passage, which resumes right after the reference. Clients that ignore `note` skip the
+  passage (no highlight), as they already do for passages they cannot place.
+- `Chapter.note_marks` (Rust API): reference end, label, body text and, when in the same
+  document, the body range, on the unchanged text axis.
 
 ## Provider feedback
 

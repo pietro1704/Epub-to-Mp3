@@ -141,3 +141,79 @@ fn only_note_like_targets_count_like_the_apple_fallback() {
     let book = book(vec![("OPS/a.xhtml", html.into())], &["a.xhtml"]);
     assert!(book.chapters[0].footnotes.is_empty());
 }
+
+// A Portuguese book shaped like "Jardim das Aflições": references marked by epub:type with
+// short ids, note bodies in <aside epub:type="footnote"> at the end of the chapter.
+const JARDIM: &str = r##"<html xmlns:epub="http://www.idpf.org/2007/ops"><body><h1>Capítulo 1</h1>
+    <p>A casa ficava no fim da rua.<a epub:type="noteref" href="#n1">1</a> O jardim era grande.</p>
+    <p>Ninguém passava por ali.</p>
+    <p>O velho abriu o portão.<a role="doc-noteref" href="#n2">2</a> A tarde seguiu.</p>
+    <aside epub:type="footnote" id="n1"><p>1 A primeira nota explica a origem.</p></aside>
+    <aside epub:type="footnote" id="n2"><p>2 A segunda nota cita o livro.</p></aside>
+    </body></html>"##;
+
+#[test]
+fn marked_references_with_short_ids_become_note_marks_with_their_bodies() {
+    let book = book(vec![("OPS/a.xhtml", JARDIM.into())], &["a.xhtml"]);
+    let chapter = &book.chapters[0];
+    assert_eq!(chapter.note_marks.len(), 2, "{:?}", chapter.note_marks);
+    for mark in &chapter.note_marks {
+        let body = mark.body.clone().expect("the body is in the same document");
+        let read: String = chapter
+            .text
+            .chars()
+            .skip(body.start)
+            .take(body.len())
+            .collect();
+        assert!(
+            read.ends_with(&mark.text[2..]),
+            "{read:?} vs {:?}",
+            mark.text
+        );
+        assert!(mark.reference_end < body.start);
+    }
+}
+
+#[test]
+fn the_spoken_layer_reads_each_note_once_at_its_reference() {
+    use crate::epub::footnote_narration::SpokenChapter;
+    use crate::tts_preferences::FootnoteNarration;
+    let book = book(vec![("OPS/a.xhtml", JARDIM.into())], &["a.xhtml"]);
+    let chapter = &book.chapters[0];
+    let spoken = SpokenChapter::derive(
+        &chapter.text,
+        0,
+        &chapter.paragraph_ends,
+        &chapter.heading_ends,
+        &chapter.note_marks,
+        FootnoteNarration::Inline,
+        Some("pt-BR"),
+    )
+    .expect("notes are narrated");
+    for number in [1, 2] {
+        assert!(spoken
+            .text
+            .contains(&format!("Início da nota de rodapé {number}.")));
+        assert!(spoken
+            .text
+            .contains(&format!("Fim da nota de rodapé {number}.")));
+    }
+    assert_eq!(
+        spoken
+            .text
+            .matches("A primeira nota explica a origem.")
+            .count(),
+        1
+    );
+    assert_eq!(
+        spoken.text.matches("A segunda nota cita o livro.").count(),
+        1
+    );
+    // The bodies no longer trail the chapter: the last words are the end of the last paragraph.
+    assert!(
+        spoken.text.trim_end().ends_with("A tarde seguiu."),
+        "{}",
+        spoken.text
+    );
+    assert_eq!(spoken.note_edges.len(), 4);
+}

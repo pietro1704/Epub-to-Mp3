@@ -49,6 +49,7 @@ fn typed_policy_staging_stays_in_job_output_and_is_cleaned_on_every_exit() {
         request.input = input;
         request.job_id = outcome.into();
         request.tts_preferences = Some(TtsPreferences {
+            footnote_narration: Default::default(),
             policy_version: None,
             primary: TtsSelection {
                 session: None,

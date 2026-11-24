@@ -465,6 +465,7 @@ pub fn preferences_for_language(
         .filter(|selection| supports(selection))
     {
         return crate::tts_preferences::TtsPreferences {
+            footnote_narration: Default::default(),
             primary: secondary.clone(),
             secondary: None,
             policy_version: preferences.policy_version,

@@ -25,6 +25,21 @@ pub(crate) struct Passage {
     pub audio_start: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_offset: Option<usize>,
+    /// Additive: set when this passage is a narrated footnote. Its text is the spoken note
+    /// (markers included), not source text, so `source_offset` is absent and the whole passage
+    /// maps to this source range (the note body, or the reference when the body is elsewhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<NoteBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct NoteBinding {
+    /// The number the spoken markers say.
+    pub number: String,
+    /// Scalar range of the note body in the chapter text (empty range = the reference).
+    pub source_start: usize,
+    pub source_end: usize,
 }
 
 impl Passage {
@@ -182,6 +197,17 @@ pub(crate) fn from_tag(bytes: &[u8]) -> Vec<Passage> {
 
 /// Bind synthesis-local markers to the normalized source text, before publication.
 pub(crate) fn bind_source(bytes: Vec<u8>, text: &str, source_offset: usize) -> Vec<u8> {
+    bind(bytes, text, |passage| {
+        passage.source_offset = Some(source_offset)
+    })
+}
+
+/// Bind a spoken footnote to the source range it stands for, before publication.
+pub(crate) fn bind_note(bytes: Vec<u8>, text: &str, note: NoteBinding) -> Vec<u8> {
+    bind(bytes, text, |passage| passage.note = Some(note))
+}
+
+fn bind(bytes: Vec<u8>, text: &str, apply: impl FnOnce(&mut Passage)) -> Vec<u8> {
     if bytes.len() < 10 || &bytes[..3] != b"ID3" {
         return bytes;
     }
@@ -193,7 +219,7 @@ pub(crate) fn bind_source(bytes: Vec<u8>, text: &str, source_offset: usize) -> V
     if passages.len() != 1 || passages[0].text != text {
         return bytes;
     }
-    passages[0].source_offset = Some(source_offset);
+    apply(&mut passages[0]);
     let Ok(mut result) = tag(&passages) else {
         return bytes;
     };
@@ -259,6 +285,7 @@ mod tests {
             text: "hello hello".into(),
             audio_start: 0.0,
             source_offset: None,
+            note: None,
             words: vec![
                 Word {
                     location: 0,
@@ -274,6 +301,46 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn a_spoken_note_binds_to_its_source_range_and_claims_no_source_offset() {
+        let mut bytes = tag(&[passage()]).unwrap();
+        let tag_end = bytes.len();
+        bytes.extend_from_slice(b"mp3 frames");
+        let bound = bind_note(
+            bytes,
+            "hello hello",
+            NoteBinding {
+                number: "1".into(),
+                source_start: 24,
+                source_end: 38,
+            },
+        );
+        assert!(bound.ends_with(b"mp3 frames"));
+        let end = 10
+            + bound[6..10]
+                .iter()
+                .fold(0usize, |n, b| n * 128 + usize::from(*b));
+        let bound_passages = from_tag(&bound[..end]);
+        assert_eq!(bound_passages.len(), 1);
+        assert_eq!(bound_passages[0].source_offset, None);
+        assert_eq!(
+            bound_passages[0].note,
+            Some(NoteBinding {
+                number: "1".into(),
+                source_start: 24,
+                source_end: 38
+            })
+        );
+        assert!(end >= tag_end);
+        // Additive contract: the JSON key is `note` (camelCase fields) and plain passages omit it.
+        let json = serde_json::to_string(&bound_passages[0]).unwrap();
+        assert!(
+            json.contains(r#""note":{"number":"1","sourceStart":24,"sourceEnd":38}"#),
+            "{json}"
+        );
+        assert!(!serde_json::to_string(&passage()).unwrap().contains("note"));
     }
 
     #[test]

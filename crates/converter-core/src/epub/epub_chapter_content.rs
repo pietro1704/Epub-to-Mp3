@@ -88,7 +88,7 @@ struct RawProjection {
     paragraph_boundaries: Vec<usize>,
     heading_boundaries: Vec<usize>,
     /// (raw start of the link, raw end of the link, fragment) for note-like links.
-    ref_marks: Vec<(usize, usize, String)>,
+    ref_marks: Vec<(usize, usize, String, bool)>,
     /// Raw (start, end) of every element that carries an `id`.
     id_ranges: HashMap<String, (usize, usize)>,
 }
@@ -104,18 +104,21 @@ fn attribute(event: &quick_xml::events::BytesStart<'_>, wanted: &[u8]) -> Option
 
 /// A same-document link is a note reference when it targets a fragment whose name or
 /// `epub:type` says note (mirrors `epub_footnotes`, which resolves the same links).
-fn note_fragment(event: &quick_xml::events::BytesStart<'_>) -> Option<String> {
+fn note_fragment(event: &quick_xml::events::BytesStart<'_>) -> Option<(String, bool)> {
     let href = attribute(event, b"href")?;
-    let fragment = href.trim().split_once('#')?.1;
+    let (path, fragment) = href.trim().split_once('#')?;
     if fragment.is_empty() {
         return None;
     }
     let fragment = percent_encoding::percent_decode_str(fragment)
         .decode_utf8_lossy()
         .into_owned();
-    let marker = href.to_ascii_lowercase();
-    let typed = attribute(event, b"type").is_some_and(|value| value.contains("noteref"));
-    (typed || marker.contains("foot") || marker.contains("note")).then_some(fragment)
+    super::epub_footnotes::is_note_link(
+        &href,
+        attribute(event, b"type").as_deref(),
+        attribute(event, b"role").as_deref(),
+    )
+    .then(|| (fragment, path.is_empty()))
 }
 
 fn project_raw(html: &str) -> RawProjection {
@@ -130,7 +133,7 @@ fn project_raw(html: &str) -> RawProjection {
     let mut id_ranges = HashMap::new();
     // Open elements outside skipped subtrees: (id, raw start) and the open link, if any.
     let mut open: Vec<Option<(String, usize)>> = Vec::new();
-    let mut open_ref: Option<(usize, String, usize)> = None;
+    let mut open_ref: Option<(usize, (String, bool), usize)> = None;
     loop {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
@@ -170,8 +173,9 @@ fn project_raw(html: &str) -> RawProjection {
                         .as_ref()
                         .is_some_and(|(_, _, depth)| *depth == open.len() + 1)
                     {
-                        let (start, fragment, _) = open_ref.take().expect("open note reference");
-                        ref_marks.push((start, out.len(), fragment));
+                        let (start, (fragment, same_document), _) =
+                            open_ref.take().expect("open note reference");
+                        ref_marks.push((start, out.len(), fragment, same_document));
                     }
                     if is_block_element(name) || is_heading(name) {
                         if is_heading(name) {
@@ -225,22 +229,16 @@ pub struct NoteRef {
     pub end: usize,
     /// Fragment id the reference links to.
     pub target: String,
-}
-
-/// Note positions on the unchanged normalized Unicode-scalar text axis.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NotePositions {
-    pub refs: Vec<NoteRef>,
-    /// Scalar ranges of note bodies that live inside this same document.
-    pub bodies: Vec<std::ops::Range<usize>>,
+    /// Scalar range of the note body when it lives inside this same document.
+    pub body: Option<std::ops::Range<usize>>,
 }
 
 /// Where note references and same-document note bodies sit on the normalized text axis
 /// returned by `html_to_text_projection` (the axis itself is unchanged).
-pub(super) fn note_positions(html: &str) -> NotePositions {
+pub(super) fn note_positions(html: &str) -> Vec<NoteRef> {
     let raw = project_raw(html);
     if raw.ref_marks.is_empty() {
-        return NotePositions::default();
+        return Vec::new();
     }
     // Token table: (raw start, scalar start, scalar end) of the normalized words.
     let mut tokens = Vec::new();
@@ -269,25 +267,24 @@ pub(super) fn note_positions(html: &str) -> NotePositions {
             .find(|token| token.0 < mark)
             .map_or(0, |token| token.2)
     };
-    let mut notes = NotePositions::default();
-    let mut seen_bodies = std::collections::HashSet::new();
-    for (_, end, fragment) in &raw.ref_marks {
+    let mut refs = Vec::new();
+    for (_, end, fragment, same_document) in &raw.ref_marks {
         let end_scalar = last_before(*end);
-        if end_scalar > 0 {
-            notes.refs.push(NoteRef {
-                end: end_scalar,
-                target: fragment.clone(),
-            });
+        if end_scalar == 0 {
+            continue;
         }
-        if let Some((body_start, body_end)) = raw.id_ranges.get(fragment) {
-            let range = first_at_or_after(*body_start)..last_before(*body_end);
-            if range.start < range.end && seen_bodies.insert(fragment.clone()) {
-                notes.bodies.push(range);
-            }
-        }
+        let body = same_document
+            .then(|| raw.id_ranges.get(fragment))
+            .flatten()
+            .map(|(body_start, body_end)| first_at_or_after(*body_start)..last_before(*body_end))
+            .filter(|range| range.start < range.end);
+        refs.push(NoteRef {
+            end: end_scalar,
+            target: fragment.clone(),
+            body,
+        });
     }
-    notes.bodies.sort_by_key(|range| range.start);
-    notes
+    refs
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -451,13 +448,23 @@ mod note_position_tests {
         let after_label = "Texto antes 1".chars().count();
         let body_start = "Texto antes 1 e depois. ".chars().count();
         assert_eq!(
-            notes.refs,
+            notes,
             vec![NoteRef {
                 end: after_label,
-                target: "n1".into()
+                target: "n1".into(),
+                body: Some(body_start..text.chars().count()),
             }]
         );
-        assert_eq!(notes.bodies, vec![body_start..text.chars().count()]);
+    }
+
+    #[test]
+    fn a_reference_to_another_document_has_no_body_in_this_chapter() {
+        let notes = note_positions(
+            "<p>Texto<a href=\"notes.xhtml#n1\">1</a>.</p><p id=\"n1\">Mesmo id.</p>",
+        );
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].target, "n1");
+        assert_eq!(notes[0].body, None);
     }
 
     #[test]
@@ -465,6 +472,6 @@ mod note_position_tests {
         let notes = note_positions(
             "<p>Veja <a href=\"cap2.xhtml\">aqui</a> e <a href=\"#topo\">topo</a>.</p>",
         );
-        assert_eq!(notes, NotePositions::default());
+        assert!(notes.is_empty());
     }
 }

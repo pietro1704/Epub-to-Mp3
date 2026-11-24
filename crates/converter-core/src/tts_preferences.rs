@@ -146,6 +146,22 @@ pub fn edge_consent_required_message(role: &str) -> String {
     )
 }
 
+/// How the narration treats footnotes (shared by every client).
+/// `Inline` reads each note at its reference, between "Footnote N" markers; `Skip` leaves
+/// the note bodies out of the narration entirely.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FootnoteNarration {
+    #[default]
+    Inline,
+    Skip,
+}
+impl FootnoteNarration {
+    fn is_default(&self) -> bool {
+        *self == Self::Inline
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsPreferences {
@@ -156,6 +172,10 @@ pub struct TtsPreferences {
     pub primary: TtsSelection,
     pub secondary: Option<TtsSelection>,
     pub allow_online_fallback: bool,
+    /// Additive: absent means `inline`, so saved preferences and cache identities of
+    /// chapters without notes are unchanged.
+    #[serde(skip_serializing_if = "FootnoteNarration::is_default")]
+    pub footnote_narration: FootnoteNarration,
 }
 impl TtsPreferences {
     /// App settings opt into recovery; unversioned headless/job selections stay strict.
@@ -238,6 +258,7 @@ impl TtsPreferences {
         use_secondary: bool,
     ) -> Self {
         Self {
+            footnote_narration: Default::default(),
             policy_version: if use_secondary {
                 self.policy_version
             } else {
@@ -412,6 +433,7 @@ mod tests {
             voice: None,
         };
         let mut saved = TtsPreferences {
+            footnote_narration: Default::default(),
             policy_version: Some(2),
             primary: edge(),
             secondary: Some(secondary.clone()),
@@ -666,5 +688,27 @@ mod tests {
             p.cache_fingerprint(Some("pt"), &["hash-a".into()]),
             p.cache_fingerprint(Some("pt"), &["hash-b".into()])
         );
+    }
+}
+
+#[cfg(test)]
+mod footnote_narration_tests {
+    use super::*;
+
+    #[test]
+    fn footnote_narration_is_additive_and_defaults_to_inline() {
+        let saved: TtsPreferences =
+            serde_json::from_str(r#"{"allow_online_fallback":false}"#).unwrap();
+        assert_eq!(saved.footnote_narration, FootnoteNarration::Inline);
+        // The default is not written, so saved preferences and cache identities keep their shape.
+        assert!(!serde_json::to_string(&saved)
+            .unwrap()
+            .contains("footnote_narration"));
+        let skip: TtsPreferences =
+            serde_json::from_str(r#"{"footnote_narration":"skip"}"#).unwrap();
+        assert_eq!(skip.footnote_narration, FootnoteNarration::Skip);
+        assert!(serde_json::to_string(&skip)
+            .unwrap()
+            .contains(r#""footnote_narration":"skip""#));
     }
 }
