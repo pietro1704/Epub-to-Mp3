@@ -18,10 +18,10 @@ jobs:
       - run: brew install xcodegen
       - working-directory: ios/EpubToMp3
         run: |
-          cp project.yml /tmp/project.orig
-          t() { echo "== $1"; xcodegen generate >/dev/null; xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination "platform=iOS Simulator,name=iPhone 16,OS=18.5" -dry-run build 2>&1 | grep -E "Unable|error:|BUILD" | cut -c1-120 | head -3; }
-          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig > project.yml; t "v1 no ARCHS sim line"
-          sed 's/iphoneos iphonesimulator macosx/iphoneos iphonesimulator/' /tmp/project.orig > project.yml; t "v3 no macosx platform"
-          sed 's/"iphoneos iphonesimulator macosx"/"iphoneos iphonesimulator"/; s/supportedDestinations: \[iOS, macOS\]/supportedDestinations: [iOS]/' /tmp/project.orig > project.yml; t "v5 iOS-only destinations"
-          grep -v 'DEVELOPMENT_TEAM' /tmp/project.orig > project.yml; t "v4 no team"
-          cp /tmp/project.orig project.yml; t "v0 original"
+          xcodegen generate >/dev/null
+          t() { echo "== $*"; xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination "platform=iOS Simulator,name=iPhone 16,OS=18.5" -dry-run build "$@" 2>&1 | grep -E "Unable|error:|BUILD" | cut -c1-120 | head -3; }
+          t ARCHS=arm64
+          t ONLY_ACTIVE_ARCH=NO
+          t NATIVE_ARCH_ACTUAL=arm64
+          t 'ARCHS[sdk=iphonesimulator*]=arm64'
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -sdk iphonesimulator -showBuildSettings 2>&1 | grep -E "^\s+(ARCHS|NATIVE_ARCH|NATIVE_ARCH_ACTUAL|NATIVE_ARCH_64_BIT|VALID_ARCHS) " | sort -u
