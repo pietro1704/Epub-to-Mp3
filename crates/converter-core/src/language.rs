@@ -507,6 +507,8 @@ pub fn preferences_for_language(
     preferences.clone()
 }
 
+#[path = "language_decision.rs"]
+pub mod decision;
 #[path = "language_profile.rs"]
 pub mod profile;
 

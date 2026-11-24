@@ -31,6 +31,18 @@ pub enum BookLanguageClass {
     Multilingual,
 }
 
+/// What a language is to the book (design 2026-11-24): the voice that reads everything without its own
+/// (`Main`), a language that is 10% or more of the text (`Significant`), or one that only fills sections of
+/// 1,500 characters or more (`Section`). Languages found only in quotations are listed as `incidental`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageRole {
+    #[default]
+    Main,
+    Significant,
+    Section,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LanguageShare {
     /// BCP 47 tag (the declared region is kept when the base language matches).
@@ -40,6 +52,9 @@ pub struct LanguageShare {
     pub fraction: f64,
     /// The longest uninterrupted section in this language, in characters.
     pub longest_section_chars: usize,
+    /// Additive: absent from a profile written before roles existed (read as `Main`).
+    #[serde(default)]
+    pub role: LanguageRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,6 +175,7 @@ pub fn profile<'a>(
                 *count as f64 / detected as f64
             },
             longest_section_chars: longest.get(base).copied().unwrap_or(0),
+            role: LanguageRole::Main,
         })
         .collect();
     shares.sort_by(|a, b| {
