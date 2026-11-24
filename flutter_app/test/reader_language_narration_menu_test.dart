@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/models/language_model_resolution.dart';
 import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/screens/models_screen.dart';
@@ -92,6 +93,42 @@ List<String> _labels(WidgetTester tester) => [
 ];
 
 void main() {
+  group('the language the narration menu filters by', () {
+    BookLanguageAnalysis analysis({
+      String? confirmed,
+      List<String> languages = const [],
+      String? declared,
+      String? primary,
+    }) => BookLanguageAnalysis(
+      confirmed: confirmed,
+      declared: declared,
+      languages: languages,
+      profile: primary == null
+          ? null
+          : BookLanguageProfile(
+              classification: BookLanguageClass.monolingual,
+              primary: primary,
+              languages: [BookLanguageShare(language: primary, fraction: 1)],
+            ),
+    );
+
+    test('the profile primary beats the alphabetical first language', () {
+      expect(
+        primaryBookLanguage(analysis(languages: ['fr-FR', 'pt-BR'], declared: 'fr', primary: 'pt-BR')),
+        'pt-BR',
+      );
+    });
+
+    test('a corrected book uses the corrected language', () {
+      expect(primaryBookLanguage(analysis(confirmed: 'en', primary: 'en'), corrected: 'pt-BR'), 'pt-BR');
+    });
+
+    test('confirmed is the fallback, and neither first-detected nor declared is guessed', () {
+      expect(primaryBookLanguage(analysis(confirmed: 'en', languages: ['cy', 'en'])), 'en');
+      expect(primaryBookLanguage(analysis(languages: ['fr-FR', 'pt-BR'], declared: 'fr')), isNull);
+    });
+  });
+
   testWidgets('an English book lists only English models that are installed', (tester) async {
     await _pump(tester, language: 'en');
     await _open(tester);

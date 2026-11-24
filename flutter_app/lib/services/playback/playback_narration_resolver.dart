@@ -125,6 +125,9 @@ Future<PlaybackNarration> resolvePlaybackNarration({
   required String platform,
   int? androidApi,
   bool explicitSelection = false,
+
+  /// The language the user set for this book; it overrides what was detected.
+  String? correctedLanguage,
 }) async {
   if (explicitSelection) return const UnchangedNarration();
   try {
@@ -133,7 +136,7 @@ Future<PlaybackNarration> resolvePlaybackNarration({
       bookId: bookId,
       path: bookPath,
     );
-    final language = analysis.confirmed;
+    final language = primaryBookLanguage(analysis, corrected: correctedLanguage);
     if (language == null) return const UnchangedNarration();
     final primary = configured.primary;
     final automaticPrimary = primary.representsSameRequest(
@@ -201,6 +204,7 @@ Future<List<String>> missingProfileLanguages({
   required Future<List<String>> Function() systemVoices,
   required String platform,
   int? androidApi,
+  String? correctedLanguage,
 }) async {
   try {
     final analysis = await cache.analysis(
@@ -214,7 +218,7 @@ Future<List<String>> missingProfileLanguages({
       return const [];
     }
     final own = LanguageModelChoices.baseLanguage(
-      analysis.confirmed ?? profile.primary ?? '',
+      primaryBookLanguage(analysis, corrected: correctedLanguage) ?? '',
     );
     final installed = (await installedModelIds()).toList()..sort();
     final voices = await systemVoices();

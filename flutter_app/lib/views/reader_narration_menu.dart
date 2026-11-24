@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/language_model_choices.dart';
+import '../models/language_model_resolution.dart' show primaryBookLanguage;
 import '../models/language_names.dart';
 import '../screens/library_screen.dart' show libraryStoreProvider;
 import '../screens/models_screen.dart';
@@ -32,7 +33,7 @@ final installedNarrationModelIdsProvider =
     });
 
 /// Base language of the open book, analyzed once per book by Rust and cached
-/// (`confirmed`, else the first detected, else the declared language). Null when
+/// (the user's correction, else the profile primary, else `confirmed`). Null when
 /// it cannot be determined: the menu then keeps the plain catalog list.
 final readerBookLanguageProvider = FutureProvider.autoDispose
     .family<String?, String>((ref, bookId) async {
@@ -48,10 +49,10 @@ final readerBookLanguageProvider = FutureProvider.autoDispose
               bookId: bookId,
               path: path,
             );
-        final tag =
-            analysis.confirmed ??
-            (analysis.languages.isEmpty ? null : analysis.languages.first) ??
-            analysis.declared;
+        final tag = primaryBookLanguage(
+          analysis,
+          corrected: ref.read(bookLanguageCorrectionsProvider).decision(bookId).bookLanguage,
+        );
         if (tag == null || tag.trim().isEmpty) return null;
         return LanguageModelChoices.baseLanguage(tag);
       } catch (error) {
