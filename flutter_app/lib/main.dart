@@ -1,5 +1,6 @@
 import 'design_system/app_theme.dart';
 import 'services/playback/background_audio_config.dart';
+import 'services/ui_trace.dart';
 import 'models/fallback_chapter_name.dart';
 
 import 'dart:async';
@@ -29,6 +30,7 @@ import 'views/reader_theme_colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  UiTrace.instance.keepSemanticsOn();
   initializeDesktopAudioBackend(defaultTargetPlatform);
   // Register the Android platform adapter before Riverpod can resolve the
   // embedded converter. Without this registration, opening a book fails with

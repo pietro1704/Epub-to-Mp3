@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/semantics.dart';
 
 /// Verification-only record of what the app shows (`EPUB2MP3_UI_TRACE=<file>`).
 ///
@@ -30,6 +31,11 @@ class UiTrace {
   /// Tests substitute the trace; null restores the environment one.
   @visibleForTesting
   static void override(UiTrace? trace) => _override = trace;
+
+  /// Flutter builds the accessibility tree only once an assistive client asks, which
+  /// races with the journey's first lookup; while tracing it is simply kept on.
+  SemanticsHandle? keepSemanticsOn() =>
+      enabled ? SemanticsBinding.instance.ensureSemantics() : null;
 
   void emit(String event, [Map<String, Object?> fields = const {}]) {
     if (!enabled) return;

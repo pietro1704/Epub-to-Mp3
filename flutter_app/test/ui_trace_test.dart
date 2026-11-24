@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// EPUB2MP3_UI_TRACE: a verification-only record of what the app shows, read by
 /// the packaged Windows journey instead of scraping the accessibility tree.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('ui-trace-'));
   tearDown(() {
@@ -39,6 +40,13 @@ void main() {
     expect(trace.enabled, isFalse);
     trace.emit('reader.chapter', {'index': 0});
     expect(dir.listSync(), isEmpty);
+  });
+
+  test('tracing keeps the semantics tree on; without a trace it does nothing', () {
+    expect(UiTrace(null).keepSemanticsOn(), isNull);
+    final handle = UiTrace('${dir.path}/s.jsonl').keepSemanticsOn();
+    expect(handle, isNotNull, reason: 'a held semantics handle keeps the tree on');
+    handle!.dispose();
   });
 
   testWidgets('the reader reports the chapter it shows', (tester) async {
