@@ -111,6 +111,8 @@ void main() {
 
       final reset = find.byKey(const ValueKey('tts-use-recommended-defaults'));
       await t.scrollUntilVisible(reset, 150, scrollable: find.byType(Scrollable).first);
+      await t.ensureVisible(reset);
+      await t.pumpAndSettle();
       await t.tap(reset);
       await t.pumpAndSettle();
 
@@ -153,6 +155,8 @@ void main() {
           150,
           scrollable: find.byType(Scrollable).first,
         );
+        await t.ensureVisible(find.byKey(const ValueKey('tts-use-recommended-defaults')));
+        await t.pumpAndSettle();
         await t.tap(find.byKey(const ValueKey('tts-use-recommended-defaults')));
         await t.pumpAndSettle();
         expect(settings.ttsPreferences.primary.engine, 'piper');
