@@ -48,13 +48,15 @@ jobs:
       - name: Run converter-ffi tests
         run: mise exec -- cargo test -p converter-ffi
 
+  # No `needs:` on host-validation: the macOS build uses nothing from it, and the
+  # hosted macOS queue (minutes) now overlaps the Linux job instead of following
+  # it. Both jobs still must pass for the workflow (and post-merge `ffi`) to pass.
   # One job builds both simulator targets in sequence: two jobs waited 8-13 minutes
   # each for one of the five hosted macOS runners.
   artifact-build:
     name: Build converter-ffi native artifacts
     env:
       MISE_ENABLE_TOOLS: rust,ruby
-    needs: host-validation
     runs-on: macos-15
     timeout-minutes: 45
     steps:
