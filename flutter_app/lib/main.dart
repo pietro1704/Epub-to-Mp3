@@ -1,4 +1,5 @@
 import 'design_system/app_theme.dart';
+import 'services/playback/background_audio_config.dart';
 import 'models/fallback_chapter_name.dart';
 
 import 'dart:async';
@@ -97,14 +98,7 @@ Future<void> _initializeAndroidAudio(
         player,
         snapshotStore: WidgetPlaybackSnapshotStore(prefs),
       ),
-      config: AudioServiceConfig(
-        androidNotificationChannelId: 'com.pietrocode.epubtomp3.audio',
-        androidNotificationChannelName: 'Audiobook playback',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
-        androidNotificationClickStartsActivity: true,
-        androidResumeOnClick: true,
-      ),
+      config: backgroundAudioConfig(),
     );
     state.attach(backgroundAudio);
   } catch (_) {
