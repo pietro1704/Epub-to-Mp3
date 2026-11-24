@@ -64,7 +64,7 @@ final class ReaderThemeContrastTests: XCTestCase {
                 let actual = channels(settings.readerColors.link, dark: dark)
                 let native = channels(expected, dark: selectedDark)
                 let background = channels(settings.readerColors.background, dark: dark)
-                if settings.readerPreferredColorScheme == nil || WCAGContrast.ratio(
+                if WCAGContrast.ratio(
                     (native[0], native[1], native[2]), (background[0], background[1], background[2])) >= 4.5 {
                     XCTAssertEqual(actual, native, "\(theme.rawValue)")
                 } else {
