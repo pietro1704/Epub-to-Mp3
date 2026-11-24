@@ -29,5 +29,5 @@ The case drives SpringBoard and needs the app already running in the foreground,
   `label CONTAINS[c] "EpubToMp3"` after three swipes. Not established whether Mirroring, the icon label ("Epub-to-Mp3" is the
   Mac app name) or an App Library placement caused it. Next try: Mirroring closed, and print the SpringBoard icon labels
   before the assertion.
-- Mirroring is not a substitute for an unlocked phone: while it was active `lockState` still reported `passcodeRequired: true`
-  at times and runs waited.
+- Not verified: whether Mirroring affects `lockState` (`passcodeRequired`) or the wait for an unlock. The waits seen on
+  2026-11-24 happened before Mirroring was known to be active.
