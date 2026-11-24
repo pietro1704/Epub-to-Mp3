@@ -24,6 +24,7 @@ fn request(language: &str, installed: &[&str]) -> ResolutionRequest {
         schema_version: SCHEMA_VERSION,
         book_language: language.into(),
         per_language_choices: BTreeMap::new(),
+        book_voice: None,
         primary: None,
         allow_online_fallback: false,
         allow_automatic_system_voice_fallback: true,

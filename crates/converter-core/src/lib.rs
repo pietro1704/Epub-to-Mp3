@@ -29,6 +29,7 @@ pub mod language_model_resolution;
 pub mod model_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod model_store;
+pub mod narration_plan;
 mod parallel_columns;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paths;
