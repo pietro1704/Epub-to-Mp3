@@ -36,6 +36,7 @@ while IFS=$'\t' read -r job_id name result seconds; do
     [ -n "$jvm" ] && parts+=("$jvm")
     [ ${#parts[@]} -gt 0 ] && tests="$(IFS=';'; echo "${parts[*]}")"
   fi
+  [ "$seconds" -ge 0 ] || seconds=0
   printf '| %s | %s | %dm%02ds | %s |\n' "$name" "$result" $((seconds / 60)) $((seconds % 60)) "$tests"
 done
 

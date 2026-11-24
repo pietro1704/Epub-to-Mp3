@@ -1,0 +1,26 @@
+name: CI cache seed
+
+# Pull request runs can only restore caches written by master (or their own ref). The
+# post-merge validation is batched, so master rarely refreshed the macOS caches and every
+# pull request rebuilt the Simulator Rust library and the Swift test bundle cold. This
+# workflow rebuilds them on master when their cache key changed; a hit costs seconds.
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cache-seed-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ios-simulator:
+    name: Seed iOS Simulator caches
+    uses: ./.github/workflows/ios-simulator-tests.yml
+    with:
+      seed_only: true
+    permissions:
+      contents: read

@@ -10,19 +10,29 @@ on:
         description: Comma-separated EpubToMp3Tests classes; empty runs the default UIKit selection
         type: string
         default: ''
+      seed_only:
+        description: Build and save the caches only; boot nothing and run no tests
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       tests:
         description: Comma-separated EpubToMp3Tests classes; empty runs the default UIKit selection
         type: string
         default: ''
+      seed_only:
+        description: Build and save the caches only; boot nothing and run no tests
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-simulator-tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+  group: ios-simulator-tests-${{ github.ref }}-${{ inputs.seed_only == true && 'seed' || 'tests' }}
+  # github.event_name is the caller's event: only superseded pull request runs are cancelled,
+  # never master, scheduled seeding or manual branch-evidence runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ios-simulator:
@@ -47,19 +57,9 @@ jobs:
       - run: mise install
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-      - run: mise exec -- rustup target add aarch64-apple-ios-sim
-      - uses: ./.github/actions/rust-build-cache
-        with:
-          namespace: ffi-ios-sim-nopiper
-      - name: Install the project generator
-        run: brew install xcodegen
-      - name: Build converter-ffi for the Simulator (no Piper)
-        run: mise run converter-ffi:ios-simulator
-      - name: Generate the project
-        working-directory: ios/EpubToMp3
-        run: xcodegen generate
-      - name: Pick and boot an iPhone Simulator
+      - name: Pick an iPhone Simulator and start booting it (overlaps the Rust build)
         id: sim
+        if: inputs.seed_only != true
         run: |
           set -euo pipefail
           xcrun simctl list runtimes
@@ -75,8 +75,48 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           echo "SDK $sdk_version -> $udid"
           xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
+      - run: mise exec -- rustup target add aarch64-apple-ios-sim
+      - uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: ffi-ios-sim-nopiper
+      - name: Install the project generator
+        run: brew install xcodegen
+      - name: Build converter-ffi for the Simulator (no Piper)
+        run: mise run converter-ffi:ios-simulator
+      - name: Generate the project
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+      - name: Restore the Xcode compilation cache
+        id: compile-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ios/EpubToMp3/.build/ios-sim/CompilationCache.noindex
+          key: xcode-compile-cache-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ hashFiles('ios/EpubToMp3/EpubToMp3/**', 'ios/EpubToMp3/EpubToMp3Tests/**', 'ios/EpubToMp3/EpubToMp3ShareExtension/**', 'ios/EpubToMp3/EpubToMp3Widget/**', 'ios/EpubToMp3/project.yml') }}
+          restore-keys: xcode-compile-cache-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-
+      - name: Build the Simulator tests once
+        working-directory: ios/EpubToMp3
+        run: |
+          set -euo pipefail
+          mkdir -p ../../.reports/ios-simulator
+          # The project's ARCHS[sdk=iphonesimulator*] condition makes Xcode treat every concrete
+          # Simulator as ineligible for -scheme destinations, so build for the generic Simulator
+          # destination and run the xctestrun on the booted device. Compilation caching is content
+          # addressed, so a restored cache stays valid across fresh checkouts.
+          xcodebuild build-for-testing -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -derivedDataPath .build/ios-sim \
+            -jobs 3 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CONVERTER_FFI_ENABLE_PIPER=0 \
+            COMPILATION_CACHE_ENABLE_CACHING=YES -destination 'generic/platform=iOS Simulator' 2>&1 | tee ../../.reports/ios-simulator/build.log | tail -5
+      - name: Save the Xcode compilation cache
+        # Pull requests only restore (from the scheduled master seed); manual evidence runs and seeds write.
+        if: always() && steps.compile-cache.outputs.cache-hit != 'true' && (inputs.seed_only == true || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ios/EpubToMp3/.build/ios-sim/CompilationCache.noindex
+          key: ${{ steps.compile-cache.outputs.cache-primary-key }}
+      - name: Wait for the Simulator
+        if: inputs.seed_only != true
+        run: xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b
       - name: Run iOS XCTest on the Simulator
+        if: inputs.seed_only != true
         working-directory: ios/EpubToMp3
         run: |
           set -euo pipefail
@@ -85,15 +125,8 @@ jobs:
           only=()
           IFS=',' read -ra names <<< "$classes"
           for name in "${names[@]}"; do only+=("-only-testing:EpubToMp3Tests/${name// /}"); done
-          mkdir -p ../../.reports/ios-simulator
-          set -o pipefail
           report=../../.reports/ios-simulator
-          # The project's ARCHS[sdk=iphonesimulator*] condition makes Xcode treat every concrete
-          # Simulator as ineligible for -scheme destinations, so build for the generic Simulator
-          # destination and run the xctestrun on the booted device.
-          common=(-project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -derivedDataPath .build/ios-sim
-            -jobs 3 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CONVERTER_FFI_ENABLE_PIPER=0)
-          xcodebuild build-for-testing "${common[@]}" -destination 'generic/platform=iOS Simulator' 2>&1 | tee "$report/build.log" | tail -5
+          set -o pipefail
           xctestrun="$(find .build/ios-sim/Build/Products -name '*.xctestrun' | head -n 1)"
           test -n "$xctestrun"
           echo "xctestrun: $xctestrun"
@@ -102,7 +135,7 @@ jobs:
           grep -E "Executed [0-9]+ tests" "$report/test.log" | tail -2
           grep -qE "\*\* TEST (EXECUTE )?SUCCEEDED \*\*" "$report/test.log"
       - name: Shut the Simulator down
-        if: always()
+        if: always() && inputs.seed_only != true
         run: xcrun simctl shutdown all || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
