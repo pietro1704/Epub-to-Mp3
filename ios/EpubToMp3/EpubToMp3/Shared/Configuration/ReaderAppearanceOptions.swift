@@ -116,7 +116,12 @@ extension ReaderTheme {
         if let scheme {
             link = UIColor.link.resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
         } else {
-            link = .link
+            // Auto follows the host: adjust per resolution so Increase Contrast and Dark keep the link at AA too.
+            let background = base.background
+            link = UIColor { traits in
+                let native = UIColor.link.resolvedColor(with: traits)
+                return Self.accessibleLink(native, on: background.resolvedColor(with: traits))
+            }
         }
         #else
         var link = NSColor.linkColor
