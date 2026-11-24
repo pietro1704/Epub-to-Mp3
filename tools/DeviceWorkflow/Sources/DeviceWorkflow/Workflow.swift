@@ -48,9 +48,12 @@ public final class Workflow {
         if options.action == .benchmark && !options.preview { scopeObserver(cases) }
         timings["scopeValidationSeconds"] = ProcessInfo.processInfo.systemUptime - scopeStart
         if options.preview { return ["status": "preview", "runID": runID, "wholeBook": options.wholeBook, "cases": cases.map(\.report)] }
-        // All mutations, including disk guard and device preparation, are inside both leases.
-        let heavy = try FileLease(heavyLock)
+        // All mutations, including disk guard and device preparation, are inside both leases. The heavy lease is
+        // taken only after the device is unlocked: a locked iPhone must not freeze every other native job.
+        var heavy: FileLease?
         defer { withExtendedLifetime(heavy) {} }
+        // Without a lease wait, a busy lease still refuses at once, before any device query or file is written.
+        if heavyLeaseWaitSeconds == 0 { _ = try FileLease(heavyLock) }
         try FileManager.default.createDirectory(at: options.reportDirectory, withIntermediateDirectories: true)
         let lease = try FileLease(options.reportDirectory.appendingPathComponent("workflow.lock"))
         defer { withExtendedLifetime(lease) {} }
@@ -68,7 +71,7 @@ public final class Workflow {
         var primary: Error?
         do {
             try resourceCheck()
-            try perform()
+            try perform(takeHeavyLease: { heavy = try self.acquireHeavyLease() })
         } catch {
             primary = error
             report["error"] = String(describing: error)
@@ -197,10 +200,34 @@ public final class Workflow {
         try checkpoint()
     }
 
-    private func perform() throws {
+    /// The heavy lease is requested after the unlock wait. Another native job may be running by then, so it is waited for
+    /// up to `EPUB_NATIVE_WAIT_SECONDS` (default 0: refuse at once, as before).
+    private var heavyLeaseWaitSeconds: TimeInterval {
+        environment["EPUB_NATIVE_WAIT_SECONDS"].flatMap(TimeInterval.init).map { max(0, $0) } ?? 0
+    }
+
+    private func acquireHeavyLease() throws -> FileLease {
+        let limit = heavyLeaseWaitSeconds
+        let start = ProcessInfo.processInfo.systemUptime
+        var slept: TimeInterval = 0
+        var announced = false
+        while true {
+            do { return try FileLease(heavyLock) } catch {
+                let waited = max(ProcessInfo.processInfo.systemUptime - start, slept)
+                guard waited < limit else { throw error }
+                if !announced { notice("WAITING_FOR_LEASE device=\(options.device)"); announced = true }
+                let nap = min(unlockPollSeconds, limit - waited)
+                sleeper(nap); slept += nap
+            }
+        }
+    }
+
+    private func perform(takeHeavyLease: () throws -> Void) throws {
         let preflightStart = ProcessInfo.processInfo.systemUptime
         defer { timings["preflightSeconds"] = timings["preflightSeconds"] ?? ProcessInfo.processInfo.systemUptime - preflightStart }
+        // Read-only: waiting for the unlock only queries the device, so it holds no heavy lease.
         try readiness("lockState")
+        try takeHeavyLease()
         let details = try deviceJSON(["info", "details"], "details")
         guard let udid = Evidence.find(details, key: "udid") as? String, !udid.isEmpty,
               Evidence.find(details, key: "developerModeStatus") as? String == "enabled" else {

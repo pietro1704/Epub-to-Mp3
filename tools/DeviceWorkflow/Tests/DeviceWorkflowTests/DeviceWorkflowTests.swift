@@ -27,13 +27,14 @@ final class DeviceWorkflowTests: XCTestCase {
     func workflow(_ arguments: [String], runner: @escaping CommandRunner,
                           resourceCheck: @escaping () throws -> Void = {},
                           environment: [String: String] = [:],
+                          sleeper: @escaping (TimeInterval) -> Void = { _ in },
                           notice: @escaping (String) -> Void = { _ in }) throws -> Workflow {
         // The fake sleeper returns at once: waiting is accounted from the requested sleeps.
         Workflow(root: root, options: try options(arguments), runID: runID, runner: runner,
                  identity: { _ in "Wed Oct 7 12:00:00 2026" }, resourceCheck: resourceCheck,
                  heavyLock: root.appendingPathComponent("heavy.lock"), environment:
                     ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"].merging(environment) { _, override in override },
-                 sleeper: { _ in }, notice: notice)
+                 sleeper: sleeper, notice: notice)
     }
 
     func xctestrun() -> [String: Any] {
@@ -74,7 +75,9 @@ final class DeviceWorkflowTests: XCTestCase {
         let remainingLockedQueries = NSMutableArray(object: NSNumber(value: lockedQueries))
         return { command, observe in
             phases.add(command.phase)
-            XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent("heavy.lock")))
+            // Waiting for an unlock only queries the device (DEVICE-WAIT-RELEASES-LEASE): every other command runs
+            // under the heavy lease.
+            if command.phase != "lockState" { XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent("heavy.lock"))) }
             XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent(".reports/device/workflow.lock")))
             XCTAssertFalse(command.arguments.contains { $0.contains(".py") || $0 == "python" || $0 == "ruff" })
             XCTAssertFalse(command.arguments.contains { $0.contains("Library/Application Support") })
