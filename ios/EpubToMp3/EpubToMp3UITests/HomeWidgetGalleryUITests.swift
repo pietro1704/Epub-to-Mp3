@@ -54,8 +54,12 @@ final class HomeWidgetGalleryUITests: XCTestCase {
         XCTAssertTrue(isOnScreen(icon), "The app icon must be on the Home Screen")
         icon.press(forDuration: 1.2)
 
-        let edit = element(in: springboard, labels: ["Edit Home Screen", "Editar Tela de Início", "Editar pantalla de inicio"])
-        XCTAssertTrue(edit.waitForExistence(timeout: 4))
+        let edit = element(in: springboard, labels: ["Edit Home Screen", "Editar Tela de Início", "Editar tela de início", "Editar pantalla de inicio"])
+        // The context menu can take a while on a real device (measured: it was on screen but not yet queryable after 4 s).
+        if !edit.waitForExistence(timeout: 10) {
+            icon.press(forDuration: 1.5)
+        }
+        XCTAssertTrue(edit.waitForExistence(timeout: 10), "The icon's context menu must offer Edit Home Screen")
         // Measured on the 16e: the context menu stayed open after `edit.tap()`; tap its centre by coordinate.
         edit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         // iOS 26 (measured on the 16e): in Home Screen edit mode the top-left "+" is a button labelled "Edit"/"Editar"
