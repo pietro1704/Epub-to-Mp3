@@ -6,7 +6,7 @@ import 'package:flutter_app/models/language_model_choices.dart';
 import 'package:flutter_app/models/language_model_resolution.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/screens/missing_narration_dialog.dart';
-import 'package:flutter_app/screens/models_languages_screen.dart';
+import 'package:flutter_app/screens/models_language_screen.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_app/services/playback/android_speech_fallback.dart';
 import 'package:flutter_app/services/playback/playback_narration_resolver.dart';
@@ -130,6 +130,29 @@ BookLanguageAnalysis _analysis({
 );
 
 void main() {
+  group('the resolution source "book_voice" (Rust R2) is tolerated', () {
+    test('it decodes as a plain source string', () {
+      final resolution = LanguageModelResolution.parse(
+        '{"schema_version":1,"book_language":"pt-BR","status":"selected","source":"book_voice",'
+        '"selection":{"engine":"piper","model_id":"pt_BR-cadu-medium"},"reasons":[]}',
+      );
+      expect(resolution.status, LanguageModelStatus.selected);
+      expect(resolution.source, 'book_voice');
+      expect(resolution.selection?.modelId, 'pt_BR-cadu-medium');
+    });
+
+    test("a book's own voice narrates the book instead of the configured primary", () async {
+      final (cache, path) = await _fixture();
+      const bookVoice = TtsSelection(engine: 'piper', modelId: 'pt_BR-cadu-medium');
+      final converter = _Converter(
+        answer: _answer(LanguageModelStatus.selected, selection: bookVoice, source: 'book_voice'),
+      );
+      final result = await _resolve(converter, cache, path);
+      expect(result, isA<ResolvedNarration>());
+      expect((result as ResolvedNarration).preferences.primary.modelId, 'pt_BR-cadu-medium');
+    });
+  });
+
   group('the book language is the user correction, then the profile primary, then confirmed', () {
     test('the profile primary decides, not the alphabetical first of the detected languages', () async {
       final (cache, path) = await _fixture();
@@ -560,6 +583,7 @@ void main() {
             sharedPrefsProvider.overrideWithValue(prefs),
             embeddedConverterProvider.overrideWithValue(converter),
             ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+            systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -591,7 +615,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       // The Models screen opens the languages route on that language (the alert lands there).
-      expect(find.byType(ModelsLanguagesScreen), findsOneWidget);
+      expect(find.byType(ModelsLanguageScreen), findsOneWidget);
       // The language section starts expanded: its Automatic row is on screen.
       expect(find.byKey(const ValueKey('model-pt-automatic')), findsOneWidget);
       expect(find.byKey(const ValueKey('model-en-automatic')), findsNothing);

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub const PROFILE_VERSION: u32 = 1;
+pub const PROFILE_VERSION: u32 = 2;
 /// Part of the cache identity of both the profile and the narration it routes.
 pub const DETECTOR: &str = "whatlang-0.18/book-profile-v1";
 /// A language is part of the book when it is at least this share of the detected text...
@@ -20,6 +20,8 @@ const MIN_SECTION_CHARS: usize = 1_500;
 /// Sentences are grouped into windows of about this many letters before they are classified:
 /// a single short sentence is not reliable evidence of a language.
 const WINDOW_LETTERS: usize = 160;
+/// The declared language breaks a tie only when the two largest languages are this close (share of the text).
+const TIE_POINTS: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +33,18 @@ pub enum BookLanguageClass {
     Multilingual,
 }
 
+/// What a language is to the book (design 2026-11-24): the voice that reads everything without its own
+/// (`Main`), a language that is 10% or more of the text (`Significant`), or one that only fills sections of
+/// 1,500 characters or more (`Section`). Languages found only in quotations are listed as `incidental`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageRole {
+    #[default]
+    Main,
+    Significant,
+    Section,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LanguageShare {
     /// BCP 47 tag (the declared region is kept when the base language matches).
@@ -40,6 +54,9 @@ pub struct LanguageShare {
     pub fraction: f64,
     /// The longest uninterrupted section in this language, in characters.
     pub longest_section_chars: usize,
+    /// Additive: absent from a profile written before roles existed (read as `Main`).
+    #[serde(default)]
+    pub role: LanguageRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,6 +177,7 @@ pub fn profile<'a>(
                 *count as f64 / detected as f64
             },
             longest_section_chars: longest.get(base).copied().unwrap_or(0),
+            role: LanguageRole::Main,
         })
         .collect();
     shares.sort_by(|a, b| {
@@ -167,6 +185,16 @@ pub fn profile<'a>(
             .cmp(&a.chars)
             .then_with(|| a.language.cmp(&b.language))
     });
+    // The file's declared language never outweighs the text; it only breaks a near tie between the two largest.
+    if let (Some(declared), true) = (declared, shares.len() >= 2) {
+        let wanted = super::base(declared);
+        if !super::base(&shares[0].language).eq_ignore_ascii_case(wanted)
+            && super::base(&shares[1].language).eq_ignore_ascii_case(wanted)
+            && shares[0].fraction - shares[1].fraction <= TIE_POINTS
+        {
+            shares.swap(0, 1);
+        }
+    }
     let primary = shares.first().map(|share| share.language.clone());
     let (languages, incidental): (Vec<_>, Vec<_>) =
         shares.into_iter().enumerate().partition(|(index, share)| {
@@ -174,7 +202,19 @@ pub fn profile<'a>(
                 || share.fraction >= MIN_LANGUAGE_FRACTION
                 || share.longest_section_chars >= MIN_SECTION_CHARS
         });
-    let languages: Vec<LanguageShare> = languages.into_iter().map(|(_, share)| share).collect();
+    let languages: Vec<LanguageShare> = languages
+        .into_iter()
+        .map(|(index, mut share)| {
+            share.role = if index == 0 {
+                LanguageRole::Main
+            } else if share.fraction >= MIN_LANGUAGE_FRACTION {
+                LanguageRole::Significant
+            } else {
+                LanguageRole::Section
+            };
+            share
+        })
+        .collect();
     let class = match languages.len() {
         0 | 1 => BookLanguageClass::Monolingual,
         2 => BookLanguageClass::Bilingual,

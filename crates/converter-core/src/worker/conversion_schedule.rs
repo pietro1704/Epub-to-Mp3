@@ -108,16 +108,6 @@ impl ConversionWorker {
             cache_dir.join("language-analysis-v1.json"),
             &language_analysis,
         )?;
-        if request.language.is_none()
-            && self.language_overrides.is_empty()
-            && language_analysis.confirmed.is_none()
-            && language_analysis.languages.len() < 2
-        {
-            let evidence = serde_json::to_string(&language_analysis).expect("language evidence");
-            return Err(WorkerError::Unsupported(format!(
-                "Book language remains inconclusive after expanded sampling [[book_language_uncertain_v1]]{evidence}[[/book_language_uncertain_v1]]"
-            )));
-        }
         // The whole book is read once and classified (cached by book identity): a monolingual book
         // is narrated in its main language whatever quotations it contains.
         let language_profile = crate::language::profile::load_or_compute(
@@ -128,11 +118,24 @@ impl ConversionWorker {
             &|| self.cancel.is_cancelled(),
         )
         .map_err(|_| WorkerError::Cancelled)?;
-        let detected_language = request
-            .language
-            .as_deref()
-            .or(language_profile.primary.as_deref())
-            .or(language_analysis.confirmed.as_deref());
+        // One decision (user correction, else the profile's primary language, else the sampled consensus): the
+        // 32-sample result alone no longer stops a book whose whole-text profile found its language.
+        let language_decision = crate::language::decision::decide(
+            request.language.as_deref(),
+            Some(&language_profile),
+            Some(&language_analysis),
+            book.language.as_deref(),
+        );
+        if language_decision.blocks_job(
+            !self.language_overrides.is_empty(),
+            language_analysis.languages.len(),
+        ) {
+            let evidence = serde_json::to_string(&language_analysis).expect("language evidence");
+            return Err(WorkerError::Unsupported(format!(
+                "Book language remains inconclusive after expanded sampling [[book_language_uncertain_v1]]{evidence}[[/book_language_uncertain_v1]]"
+            )));
+        }
+        let detected_language = language_decision.language.as_deref();
         let results = Mutex::new(Vec::with_capacity(total));
         let completed = AtomicUsize::new(0);
         let chapter_context = ChapterExecutionContext {

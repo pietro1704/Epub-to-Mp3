@@ -1270,6 +1270,66 @@ abstract class AppLocalizations {
   /// **'All languages'**
   String get modelsOtherLanguages;
 
+  /// No description provided for @modelsSystemSection.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get modelsSystemSection;
+
+  /// No description provided for @modelsSystemVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'System voice'**
+  String get modelsSystemVoice;
+
+  /// No description provided for @modelsPiperSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Piper (on this device)'**
+  String get modelsPiperSection;
+
+  /// No description provided for @modelsEdgeSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Edge (online)'**
+  String get modelsEdgeSection;
+
+  /// No description provided for @modelsVoiceForEachLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice for each language'**
+  String get modelsVoiceForEachLanguage;
+
+  /// No description provided for @modelsAllLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'All languages'**
+  String get modelsAllLanguages;
+
+  /// No description provided for @modelsNeedsVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'A book in your library needs a voice for this language'**
+  String get modelsNeedsVoice;
+
+  /// No description provided for @modelsSizeMb.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} MB'**
+  String modelsSizeMb(int size);
+
+  /// No description provided for @modelsFallbackSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Fallback voices'**
+  String get modelsFallbackSection;
+
+  /// No description provided for @modelsLowQualitySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Piper · low quality'**
+  String get modelsLowQualitySection;
+
   /// No description provided for @modelsAutomatic.
   ///
   /// In en, this message translates to:
