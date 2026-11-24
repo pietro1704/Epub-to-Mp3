@@ -198,6 +198,8 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         self.sessionDefaults = sessionDefaults
         self.deferInitialReaderGestures = deferInitialReaderGestures
         super.init(nibName: nil, bundle: nil)
+        // READING-PREFERENCES: the book's own reading preferences apply while it is open, from the first render.
+        settings.enterBookScope(initialBook.id)
     }
 
     @available(*, unavailable)
@@ -244,6 +246,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         reimportRequestID = UUID()
         readingPosition.cancelPendingPlaybackLocation()
         document.book = incomingBook
+        settings.enterBookScope(incomingBook.id)
         document.hasRestoredInitialPosition = false
         loadBook()
     }
@@ -297,6 +300,12 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         readingPosition.persistReadingProgress()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // The reader is closed (not just covered by a sheet): the default applies to the next book.
+        if isBeingDismissed || isMovingFromParent || navigationController?.isBeingDismissed == true { settings.leaveBookScope() }
     }
 
     private typealias ReadingAnchor = ReaderReadingPosition.ReadingAnchor

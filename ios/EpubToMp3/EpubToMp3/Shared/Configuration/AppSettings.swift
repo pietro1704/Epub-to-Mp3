@@ -59,6 +59,17 @@ final class AppSettings: ObservableObject {
     /// True while the open book uses its own reading preferences instead of the default.
     private(set) var isBookSpecific = false
 
+    /// True while a book is open: the reading preferences screen offers "only this book".
+    var isInBookScope: Bool { bookScopeID != nil }
+
+    /// The mode line shown on top of the reading preferences screen.
+    var readingPreferenceModeTitleKey: String {
+        isBookSpecific ? "readerSettings.scope.thisBook" : "readerSettings.scope.default"
+    }
+    var readingPreferenceModeHintKey: String {
+        isBookSpecific ? "readerSettings.scope.thisBookHint" : "readerSettings.scope.defaultHint"
+    }
+
     private func reloadReaderPreferences(from source: UserDefaults, arguments: [String] = []) {
         let wasLoading = loadingPersistedValues
         loadingPersistedValues = true

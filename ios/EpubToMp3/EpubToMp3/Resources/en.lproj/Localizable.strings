@@ -207,6 +207,11 @@
 
 /* ReaderSettingsSheet */
 "readerSettings.title" = "Reader";
+"readerSettings.scope.default" = "Default for all books";
+"readerSettings.scope.thisBook" = "Only this book";
+"readerSettings.scope.toggle" = "Use these settings only for this book";
+"readerSettings.scope.defaultHint" = "Changes apply to every book without settings of its own.";
+"readerSettings.scope.thisBookHint" = "Changes apply only to this book. Turn off to use the default again.";
 "readerSettings.theme" = "Theme";
 "readerSettings.font" = "Font";
 "readerSettings.font.book" = "Use book font";

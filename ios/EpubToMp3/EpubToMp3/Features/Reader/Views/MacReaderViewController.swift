@@ -157,6 +157,8 @@ final class MacReaderViewController: NSViewController {
     }
 
     func setBook(_ bookID: String?) {
+        // READING-PREFERENCES: the book's own reading preferences apply while it is open.
+        if let bookID { settings.enterBookScope(bookID) } else { settings.leaveBookScope() }
         UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         loadCurrentBook()
     }

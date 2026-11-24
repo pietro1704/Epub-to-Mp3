@@ -47,6 +47,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         tableView.estimatedRowHeight = 56
         tableView.accessibilityLabel = L10n.string("readerSettings.title")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
+        installScopeHeader()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: L10n.string("readerSettings.done"),
             style: .done,
@@ -55,8 +56,52 @@ final class ReaderSettingsScreenController: UITableViewController {
         )
     }
 
+    /// The mode on top (default for every book, or this book only) and, with a book open, the choice to keep these
+    /// settings for this book only (READING-PREFERENCES).
+    private func installScopeHeader() {
+        guard settings.isInBookScope else { tableView.tableHeaderView = nil; return }
+        let mode = UILabel()
+        mode.text = L10n.string(settings.readingPreferenceModeTitleKey)
+        mode.font = .preferredFont(forTextStyle: .headline)
+        mode.numberOfLines = 0
+        mode.accessibilityIdentifier = "readerSettings.scope.mode"
+        mode.accessibilityTraits = .header
+        let hint = UILabel()
+        hint.text = L10n.string(settings.readingPreferenceModeHintKey)
+        hint.font = .preferredFont(forTextStyle: .footnote)
+        hint.textColor = .secondaryLabel
+        hint.numberOfLines = 0
+        let toggleLabel = UILabel()
+        toggleLabel.text = L10n.string("readerSettings.scope.toggle")
+        toggleLabel.font = .preferredFont(forTextStyle: .body)
+        toggleLabel.numberOfLines = 0
+        let toggle = UISwitch()
+        toggle.isOn = settings.isBookSpecific
+        toggle.accessibilityIdentifier = "readerSettings.scope.bookOnly"
+        toggle.accessibilityLabel = toggleLabel.text
+        toggle.addAction(UIAction { [weak self, weak toggle] _ in
+            guard let self, let toggle else { return }
+            if toggle.isOn { self.settings.useOnlyForThisBook() } else { self.settings.useDefaultForThisBook() }
+            self.refresh()
+        }, for: .valueChanged)
+        let toggleRow = UIStackView(arrangedSubviews: [toggleLabel, toggle])
+        toggleRow.spacing = 12
+        toggleRow.alignment = .center
+        let stack = UIStackView(arrangedSubviews: [mode, hint, toggleRow])
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.layoutMargins = UIEdgeInsets(top: 12, left: 20, bottom: 12, right: 20)
+        let width = tableView.bounds.width > 0 ? tableView.bounds.width : 390
+        let size = stack.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                                                 withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        stack.frame = CGRect(x: 0, y: 0, width: width, height: size.height)
+        tableView.tableHeaderView = stack
+    }
+
     func refresh() {
         guard isViewLoaded else { return }
+        installScopeHeader()
         tableView.reloadData()
         onChange?()
     }
