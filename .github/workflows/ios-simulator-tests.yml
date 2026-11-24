@@ -11,7 +11,7 @@ on:
         type: string
         default: ''
       seed_only:
-        description: Build and save the caches only; boot nothing and run no tests
+        description: Build the Rust library to save its cache only; boot nothing, build no app, run no tests
         type: boolean
         default: false
   workflow_dispatch:
@@ -21,7 +21,7 @@ on:
         type: string
         default: ''
       seed_only:
-        description: Build and save the caches only; boot nothing and run no tests
+        description: Build the Rust library to save its cache only; boot nothing, build no app, run no tests
         type: boolean
         default: false
 
@@ -85,34 +85,22 @@ jobs:
           echo "SDK $sdk_version -> $udid"
           xcrun simctl boot "$udid"
       - name: Generate the project
+        if: inputs.seed_only != true
         working-directory: ios/EpubToMp3
         run: xcodegen generate
-      - name: Restore the Xcode compilation cache
-        id: compile-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ios/EpubToMp3/.build/ios-sim/CompilationCache.noindex
-          key: xcode-compile-cache-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ hashFiles('ios/EpubToMp3/EpubToMp3/**', 'ios/EpubToMp3/EpubToMp3Tests/**', 'ios/EpubToMp3/EpubToMp3ShareExtension/**', 'ios/EpubToMp3/EpubToMp3Widget/**', 'ios/EpubToMp3/project.yml') }}
-          restore-keys: xcode-compile-cache-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-
       - name: Build the Simulator tests once
+        if: inputs.seed_only != true
         working-directory: ios/EpubToMp3
         run: |
           set -euo pipefail
           mkdir -p ../../.reports/ios-simulator
           # The project's ARCHS[sdk=iphonesimulator*] condition makes Xcode treat every concrete
           # Simulator as ineligible for -scheme destinations, so build for the generic Simulator
-          # destination and run the xctestrun on the booted device. Compilation caching is content
-          # addressed, so a restored cache stays valid across fresh checkouts.
+          # destination and run the xctestrun on the booted device. (Xcode compilation caching was tried
+          # and gave no measurable gain on this job.)
           xcodebuild build-for-testing -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -derivedDataPath .build/ios-sim \
             -jobs 3 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CONVERTER_FFI_ENABLE_PIPER=0 \
-            COMPILATION_CACHE_ENABLE_CACHING=YES -destination 'generic/platform=iOS Simulator' 2>&1 | tee ../../.reports/ios-simulator/build.log | tail -5
-      - name: Save the Xcode compilation cache
-        # Pull requests only restore (from the scheduled master seed); manual evidence runs and seeds write.
-        if: always() && steps.compile-cache.outputs.cache-hit != 'true' && (inputs.seed_only == true || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master')
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ios/EpubToMp3/.build/ios-sim/CompilationCache.noindex
-          key: ${{ steps.compile-cache.outputs.cache-primary-key }}
+            -destination 'generic/platform=iOS Simulator' 2>&1 | tee ../../.reports/ios-simulator/build.log | tail -5
       - name: Wait for the Simulator
         if: inputs.seed_only != true
         run: xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b
