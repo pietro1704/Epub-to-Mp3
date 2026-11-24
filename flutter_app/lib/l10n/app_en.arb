@@ -232,5 +232,7 @@
   "@modelsMissingTitle": {"placeholders": {"language": {"type": "String"}}},
   "modelsMissingTitle": "No narration model for {language}",
   "modelsMissingBody": "Install a narration model for this language, then try again.",
-  "modelsMissingAction": "Open Models"
+  "modelsMissingAction": "Open Models",
+  "bookLanguagesMissingModels": "This book also has passages in {languages}. No voice is installed for them, so they are read with the main voice.",
+  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}}
 }

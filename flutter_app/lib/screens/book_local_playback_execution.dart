@@ -70,6 +70,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             return;
           }
           if (narration is ResolvedNarration) base = narration.preferences;
+          unawaited(_warnAboutMissingLanguageModels(converter, inputPath, base));
           ttsSnapshot = catalog.captureNewPreferences(base);
         } else if (converter is AndroidEmbeddedConverter) {
           TtsCatalog? catalog;
@@ -94,6 +95,12 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             return;
           }
           if (narration is ResolvedNarration) ttsSnapshot = narration.preferences;
+          unawaited(_warnAboutMissingLanguageModels(
+            converter,
+            inputPath,
+            ttsSnapshot,
+            androidApi: catalog?.androidApi,
+          ));
         }
       }
       final ttsSupport = await getApplicationSupportDirectory();
@@ -343,6 +350,38 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     },
     androidApi: androidApi,
   );
+
+  /// A bilingual or multilingual book: say, before the narration starts and without blocking it,
+  /// which of its languages have no installed voice (they are read with the main voice).
+  /// Installing a model stays an explicit action in the Models screen.
+  Future<void> _warnAboutMissingLanguageModels(
+    EmbeddedConverter converter,
+    String inputPath,
+    TtsPreferences base, {
+    int? androidApi,
+  }) async {
+    final missing = await missingProfileLanguages(
+      converter: converter,
+      cache: ref.read(bookLanguageCacheProvider),
+      bookId: widget.bookId,
+      bookPath: inputPath,
+      configured: base,
+      choices: ref.read(languageModelChoicesProvider),
+      installedModelIds: () => ref.read(installedNarrationModelIdsProvider.future),
+      systemVoices: () => ref.read(systemVoiceLanguagesProvider.future),
+      platform: switch (defaultTargetPlatform) {
+        TargetPlatform.android => 'Android',
+        TargetPlatform.windows => 'Windows',
+        TargetPlatform.macOS => 'Macos',
+        TargetPlatform.iOS => 'Ios',
+        _ => 'Linux',
+      },
+      androidApi: androidApi,
+    );
+    if (mounted && missing.isNotEmpty) {
+      showMissingProfileModelsNotice(context, missing);
+    }
+  }
 
   /// Nothing usable is installed for the book's language: stop before any job
   /// exists and offer the Models screen at that language.

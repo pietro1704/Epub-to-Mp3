@@ -658,4 +658,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelsMissingAction => 'Open Models';
+
+  @override
+  String bookLanguagesMissingModels(String languages) {
+    return 'This book also has passages in $languages. No voice is installed for them, so they are read with the main voice.';
+  }
 }
