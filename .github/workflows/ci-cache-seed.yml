@@ -2,7 +2,7 @@ name: CI cache seed
 
 # Pull request runs can only restore caches written by master (or their own ref). The
 # post-merge validation is batched, so master rarely refreshed the macOS caches and every
-# pull request rebuilt the Simulator Rust library and the Swift test bundle cold. This
+# pull request rebuilt the Simulator Rust library cold. This
 # workflow rebuilds them on master when their cache key changed; a hit costs seconds.
 on:
   schedule:
