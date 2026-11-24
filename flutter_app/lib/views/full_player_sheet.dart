@@ -232,6 +232,11 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
+  void _goToNarratedPage() {
+    ref.read(readerPairRequestProvider.notifier).state++;
+    _openReaderAtPlayback();
+  }
+
   /// Opens the reader on the chapter that is playing. Only when the player is
   /// really playing this sheet's book, so a stale sheet never moves the reader.
   void _openReaderAtPlayback() {
@@ -401,6 +406,16 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             child: _pill(context, '${widget.player.speed}x'),
           ),
         ),
+
+        // Back to the narrated page: only while the open reader (or none) is not on the spoken
+        // page. It asks the reader to follow the narration again and opens it at the playing chapter.
+        if (ref.watch(readerNarrationPairedProvider) != true)
+          FilledButton.tonalIcon(
+            key: const ValueKey('fullPlayer.narratedPage'),
+            onPressed: _goToNarratedPage,
+            icon: const Icon(Icons.my_location, size: 18),
+            label: Text(t?.goToNarratedPage ?? 'Go to narrated page'),
+          ),
 
         // Chapter list button
         if (hasChapters)

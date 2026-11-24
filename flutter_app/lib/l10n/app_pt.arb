@@ -194,6 +194,7 @@
   "readerNarrationModel": "Modelo de narração",
   "readerFootnotes": "Notas de rodapé",
   "openReaderAtPlayback": "Abrir no leitor",
+  "goToNarratedPage": "Ir para a página narrada",
   "readerAppearance": "Aparência do texto",
   "readerPlayFromHere": "Tocar daqui",
   "errorNoReadableText": "Não foi possível extrair texto legível deste livro.",

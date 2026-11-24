@@ -538,6 +538,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get openReaderAtPlayback => 'Abrir no leitor';
 
   @override
+  String get goToNarratedPage => 'Ir para a página narrada';
+
+  @override
   String get readerAppearance => 'Aparência do texto';
 
   @override

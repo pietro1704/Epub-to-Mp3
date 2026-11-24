@@ -1072,6 +1072,12 @@ abstract class AppLocalizations {
   /// **'Open in reader'**
   String get openReaderAtPlayback;
 
+  /// No description provided for @goToNarratedPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to narrated page'**
+  String get goToNarratedPage;
+
   /// No description provided for @readerAppearance.
   ///
   /// In en, this message translates to:

@@ -539,6 +539,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get openReaderAtPlayback => 'Abrir en el lector';
 
   @override
+  String get goToNarratedPage => 'Ir a la página narrada';
+
+  @override
   String get readerAppearance => 'Apariencia del texto';
 
   @override
