@@ -110,3 +110,17 @@ final audioStartupStateProvider = ChangeNotifierProvider<AudioStartupState>(
 final backgroundAudioHandlerProvider = Provider<BackgroundAudioHandler?>(
   (ref) => ref.watch(audioStartupStateProvider).handler,
 );
+
+/// Keeps the MediaSession in the user's remote-button mode (REMOTE-BUTTON-MODE): what the
+/// next/previous buttons of a car, headphones or the lock screen do. Watched by the app root.
+final remoteButtonModeSyncProvider = Provider<void>((ref) {
+  final handler = ref.watch(backgroundAudioHandlerProvider);
+  if (handler == null) return;
+  handler.remoteButtonMode = ref.read(settingsProvider).remoteButtonMode;
+  ref.listen(settingsProvider.select((settings) => settings.remoteButtonMode), (
+    _,
+    mode,
+  ) {
+    handler.remoteButtonMode = mode;
+  });
+});

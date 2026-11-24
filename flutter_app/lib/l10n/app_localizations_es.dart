@@ -523,6 +523,19 @@ class AppLocalizationsEs extends AppLocalizations {
   String get seekBackwardInterval => 'Retroceder';
 
   @override
+  String get remoteButtonModeTitle => 'Botones siguiente y anterior';
+
+  @override
+  String get remoteButtonModeDescription =>
+      'Qué hacen los botones del coche, los auriculares y la pantalla de bloqueo.';
+
+  @override
+  String get remoteButtonModeChapter => 'Capítulo';
+
+  @override
+  String get remoteButtonModeSeconds => 'Saltar segundos';
+
+  @override
   String get ttsShowLowQuality => 'Mostrar modelos de calidad baja';
 
   @override

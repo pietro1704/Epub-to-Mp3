@@ -522,6 +522,19 @@ class AppLocalizationsPt extends AppLocalizations {
   String get seekBackwardInterval => 'Retroceder';
 
   @override
+  String get remoteButtonModeTitle => 'Botões de próximo e anterior';
+
+  @override
+  String get remoteButtonModeDescription =>
+      'O que fazem os botões do carro, dos fones e da tela de bloqueio.';
+
+  @override
+  String get remoteButtonModeChapter => 'Capítulo';
+
+  @override
+  String get remoteButtonModeSeconds => 'Pular segundos';
+
+  @override
   String get ttsShowLowQuality => 'Mostrar qualidade baixa';
 
   @override

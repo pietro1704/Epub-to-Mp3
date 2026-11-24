@@ -59,6 +59,41 @@ class PlaybackPreferences extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ListTile(
+                key: const ValueKey('remote-button-mode'),
+                leading: Icon(
+                  Icons.settings_remote_outlined,
+                  color: cs.onSurfaceVariant,
+                ),
+                title: Text(t.remoteButtonModeTitle),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    t.remoteButtonModeDescription,
+                    style: tt.bodySmall,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(56, 0, 16, 12),
+                child: SegmentedButton<RemoteButtonMode>(
+                  key: const ValueKey('remote-button-mode-choice'),
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(
+                      value: RemoteButtonMode.chapter,
+                      label: Text(t.remoteButtonModeChapter),
+                    ),
+                    ButtonSegment(
+                      value: RemoteButtonMode.seconds,
+                      label: Text(t.remoteButtonModeSeconds),
+                    ),
+                  ],
+                  selected: {settings.remoteButtonMode},
+                  onSelectionChanged: (mode) =>
+                      notifier.setRemoteButtonMode(mode.first),
+                ),
+              ),
               const Divider(height: 1, indent: 56),
               ListTile(
                 leading: Icon(Icons.timer_outlined, color: cs.onSurfaceVariant),

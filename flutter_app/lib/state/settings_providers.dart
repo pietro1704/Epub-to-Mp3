@@ -51,6 +51,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _emit();
   }
 
+  Future<void> setRemoteButtonMode(RemoteButtonMode mode) async {
+    await state.setRemoteButtonMode(mode);
+    _emit();
+  }
+
   Future<void> setAudioRate(double v) async {
     await state.setAudioRate(v);
     _emit();
