@@ -176,8 +176,10 @@ final class IOSMainReaderControllerTests: XCTestCase {
         let navigation = try XCTUnwrap(main.view.subviews.compactMap { $0 as? UINavigationBar }.first)
         let shownTop = child.view.frame.minY
         XCTAssertGreaterThan(shownTop, 0)
-        let raw = CGPoint(x: 0, y: 257.375)
-        viewport.setContentOffset(raw, animated: false)
+        viewport.setContentOffset(CGPoint(x: 0, y: 257.375), animated: false)
+        // UIKit snaps the offset to the screen's pixel grid (1/3 pt at 3x), so the round trip
+        // must restore what the viewport actually stored, not the unsnapped literal.
+        let raw = viewport.contentOffset
         for hidden in [true, false, true, false] {
             main.captureReaderViewportTransition()
             XCTAssertTrue(main.applyReaderPresentation(.init(isReaderActive: true, isLoading: false, isChromeHidden: hidden)))

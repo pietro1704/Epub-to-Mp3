@@ -85,14 +85,6 @@ jobs:
           only=()
           IFS=',' read -ra names <<< "$classes"
           for name in "${names[@]}"; do only+=("-only-testing:EpubToMp3Tests/${name// /}"); done
-          # Real failures on master found when this job was introduced (iPhone 16, iOS 18.5); they are
-          # reported separately and skipped here only until they are fixed or the owner decides otherwise.
-          skip=(
-            -skip-testing:EpubToMp3Tests/FullPlayerFittingTests/testLandscapeReflowsMetadataBesideControls
-            -skip-testing:EpubToMp3Tests/FullPlayerFittingTests/testAccessibilityTextStillFitsBothOrientationsAndRetainsFullMetadata
-            -skip-testing:EpubToMp3Tests/FullPlayerFittingTests/testRelayoutAfterMetadataOrOrientationChangeDoesNotKeepOldFrames
-            -skip-testing:EpubToMp3Tests/IOSMainReaderControllerTests/testChromeRoundTripRebindsTheInstalledReaderAndRestoresItsRawViewportOffset
-          )
           mkdir -p ../../.reports/ios-simulator
           set -o pipefail
           report=../../.reports/ios-simulator
@@ -106,7 +98,7 @@ jobs:
           test -n "$xctestrun"
           echo "xctestrun: $xctestrun"
           xcodebuild test-without-building -xctestrun "$xctestrun" -destination "id=${{ steps.sim.outputs.udid }}" \
-            -parallel-testing-enabled NO -resultBundlePath "$report/result.xcresult" "${only[@]}" "${skip[@]}" 2>&1 | tee "$report/test.log" | tail -40 || true
+            -parallel-testing-enabled NO -resultBundlePath "$report/result.xcresult" "${only[@]}" 2>&1 | tee "$report/test.log" | tail -40 || true
           grep -E "Executed [0-9]+ tests" "$report/test.log" | tail -2
           grep -qE "\*\* TEST (EXECUTE )?SUCCEEDED \*\*" "$report/test.log"
       - name: Shut the Simulator down
