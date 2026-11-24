@@ -5,7 +5,8 @@ require 'minitest/autorun'
 require 'yaml'
 
 # Only five hosted macOS jobs run at once, so the post-merge run must not need more
-# than five: CodeQL Swift x2, Faber arm64 and Intel, and one FFI artifact job.
+# than five: CodeQL Swift x2, Faber arm64 and Intel, and one FFI artifact job (plus the iOS
+# Simulator UIKit job, queued as a sixth).
 class CiMacosJobBudgetTest < Minitest::Test
   ROOT = File.expand_path('..', __dir__)
 
@@ -34,7 +35,12 @@ class CiMacosJobBudgetTest < Minitest::Test
     # ci.yml's Apple job is skipped in the integrated run, so it is not counted.
     ci_apple = macos_jobs('faber-integration.yml')
     assert_equal 2, ci_apple
-    assert_equal 5, total - ci_apple
+    # The iOS Simulator UIKit job also runs in the integrated run (the pull request gate requires it
+    # and there is no other post-merge execution of iOS-only UIKit code). GitHub queues the sixth
+    # hosted macOS job behind the five concurrent slots; post-merge validation is batched, not per merge.
+    ios_simulator = macos_jobs('ios-simulator-tests.yml')
+    assert_equal 1, ios_simulator
+    assert_equal 5 + ios_simulator, total - ci_apple
   end
 
   def test_native_and_isolation_are_steps_of_the_faber_arm64_job_not_separate_jobs
