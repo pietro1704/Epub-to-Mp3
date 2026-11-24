@@ -125,6 +125,7 @@ mod tests {
                 heading_ends: Vec::new(),
                 level: 1,
                 footnotes: Vec::new(),
+                note_marks: Vec::new(),
             }],
         ));
         assert!(result.verified);

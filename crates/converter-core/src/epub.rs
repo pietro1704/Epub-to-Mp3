@@ -3,6 +3,7 @@ mod epub_footnotes;
 mod epub_library_metadata;
 mod epub_package;
 mod epub_resources;
+pub mod footnote_narration;
 use epub_chapter_content::{
     first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_title_for,
 };
@@ -82,6 +83,22 @@ pub struct Chapter {
     pub level: u32,
     /// Plain-text bodies of the notes this chapter links to; empty when none.
     pub footnotes: Vec<Footnote>,
+    /// Where each note reference sits on the text axis, for narration; empty when none.
+    pub note_marks: Vec<NoteMark>,
+}
+
+/// One footnote reference placed on the chapter text axis (additive; the axis itself is unchanged).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteMark {
+    /// Scalar offset right after the reference label.
+    pub reference_end: usize,
+    /// The reference label shown in the text ("1"), when there is one.
+    pub label: Option<String>,
+    /// The note body as plain text.
+    pub text: String,
+    /// Scalar range of the body inside this chapter's text, when it lives in the same
+    /// document (so narration reads it at the reference instead of at the chapter end).
+    pub body: Option<std::ops::Range<usize>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -221,13 +238,15 @@ fn parse_epub_document<R: Read + Seek>(
         };
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
-        let footnotes = epub_footnotes::chapter_footnotes(
+        let found = epub_footnotes::chapter_footnotes_with_targets(
             &html,
             &path,
             &mut archive,
             &mut footnote_budget,
             &mut footnote_targets,
         );
+        let note_marks = note_marks(&html, &found);
+        let footnotes = found.into_iter().map(|(note, _)| note).collect();
         chapters.push(Chapter {
             index,
             name: toc_title
@@ -239,6 +258,7 @@ fn parse_epub_document<R: Read + Seek>(
             heading_ends,
             level,
             footnotes,
+            note_marks,
         });
     }
     let (cover, cover_mime) =
@@ -252,6 +272,27 @@ fn parse_epub_document<R: Read + Seek>(
         cover,
         cover_mime,
     })
+}
+
+/// Join each reference position with the note body it links to (by link fragment).
+fn note_marks(html: &str, found: &[(Footnote, String)]) -> Vec<NoteMark> {
+    if found.is_empty() {
+        return Vec::new();
+    }
+    epub_chapter_content::note_positions(html)
+        .into_iter()
+        .filter_map(|reference| {
+            let (note, _) = found
+                .iter()
+                .find(|(_, fragment)| *fragment == reference.target)?;
+            Some(NoteMark {
+                reference_end: reference.end,
+                label: note.number.clone(),
+                text: note.text.clone(),
+                body: reference.body,
+            })
+        })
+        .collect()
 }
 
 fn read_document<R: Read + Seek>(

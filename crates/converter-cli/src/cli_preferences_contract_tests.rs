@@ -23,6 +23,7 @@ fn only_explicit_legacy_engine_overrides_the_faber_default() {
     assert!(explicit.primary.model_id.is_none());
     assert!(explicit.secondary.is_none());
     let saved = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -56,6 +57,7 @@ fn manual_override_is_strict_and_model_reaches_effective_preferences() {
     );
     let config = converter_core::config::AppConfig::from_paths(paths);
     let saved = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {
@@ -152,6 +154,7 @@ fn explicit_consent_revocation_overrides_saved_consent_without_mutating_it() {
     );
     let config = converter_core::config::AppConfig::from_paths(paths);
     let saved = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {
@@ -248,6 +251,7 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
     );
     let config = converter_core::config::AppConfig::from_paths(paths);
     let saved = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -263,6 +267,7 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
     // Local primary: an Edge primary without the consent is refused outright, and
     // this test is about the captured voice and consent replacing the saved ones.
     let captured = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -310,6 +315,7 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
 fn captured_preferences_reject_invalid_schema_policy_and_duplicate_arguments() {
     use converter_core::tts_preferences::{TtsPreferences, TtsSelection};
     let approved = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {

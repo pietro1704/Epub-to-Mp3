@@ -89,6 +89,7 @@ fn chapter_request_key_is_byte_identical_to_the_package_version_era() {
     // Edge now needs the online consent, so the pinned Edge key is the consented
     // request's; the key function itself is unchanged.
     let edge = TtsPreferences {
+        footnote_narration: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,

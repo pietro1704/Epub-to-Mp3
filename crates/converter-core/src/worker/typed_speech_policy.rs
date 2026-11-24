@@ -42,6 +42,7 @@ impl ConversionWorker {
             generation,
             &[],
             &[],
+            None,
         )
     }
 
@@ -59,6 +60,7 @@ impl ConversionWorker {
         generation: Option<u64>,
         paragraph_ends: &[usize],
         heading_ends: &[usize],
+        spoken_chapter: Option<&crate::epub::footnote_narration::SpokenChapter>,
     ) -> Result<(), WorkerError> {
         use std::io::Write;
         preferences
@@ -89,14 +91,20 @@ impl ConversionWorker {
                 "Synthesis adapter has an empty text capacity".into(),
             ));
         }
-        let (source_offset, language_passages, forced_boundaries) = self.plan_language_passages(
-            request,
-            text,
-            paragraph_ends,
-            heading_ends,
-            source_index,
-            language,
-        );
+        let (source_offset, language_passages, mut forced_boundaries) = self
+            .plan_language_passages(
+                request,
+                text,
+                paragraph_ends,
+                heading_ends,
+                source_index,
+                language,
+            );
+        // A narrated footnote starts and ends on a segment boundary so its pause is exact.
+        let note_edges: &[usize] = spoken_chapter.map_or(&[], |chapter| &chapter.note_edges);
+        forced_boundaries.extend(note_edges.iter().copied());
+        forced_boundaries.sort_unstable();
+        forced_boundaries.dedup();
         let mut segments = std::collections::VecDeque::from(
             self.pronunciation
                 .source_plan(
@@ -161,7 +169,8 @@ impl ConversionWorker {
                     text,
                     heading_ends,
                     paragraph_ends,
-                ),
+                )
+                .with_note_edges(note_edges),
                 book_identity: book_identity.as_deref(),
                 segment_cache: &segment_cache,
             };
@@ -229,11 +238,29 @@ impl ConversionWorker {
                 .chars()
                 .take_while(|c| c.is_whitespace())
                 .count();
-            let bytes = crate::speech_alignment::bind_source(
-                bytes,
-                spoken,
-                base + segment.scalar_range.start + leading,
-            );
+            let scalar_start = segment.scalar_range.start + leading;
+            let bytes = match spoken_chapter
+                .map(|chapter| chapter.binding(scalar_start..scalar_start + spoken.chars().count()))
+            {
+                // Spoken layer: the audio points back to the source (the note body while a
+                // note is read) instead of assuming the spoken text is the source text.
+                Some(Some(crate::epub::footnote_narration::Binding::Source { offset })) => {
+                    crate::speech_alignment::bind_source(bytes, spoken, offset)
+                }
+                Some(Some(crate::epub::footnote_narration::Binding::Note { number, source })) => {
+                    crate::speech_alignment::bind_note(
+                        bytes,
+                        spoken,
+                        crate::speech_alignment::NoteBinding {
+                            number,
+                            source_start: source.start,
+                            source_end: source.end,
+                        },
+                    )
+                }
+                Some(None) => bytes,
+                None => crate::speech_alignment::bind_source(bytes, spoken, base + scalar_start),
+            };
             if self
                 .control
                 .as_ref()

@@ -14,6 +14,8 @@ pub(super) const PARAGRAPH_TOTAL_PIPER_MILLIS: u32 = 450;
 pub(super) const PARAGRAPH_TOTAL_SYSTEM_MILLIS: u32 = 550;
 /// Total silence wanted at the end of a chapter.
 pub(super) const CHAPTER_END_TOTAL_MILLIS: u32 = 1_000;
+/// Total silence around a narrated footnote (before its start marker and after its end marker).
+pub(super) const NOTE_TOTAL_MILLIS: u32 = 500;
 /// Natural gap the voices leave on their own, measured with `ffmpeg silencedetect`.
 const NATURAL_PIPER_MILLIS: u32 = 140;
 const NATURAL_SYSTEM_MILLIS: u32 = 300;
@@ -26,6 +28,10 @@ pub(super) enum Boundary {
     Paragraph,
     Heading,
     ChapterEnd,
+    /// Start or end of a narrated footnote.
+    Note,
+    /// A narrated footnote edge that is also the end of a paragraph.
+    NoteParagraph,
 }
 
 /// Where the structural units of one chapter text end (scalar offsets).
@@ -33,6 +39,8 @@ pub(super) enum Boundary {
 pub(super) struct Structure<'a> {
     pub heading_ends: &'a [usize],
     pub paragraph_ends: &'a [usize],
+    /// Spoken offsets where a narrated footnote starts or ends (empty without notes).
+    pub note_edges: &'a [usize],
     /// Scalar offset where the last content (non-whitespace) of the chapter text ends.
     pub chapter_end: usize,
 }
@@ -42,25 +50,39 @@ impl<'a> Structure<'a> {
         Self {
             heading_ends,
             paragraph_ends,
+            note_edges: &[],
             chapter_end: text.trim_end().chars().count(),
         }
+    }
+
+    pub fn with_note_edges(mut self, note_edges: &'a [usize]) -> Self {
+        self.note_edges = note_edges;
+        self
     }
 }
 
 pub(super) fn request_key(base: &str, structure: &Structure<'_>) -> String {
-    cache::sha256_bytes(
+    let pauses = (
+        base,
+        POLICY,
+        HEADING_MILLIS,
+        PARAGRAPH_TOTAL_PIPER_MILLIS,
+        PARAGRAPH_TOTAL_SYSTEM_MILLIS,
+        CHAPTER_END_TOTAL_MILLIS,
+        structure.heading_ends,
+    );
+    // Chapters without narrated footnotes keep their previous identity (and their audio).
+    let identity = if structure.note_edges.is_empty() {
+        serde_json::to_string(&pauses)
+    } else {
         serde_json::to_string(&(
-            base,
-            POLICY,
-            HEADING_MILLIS,
-            PARAGRAPH_TOTAL_PIPER_MILLIS,
-            PARAGRAPH_TOTAL_SYSTEM_MILLIS,
-            CHAPTER_END_TOTAL_MILLIS,
-            structure.heading_ends,
+            pauses,
+            crate::epub::footnote_narration::POLICY,
+            NOTE_TOTAL_MILLIS,
+            structure.note_edges,
         ))
-        .expect("narration pause identity")
-        .as_bytes(),
-    )
+    };
+    cache::sha256_bytes(identity.expect("narration pause identity").as_bytes())
 }
 
 /// The strongest boundary the segment ends on (trailing whitespace is not content).
@@ -76,10 +98,15 @@ pub(super) fn boundary_after(segment: &SourceTextSegment, structure: &Structure<
         Boundary::ChapterEnd
     } else if structure.heading_ends.binary_search(&end).is_ok() {
         Boundary::Heading
-    } else if structure.paragraph_ends.binary_search(&end).is_ok() {
-        Boundary::Paragraph
     } else {
-        Boundary::None
+        let paragraph = structure.paragraph_ends.binary_search(&end).is_ok();
+        let note = structure.note_edges.binary_search(&end).is_ok();
+        match (paragraph, note) {
+            (true, true) => Boundary::NoteParagraph,
+            (true, false) => Boundary::Paragraph,
+            (false, true) => Boundary::Note,
+            (false, false) => Boundary::None,
+        }
     }
 }
 
@@ -103,6 +130,15 @@ pub(super) fn pause_millis(boundary: Boundary, engine: &str) -> u32 {
             total - natural
         }
         Boundary::ChapterEnd => CHAPTER_END_TOTAL_MILLIS - natural,
+        Boundary::Note => NOTE_TOTAL_MILLIS - natural,
+        Boundary::NoteParagraph => {
+            let paragraph = if system {
+                PARAGRAPH_TOTAL_SYSTEM_MILLIS
+            } else {
+                PARAGRAPH_TOTAL_PIPER_MILLIS
+            };
+            paragraph.max(NOTE_TOTAL_MILLIS) - natural
+        }
     }
 }
 
@@ -248,6 +284,30 @@ mod tests {
         assert_eq!(pause_millis(Boundary::ChapterEnd, "system"), 1_000 - 300);
         assert_eq!(pause_millis(Boundary::Heading, "piper"), 800);
         assert_eq!(pause_millis(Boundary::Heading, "system"), 800);
+        // A narrated footnote is set off by 0.5 s in total on both sides; a paragraph end that
+        // is also a note edge keeps the larger of the two totals.
+        assert_eq!(pause_millis(Boundary::Note, "piper"), 500 - 140);
+        assert_eq!(pause_millis(Boundary::Note, "system"), 500 - 300);
+        assert_eq!(pause_millis(Boundary::NoteParagraph, "piper"), 500 - 140);
+        assert_eq!(pause_millis(Boundary::NoteParagraph, "system"), 550 - 300);
+    }
+
+    #[test]
+    fn note_edges_are_boundaries_and_change_identity_only_when_present() {
+        let text = "Texto 1 Nota. e depois.";
+        let plain = Structure::new(text, &[], &[23]);
+        let edges = [7, 13];
+        let noted = Structure::new(text, &[], &[23]).with_note_edges(&edges);
+        assert_eq!(
+            request_key("k", &plain),
+            request_key("k", &Structure::new(text, &[], &[23]).with_note_edges(&[]))
+        );
+        assert_ne!(request_key("k", &plain), request_key("k", &noted));
+        let before = segment("Texto 1", 0);
+        let inside = segment("Texto 1 Nota.", 0);
+        assert_eq!(boundary_after(&before, &noted), Boundary::Note);
+        assert_eq!(boundary_after(&inside, &noted), Boundary::Note);
+        assert_eq!(boundary_after(&before, &plain), Boundary::None);
     }
 
     #[test]

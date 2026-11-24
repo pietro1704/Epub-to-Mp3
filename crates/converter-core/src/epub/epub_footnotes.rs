@@ -36,12 +36,31 @@ pub(super) struct FootnoteTargets {
 /// Cheap pre-check so chapters without any note-like link are never parsed.
 fn may_contain_note_links(html: &str) -> bool {
     let lower = html.to_ascii_lowercase();
-    lower.contains("href") && (lower.contains("foot") || lower.contains("note"))
+    lower.contains("href")
+        && ["foot", "note", "nota", "rodap"]
+            .iter()
+            .any(|word| lower.contains(word))
+}
+
+/// Whether a link is a note reference: its target says so ("footnote-1", "note2", "nota3",
+/// "rodape"), or the markup does (`epub:type="noteref"`, `role="doc-noteref"`).
+pub(super) fn is_note_link(
+    target_and_fragment: &str,
+    epub_type: Option<&str>,
+    role: Option<&str>,
+) -> bool {
+    let marker = target_and_fragment.to_ascii_lowercase();
+    ["foot", "note", "nota", "rodap"]
+        .iter()
+        .any(|word| marker.contains(word))
+        || epub_type.is_some_and(|value| value.contains("noteref"))
+        || role.is_some_and(|value| value.contains("doc-noteref"))
 }
 
 /// Footnotes of one chapter. `chapter_path` is the archive path of the chapter
 /// document; link targets are resolved relative to it. Unreadable or oversized
 /// targets are skipped: notes are optional and must never fail a book.
+#[cfg(test)]
 pub(super) fn chapter_footnotes<R: Read + Seek>(
     html: &str,
     chapter_path: &str,
@@ -49,6 +68,21 @@ pub(super) fn chapter_footnotes<R: Read + Seek>(
     budget: &mut EpubReadBudget,
     targets: &mut FootnoteTargets,
 ) -> Vec<Footnote> {
+    chapter_footnotes_with_targets(html, chapter_path, archive, budget, targets)
+        .into_iter()
+        .map(|(note, _)| note)
+        .collect()
+}
+
+/// Like `chapter_footnotes`, also naming the link fragment each note body was found by, so
+/// narration can place the note at its reference.
+pub(super) fn chapter_footnotes_with_targets<R: Read + Seek>(
+    html: &str,
+    chapter_path: &str,
+    archive: &mut ZipArchive<R>,
+    budget: &mut EpubReadBudget,
+    targets: &mut FootnoteTargets,
+) -> Vec<(Footnote, String)> {
     if !may_contain_note_links(html) {
         return Vec::new();
     }
@@ -77,8 +111,12 @@ pub(super) fn chapter_footnotes<R: Read + Seek>(
         if fragment.is_empty() {
             continue;
         }
-        let marker = format!("{target}#{fragment}").to_ascii_lowercase();
-        if !marker.contains("foot") && !marker.contains("note") {
+        let marker = format!("{target}#{fragment}");
+        if !is_note_link(
+            &marker,
+            anchor.value().attr("epub:type"),
+            anchor.value().attr("role"),
+        ) {
             continue;
         }
         let Some(path) = target_path(chapter_path, target) else {
@@ -97,7 +135,7 @@ pub(super) fn chapter_footnotes<R: Read + Seek>(
         let number = (!number.is_empty()).then_some(number);
         let key = format!("{}|{text}", number.as_deref().unwrap_or(""));
         if seen.insert(key) {
-            notes.push(Footnote { number, text });
+            notes.push((Footnote { number, text }, fragment));
         }
     }
     notes

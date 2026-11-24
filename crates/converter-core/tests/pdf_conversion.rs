@@ -51,6 +51,7 @@ fn request(input: &Path, job: &str) -> ConversionRequest {
         input: input.into(),
         job_id: job.into(),
         tts_preferences: Some(TtsPreferences {
+            footnote_narration: Default::default(),
             policy_version: None,
             primary: TtsSelection {
                 session: None,
