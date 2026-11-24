@@ -163,6 +163,37 @@ fn catalog_languages_are_sorted_distinct_base_tags_with_models() {
 }
 
 #[test]
+fn catalog_languages_carry_the_shared_popularity_rank() {
+    let languages = catalog_languages(ModelPlatform::Macos, None);
+    let rank = |tag: &str| {
+        languages
+            .iter()
+            .find(|language| language.tag == tag)
+            .and_then(|language| language.popularity_rank)
+    };
+    // Most popular first; the rank is the position in the one shared list.
+    assert_eq!(rank("en"), Some(1));
+    assert!(rank("es") < rank("pt") && rank("pt") < rank("fr"));
+    let mut ranks: Vec<u32> = languages
+        .iter()
+        .filter_map(|language| language.popularity_rank)
+        .collect();
+    let count = ranks.len();
+    ranks.sort_unstable();
+    ranks.dedup();
+    assert_eq!(ranks.len(), count, "ranks are unique");
+    // A catalog language outside the list has no rank and is sorted alphabetically by clients.
+    assert!(languages
+        .iter()
+        .any(|language| language.popularity_rank.is_none()));
+    let json = serde_json::to_value(&languages[0]).unwrap();
+    assert_eq!(
+        json.get("popularity_rank").is_some(),
+        languages[0].popularity_rank.is_some()
+    );
+}
+
+#[test]
 fn json_contract_defaults_and_snake_case_response() {
     let request: ResolutionRequest =
         serde_json::from_str(r#"{"schema_version":1,"book_language":"pt-BR","platform":"Macos"}"#)

@@ -1,7 +1,8 @@
 use super::*;
 
 /// Base languages that have at least one catalog model on the platform, as
-/// `{"schema_version":1,"languages":[{"tag":"pt","model_count":3}]}`. Pure; no I/O.
+/// `{"schema_version":1,"languages":[{"tag":"pt","model_count":3,"popularity_rank":3}]}` (the rank is
+/// additive and absent for languages outside the shared popularity list). Pure; no I/O.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_catalog_languages_json_v1(
     platform: *const c_char,

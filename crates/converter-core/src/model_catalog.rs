@@ -340,6 +340,24 @@ pub(crate) fn automatic_piper_models(language: &str) -> Vec<&'static TtsModelDes
 pub struct CatalogLanguage {
     pub tag: String,
     pub model_count: usize,
+    /// 1-based position in [`LANGUAGE_POPULARITY`]; absent for languages outside the list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub popularity_rank: Option<u32>,
+}
+
+/// Base languages from the most to the least popular for reading and listening to books. The one
+/// list every client uses to order the languages of the Models screen (after the languages of the
+/// system); languages outside it follow in alphabetical order. Edit it here only.
+pub const LANGUAGE_POPULARITY: [&str; 30] = [
+    "en", "es", "pt", "fr", "de", "it", "ru", "zh", "ja", "ko", "ar", "hi", "tr", "nl", "pl", "uk",
+    "sv", "id", "vi", "cs", "ro", "el", "hu", "fi", "da", "nb", "th", "he", "bg", "ca",
+];
+
+fn popularity_rank(tag: &str) -> Option<u32> {
+    LANGUAGE_POPULARITY
+        .iter()
+        .position(|candidate| candidate.eq_ignore_ascii_case(tag))
+        .map(|position| position as u32 + 1)
 }
 
 /// Distinct base languages that have at least one usable catalog model on the
@@ -361,7 +379,11 @@ pub fn catalog_languages(
     }
     counts
         .into_iter()
-        .map(|(tag, model_count)| CatalogLanguage { tag, model_count })
+        .map(|(tag, model_count)| CatalogLanguage {
+            popularity_rank: popularity_rank(&tag),
+            tag,
+            model_count,
+        })
         .collect()
 }
 
