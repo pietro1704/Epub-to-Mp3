@@ -31,7 +31,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         document: document, player: player, textView: composition.textView, settings: settings)
 
     private lazy var narrationPairing = ReaderNarrationPairingPresentation(
-        document: document, player: player, composition: composition)
+        document: document, player: player, composition: composition,
+        reveal: { [weak self] location in self?.readingPosition.revealPlaybackLocation(location) })
 
     private func configureNativeReader() {
         composition.configure(isPaginatedMode: isPaginatedMode, textDelegate: annotations,
@@ -132,6 +133,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
+        narrationPairing.userAskedToGoToReading()
         readingPosition.revealPlaybackLocation(location)
     }
 
@@ -215,6 +217,8 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         audioHighlight.observe()
         narrationPairing.observe()
         interaction.onViewportChange = { [weak self] in self?.narrationPairing.refresh() }
+        interaction.onUserNavigation = { [weak self] in self?.narrationPairing.userNavigated() }
+        contentsPresentation.onUserJump = { [weak self] in self?.narrationPairing.userNavigated() }
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }

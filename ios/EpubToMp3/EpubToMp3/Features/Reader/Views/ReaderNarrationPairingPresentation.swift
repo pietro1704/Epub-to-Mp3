@@ -11,16 +11,27 @@ final class ReaderNarrationPairingPresentation {
     private let composition: ReaderViewComposition
     private var observations: Set<AnyCancellable> = []
     private var isObserving = false
+    private let follower: ReaderNarrationFollower
 
-    init(document: ReaderBookDocument, player: AudioPlayer, composition: ReaderViewComposition) {
+    /// `reveal` moves the reader to the spoken passage (READER-FOLLOW-NARRATION).
+    init(document: ReaderBookDocument, player: AudioPlayer, composition: ReaderViewComposition,
+         reveal: @escaping (ReaderPlaybackLocation) -> Void) {
         self.document = document
         self.player = player
         self.composition = composition
+        follower = ReaderNarrationFollower(player: player, bookID: document.book.id, reveal: reveal)
     }
+
+    /// A page turn, scroll drag or chapter change made by the user: the reader stops following until the
+    /// narration is on screen again or the user moves the narration.
+    func userNavigated() { follower.userTurnedThePage() }
+
+    func userAskedToGoToReading() { follower.userAskedToGoToReading() }
 
     func observe() {
         guard !isObserving else { return }
         isObserving = true
+        follower.start { [weak self] in self?.refresh() }
         player.playbackClock.audioOutput.$position
             .throttle(for: .milliseconds(400), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.refresh() }
@@ -34,6 +45,7 @@ final class ReaderNarrationPairingPresentation {
 
     func stop() {
         observations.removeAll()
+        follower.stop()
         isObserving = false
         player.readerPairing.release(owner: ObjectIdentifier(self))
     }
@@ -41,7 +53,9 @@ final class ReaderNarrationPairingPresentation {
     /// Call after anything that moves the viewport or changes the chapter.
     func refresh() {
         guard isObserving else { return }
-        player.readerPairing.publish(paired: computePaired(), owner: ObjectIdentifier(self))
+        let paired = computePaired()
+        player.readerPairing.publish(paired: paired, owner: ObjectIdentifier(self))
+        follower.evaluate(paired: paired)
     }
 
     private func computePaired() -> Bool {

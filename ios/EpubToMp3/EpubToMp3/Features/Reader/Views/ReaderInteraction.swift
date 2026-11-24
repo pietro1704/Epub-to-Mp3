@@ -105,6 +105,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
     /// place), and at either end go to the neighbouring chapter like a page turn would.
     func scrollScreen(forward: Bool) {
         guard canNavigateReader else { return }
+        onUserNavigation?()
         let viewport = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
         guard viewport > 1 else { return }
         let maximum = max(0, scrollView.contentSize.height + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
@@ -214,6 +215,12 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
 
     /// Notified after any viewport movement (drag, page turn, programmatic reveal).
     var onViewportChange: (() -> Void)?
+    /// Notified when the user moves the reader (drag, page turn, edge tap, chapter swipe), never for programmatic moves.
+    var onUserNavigation: (() -> Void)?
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        onUserNavigation?()
+    }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         defer { onViewportChange?() }
@@ -255,6 +262,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
 
     private func navigateScrollChapter(forward: Bool) {
         guard canNavigateReader else { return }
+        onUserNavigation?()
         let next = forward
             ? min(document.selectedChapter + 1, max(0, (document.fulltext?.chapters.count ?? 1) - 1))
             : max(0, document.selectedChapter - 1)
@@ -269,6 +277,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
 
     func navigatePage(forward: Bool) {
         guard canNavigateReader else { return }
+        onUserNavigation?()
 
         guard let fulltext = document.fulltext, fulltext.chapters[safe: document.selectedChapter] != nil else { return }
         guard pageNavigation.begin() else { return }

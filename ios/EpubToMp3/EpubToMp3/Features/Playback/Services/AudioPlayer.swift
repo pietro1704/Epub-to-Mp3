@@ -118,6 +118,9 @@ final class AudioPlayer: ObservableObject {
     let playbackClock: PlaybackClock
     /// Published by the reader: true while it shows the narrated passage (see ReaderNarrationPairing).
     let readerPairing = ReaderNarrationPairing()
+    /// Fires when the user moves the narration itself (seek, skip, chapter change, remote commands). The reader
+    /// follows the narration again after it (READER-FOLLOW-NARRATION).
+    let narrationJumps = PassthroughSubject<Void, Never>()
 
     @Published private(set) var isUsingSpeechFallback: Bool = false
 
@@ -294,6 +297,7 @@ final class AudioPlayer: ObservableObject {
         return isSegmentMode && services.segments.startingPosition(for: currentChapterIndex) > 0
     }
     func seek(to seconds: TimeInterval) {
+        narrationJumps.send()
         services.seeking.seek(to: seconds,
             allowsApproximation: approximateSeekJobID != nil && approximateSeekJobID == snapshot?.jobId)
     }
@@ -317,9 +321,13 @@ final class AudioPlayer: ObservableObject {
         services.seeking.cancel()
     }
 
-    func nextChapter() { services.transport.navigateChapter(.forward) }
+    func nextChapter() {
+        narrationJumps.send()
+        services.transport.navigateChapter(.forward)
+    }
 
     func previousChapter(restartsCurrentChapter: Bool = true) {
+        narrationJumps.send()
         services.transport.navigateChapter(.backward, restartsCurrentChapter: restartsCurrentChapter)
     }
 
@@ -337,6 +345,7 @@ final class AudioPlayer: ObservableObject {
         Self.rateAdjustedDuration(seconds: positionSeconds, rate: rate)
     }
     func skip(by deltaSeconds: TimeInterval) {
+        narrationJumps.send()
         services.transport.skip(by: deltaSeconds)
     }
 
@@ -423,9 +432,11 @@ final class AudioPlayer: ObservableObject {
         services.sleep.start(minutes: minutes)
     }
     func skipForward(seconds: Double? = nil) {
+        narrationJumps.send()
         services.transport.skipForward(seconds: seconds)
     }
     func skipBackward(seconds: Double? = nil) {
+        narrationJumps.send()
         services.transport.skipBackward(seconds: seconds)
     }
 
