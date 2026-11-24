@@ -16,6 +16,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _faber = TtsSelection(engine: 'piper', modelId: 'pt_BR-faber-medium');
 const _cadu = TtsSelection(engine: 'piper', modelId: 'pt_BR-cadu-medium');
 
+Map<String, Object?> _entry(String id, List<String> tags) => {
+  'identity': {'provider': 'piper', 'runtime': 'piper', 'model_id': id, 'model_revision': 'r1'},
+  'compatibility': {'runtime_available': true, 'platforms': ['Linux', 'Android', 'Windows']},
+  'distribution': {'installable': true, 'download_bytes': 1000},
+  'language_evidence': {'routing_tags': tags},
+};
+
+TtsCatalog _catalog() => TtsCatalog.decode(jsonEncode({
+  'schema_version': 3,
+  'providers': [
+    {'provider': 'piper', 'runtime': 'piper', 'targets': ['linux', 'android', 'windows'], 'capabilities': {}},
+  ],
+  'entries': [_entry('pt_BR-faber-medium', ['pt-BR']), _entry('pt_BR-cadu-medium', ['pt-BR'])],
+}));
+
 void main() {
   test('a book voice is stored per book and cleared by "use the default"', () async {
     SharedPreferences.setMockInitialValues({});
@@ -36,7 +51,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         sharedPrefsProvider.overrideWithValue(prefs),
-        ttsCatalogProvider.overrideWith((ref) => Future<TtsCatalog>.error(StateError('catalog unavailable'))),
+        ttsCatalogProvider.overrideWith((ref) async => _catalog()),
         installedNarrationModelIdsProvider.overrideWith((ref) async => {'pt_BR-faber-medium', 'pt_BR-cadu-medium'}),
         readerBookLanguageProvider('book-1').overrideWith((ref) async => 'pt'),
         systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
