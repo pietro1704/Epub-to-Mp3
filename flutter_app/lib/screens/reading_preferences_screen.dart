@@ -72,6 +72,11 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
             )
           else
             Text(t.readingModeDefault, style: theme.textTheme.titleMedium),
+          if (bookId != null && !_forBook)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(t.readingDefaultHint, style: theme.textTheme.bodySmall),
+            ),
           if (_forBook && bookId != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),

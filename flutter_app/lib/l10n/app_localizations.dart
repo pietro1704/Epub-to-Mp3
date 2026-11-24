@@ -145,7 +145,7 @@ abstract class AppLocalizations {
   /// No description provided for @readingModeBook.
   ///
   /// In en, this message translates to:
-  /// **'Only for this book'**
+  /// **'Only this book'**
   String get readingModeBook;
 
   /// No description provided for @readingUseDefault.
@@ -160,10 +160,16 @@ abstract class AppLocalizations {
   /// **'Narration speed'**
   String get readingSpeedLabel;
 
+  /// No description provided for @readingDefaultHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes apply to every book without settings of its own.'**
+  String get readingDefaultHint;
+
   /// No description provided for @readingBookHint.
   ///
   /// In en, this message translates to:
-  /// **'These choices apply to this book only.'**
+  /// **'Changes apply only to this book. Choose Use the default to go back to the default.'**
   String get readingBookHint;
 
   /// No description provided for @readerLayoutScrolling.

@@ -31,7 +31,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get readingModeDefault => 'Predeterminado para todos los libros';
 
   @override
-  String get readingModeBook => 'Solo para este libro';
+  String get readingModeBook => 'Solo este libro';
 
   @override
   String get readingUseDefault => 'Usar el valor predeterminado';
@@ -40,7 +40,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get readingSpeedLabel => 'Velocidad de la narración';
 
   @override
-  String get readingBookHint => 'Estas opciones valen solo para este libro.';
+  String get readingDefaultHint =>
+      'Los cambios valen para todo libro sin ajustes propios.';
+
+  @override
+  String get readingBookHint =>
+      'Los cambios valen solo para este libro. Toca Usar el valor predeterminado para volver al predeterminado.';
 
   @override
   String get readerLayoutScrolling => 'Desplazamiento';
