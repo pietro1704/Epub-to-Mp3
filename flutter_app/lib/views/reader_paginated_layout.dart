@@ -127,6 +127,7 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
     TextStyle headingStyle,
     double margin,
   ) {
+    _followNarration(settings.readerAutoScroll);
     final page = _pages.isEmpty
         ? const ReaderPage(<SentenceSpan>[])
         : _pages[_currentPage.clamp(0, _pages.length - 1)];
@@ -258,5 +259,31 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
         ),
       ),
     );
+  }
+
+  /// Keeps the page on the spoken sentence (see [NarrationPairing]).
+  void _followNarration(bool follow) {
+    final id = widget.currentSentenceId;
+    int? narrated;
+    if (id != null) {
+      final index = _pages.indexWhere((page) => page.spans.any((span) => span.id == id));
+      narrated = index < 0 ? null : index;
+    }
+    final shown = _pages.isEmpty ? 0 : _currentPage.clamp(0, _pages.length - 1);
+    final target = _pairing.targetPage(
+      shown: shown,
+      narrated: narrated,
+      follow: follow || _forceFollow,
+    );
+    _forceFollow = false;
+    final paired = target != null ? true : NarrationPairing.paired(shown: shown, narrated: narrated);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (target != null && _currentPage != target) _showPage(target);
+      if (paired != _publishedPairing) {
+        _publishedPairing = paired;
+        ref.read(readerNarrationPairedProvider.notifier).state = paired;
+      }
+    });
   }
 }

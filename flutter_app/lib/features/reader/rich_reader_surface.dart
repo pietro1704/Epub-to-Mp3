@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
 import 'package:flutter/services.dart';
 
@@ -6,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/app_settings.dart';
 import '../../models/ebook_fulltext.dart';
 import '../../views/reader_chapter_content.dart';
+import '../../services/reader/narration_pairing.dart';
 import 'reader_document_geometry.dart';
 import 'reader_page_indicator.dart';
 
@@ -28,6 +30,9 @@ class RichReaderSurface extends StatefulWidget {
     this.onPlayFromHere,
     this.highlight,
     this.initialSourceOffset = 0,
+    this.followNarration = false,
+    this.pairRequest = 0,
+    this.onPairedChanged,
   });
   final FulltextChapter chapter;
   final int initialSourceOffset;
@@ -42,6 +47,15 @@ class RichReaderSurface extends StatefulWidget {
   /// offset of the selection start. Selection is enabled only when set.
   final ValueChanged<int>? onPlayFromHere;
   final TextRange? highlight;
+
+  /// "Follow spoken text": the page turns to the highlighted (spoken) sentence.
+  final bool followNarration;
+
+  /// Bumped to ask for the narrated page and to follow it again.
+  final int pairRequest;
+
+  /// Whether the page shows the spoken sentence (null: nothing is narrated).
+  final ValueChanged<bool?>? onPairedChanged;
 
   @override
   State<RichReaderSurface> createState() => _RichReaderSurfaceState();
@@ -60,6 +74,9 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   int? _restoreSource;
   double _height = 0;
   bool _measurementPending = false;
+  final NarrationPairing _pairing = NarrationPairing();
+  bool? _publishedPairing;
+  bool _forceFollow = false;
 
   /// The chapter text made selectable, with "Play from here" on a selection.
   Widget? _selectableDocument() {
@@ -123,10 +140,15 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   @override
   void didUpdateWidget(covariant RichReaderSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.pairRequest != widget.pairRequest) {
+      _pairing.resume();
+      _forceFollow = true;
+    }
     if (oldWidget.chapter.index != widget.chapter.index ||
         oldWidget.chapter.text != widget.chapter.text) {
       _geometry = null;
       _signature = null;
+      _pairing.resume();
       _restoreSource = widget.initialSourceOffset > 0
           ? _utf16Offset(widget.initialSourceOffset)
           : null;
@@ -190,6 +212,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   }
 
   void _turn(bool forward) {
+    _pairing.suspendAfterManualTurn();
     final pages = _pages;
     final target = forward
         ? pages.where((offset) => offset > _offset + 0.5).firstOrNull
@@ -204,6 +227,49 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
       _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
     }
     widget.onAutoHideChrome?.call();
+  }
+
+  /// Keeps the page on the spoken sentence (see [NarrationPairing]).
+  void _followNarration() {
+    final highlight = widget.highlight;
+    final geometry = _geometry;
+    if (highlight == null || geometry == null || !_scroll.hasClients) {
+      _publishPairing(null);
+      return;
+    }
+    final top = geometry.boxesFor(highlight).firstOrNull?.top;
+    final pages = _pages;
+    if (top == null || pages.isEmpty) {
+      _publishPairing(null);
+      return;
+    }
+    int pageOf(double y) {
+      final index = pages.lastIndexWhere((offset) => offset <= y + 0.5);
+      return index < 0 ? 0 : index;
+    }
+
+    final shown = pageOf(_offset);
+    final narrated = pageOf(top);
+    final target = _pairing.targetPage(
+      shown: shown,
+      narrated: narrated,
+      follow: widget.followNarration || _forceFollow,
+    );
+    _forceFollow = false;
+    if (target != null) {
+      _scroll.jumpTo(pages[target].clamp(0, _scroll.position.maxScrollExtent));
+    }
+    _publishPairing(
+      target != null
+          ? true
+          : NarrationPairing.paired(shown: shown, narrated: narrated),
+    );
+  }
+
+  void _publishPairing(bool? paired) {
+    if (paired == _publishedPairing) return;
+    _publishedPairing = paired;
+    widget.onPairedChanged?.call(paired);
   }
 
   @override
@@ -269,6 +335,9 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                   pixelRatio)
               .floorToDouble() /
           pixelRatio;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _followNarration();
+      });
       final pages = _pages;
       final guarded = _paginated && pages.isNotEmpty;
       final (top, bottom) = guarded
@@ -331,32 +400,44 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                       : null,
                   child: Stack(
                     children: [
-                      SingleChildScrollView(
-                        key: const ValueKey('rich-reader-viewport'),
-                        controller: _scroll,
-                        physics: guarded
-                            ? const NeverScrollableScrollPhysics()
-                            : null,
-                        child: Column(
-                          children: [
-                            NotificationListener<SizeChangedLayoutNotification>(
-                              onNotification: (_) {
-                                _measure();
-                                return false;
-                              },
-                              child: SizeChangedLayoutNotifier(
-                                child: Padding(
-                                  key: _content,
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: widget.settings.readerMargin,
-                                    vertical: 16,
+                      NotificationListener<UserScrollNotification>(
+                        // Scrolling by hand (continuous layout) suspends following.
+                        onNotification: (notification) {
+                          if (!_paginated &&
+                              notification.direction != ScrollDirection.idle) {
+                            _pairing.suspendAfterManualTurn();
+                          }
+                          return false;
+                        },
+                        child: SingleChildScrollView(
+                          key: const ValueKey('rich-reader-viewport'),
+                          controller: _scroll,
+                          physics: guarded
+                              ? const NeverScrollableScrollPhysics()
+                              : null,
+                          child: Column(
+                            children: [
+                              NotificationListener<
+                                SizeChangedLayoutNotification
+                              >(
+                                onNotification: (_) {
+                                  _measure();
+                                  return false;
+                                },
+                                child: SizeChangedLayoutNotifier(
+                                  child: Padding(
+                                    key: _content,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: widget.settings.readerMargin,
+                                      vertical: 16,
+                                    ),
+                                    child: _selectableDocument(),
                                   ),
-                                  child: _selectableDocument(),
                                 ),
                               ),
-                            ),
-                            if (_paginated) SizedBox(height: _height),
-                          ],
+                              if (_paginated) SizedBox(height: _height),
+                            ],
+                          ),
                         ),
                       ),
                       if (_paginated) ...[

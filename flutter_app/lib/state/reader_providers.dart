@@ -38,6 +38,13 @@ final bookDerivedDataRemoverProvider = Provider<BookDerivedDataRemover>((ref) {
 final readerPlaybackJumpProvider =
     StateProvider<({String bookId, int chapterIndex})?>((ref) => null);
 
+/// Whether the open reader shows the sentence being spoken (null: nothing is
+/// being narrated for it). Published by the reader, read by the expanded player.
+final readerNarrationPairedProvider = StateProvider<bool?>((ref) => null);
+
+/// Bumped to ask the reader to go back to the narrated page and follow it again.
+final readerPairRequestProvider = StateProvider<int>((ref) => 0);
+
 /// Reader tools that can sit beside the overflow menu (Apple `ReaderTool`).
 enum ReaderTool { appearance, contents, search, bookmarks, footnotes }
 
