@@ -6,8 +6,9 @@ import 'models_languages_screen.dart';
 import 'settings_screen.dart'
     show InstalledNarrationModelsCard, VoiceSelectionSettings;
 
-/// Narration settings: the default/reserve voice and the online consent, a row that opens the
-/// languages (each language's model on its own route) and the installed models. Installing a
+/// Narration settings: first the row that opens the languages (each language's model on its own
+/// route: reachable without scrolling on a phone), then the default/reserve voice and the online
+/// consent, and the installed models. Installing a
 /// model is always an explicit tap on its row.
 class ModelsScreen extends ConsumerStatefulWidget {
   const ModelsScreen({super.key, this.initialLanguage});
@@ -49,12 +50,8 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       // even when the language catalog cannot be loaded.
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: VoiceSelectionSettings(),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Card(
               child: ListTile(
                 key: const ValueKey('models-languages-row'),
@@ -65,6 +62,10 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 onTap: _openLanguages,
               ),
             ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: VoiceSelectionSettings(),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 24),

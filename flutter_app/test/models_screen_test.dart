@@ -528,6 +528,50 @@ void main() {
       expect(top('models-group-others'), lessThan(top('language-cy')));
     },
   );
+  _languagesRowIsFirstTest();
+}
+
+// The Languages row is what this screen is for: on a phone it must be reachable without
+// scrolling past the narration settings (A8: the row sat below the fold and a tap missed it).
+void _languagesRowIsFirstTest() {
+  testWidgets(
+    'the Languages row is at the top of the Models screen on a phone',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      tester.view.physicalSize = const Size(400, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPrefsProvider.overrideWithValue(prefs),
+            embeddedConverterProvider.overrideWithValue(_ModelsConverter()),
+            ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const ModelsScreen(),
+          ),
+        ),
+      );
+      await _settle(tester);
+      final row = find.byKey(const ValueKey('models-languages-row'));
+      expect(row, findsOneWidget);
+      final rect = tester.getRect(row);
+      expect(
+        rect.top,
+        lessThan(200),
+        reason: 'right under the app bar, above the voice settings',
+      );
+      expect(rect.bottom, lessThanOrEqualTo(700));
+      await tester.tap(row);
+      await _settle(tester);
+      await _settle(tester);
+      expect(find.byType(ModelsLanguagesScreen), findsOneWidget);
+    },
+  );
 }
 
 class _OrderedConverter extends _ModelsConverter {
