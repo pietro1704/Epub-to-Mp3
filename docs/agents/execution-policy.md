@@ -61,13 +61,32 @@ URL and per-job results, test counts and artifact links (also written to the run
 summary), and exits non-zero on failure. It needs only bash and `gh`, on Mac or
 Arch. The branch must be based on a `master` that has the `scope` input.
 
-- Run local native builds only for visible-app checks, physical-device runs
-  (16e, A8, tablet) or quick single-file iteration. Do not run local
-  `xcodebuild`/`cargo`/`flutter` builds to collect pre-PR test evidence.
+- Iterate locally in ONE warm worktree per agent: `git switch` between cards
+  and keep DerivedData, `.build` and `target` so builds stay incremental. Test
+  on the 16e, macOS or Arch device as fits (visible-app checks, device runs,
+  quick single-file iteration). Do not run local `xcodebuild`/`cargo`/`flutter`
+  builds to collect pre-PR test evidence; that is CI's job.
 - Open the PR only after a green branch-evidence run on the exact head being
   published; cite the run URL in the PR body. A new push needs a new run.
 - Branch-evidence runs use their own concurrency group and never cancel PR-gate
   runs. A pushed branch still ends in a PR or is deleted; drafts stay forbidden.
+
+### Cache policy
+
+The repository's GitHub Actions cache limit is 10 GB and eviction is LRU, so a
+flood of one-off entries pushes the hot master caches out.
+
+- Seed on master: only master writes the Rust (`rust-build-v1-*`, per target
+  namespace), Simulator library, Flutter and apt caches. Other refs restore
+  master's through the `rust-build-cache` action and never save. The scheduled
+  `CI cache seed` workflow and post-merge validation keep the macOS caches warm.
+- Keep keys stable and shared: key on toolchain identity and lockfiles, not on
+  source hashes, and give every key a `restore-keys` prefix. A new key family
+  needs a size estimate in its PR; keep total usage under 9 GB.
+- `Cache cleanup` deletes caches of closed PRs and deleted branches when a PR
+  closes (and on a schedule); `scripts/ci_cache_cleanup.sh [--dry-run]` does
+  the same by hand. It never touches master. Check usage with
+  `gh api repos/<owner>/<repo>/actions/cache/usage`.
 
 ## Apple toolchain
 
@@ -268,10 +287,12 @@ Use one feature branch and one PR per coherent change. Start independent changes
 from current `master` and continue them while earlier PRs are open.
 
 Worktrees and disk (Pietro, 2026-11-23, after the Mac fell to 3.8 GiB free):
-- Remove a worktree as soon as its PR merges or closes (`git worktree remove`).
-- For a small task, reuse one of your idle worktrees with `git switch`; do not
-  create a new one. Keep at most six active worktrees per agent.
-- A worktree idle for more than 24 hours keeps no build output: delete
+- Keep one warm worktree per agent and `git switch` between cards; do not create
+  a new worktree per card. Keep DerivedData, `.build` and `target` warm for
+  incremental builds. Create another worktree only for genuinely parallel work
+  and keep at most six per agent; remove an extra one when its PR merges or
+  closes (`git worktree remove`).
+- An extra worktree idle for more than 24 hours keeps no build output: delete
   `ios/EpubToMp3/.build` and `tools/DeviceWorkflow/.build` (Flutter: `build/`
   and `.dart_tool/`).
 - Every pushed branch ends in a PR. Do not push branches only to host files.

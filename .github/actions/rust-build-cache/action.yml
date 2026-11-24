@@ -15,10 +15,24 @@ runs:
       id: toolchain
       shell: bash
       run: node "$GITHUB_ACTION_PATH/../../scripts/rust-cache-identity.cjs"
-    # GitHub scopes PR-written caches to the PR ref. Cargo still validates
-    # fingerprints, recompiles changed inputs and executes tests on every run.
-    - name: Restore and refresh Cargo artifacts
+    # GitHub scopes PR-written caches to the PR ref, so a PR can only ever read master's.
+    # Only master writes: per-PR copies (one ~260 MB Simulator library per PR) pushed the
+    # repository over its 10 GB limit and evicted the hot master caches. Cargo still
+    # validates fingerprints, recompiles changed inputs and executes tests on every run.
+    - name: Restore and refresh Cargo artifacts (master)
+      if: github.ref == 'refs/heads/master'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ inputs.cache-target == 'true' && 'target' || '' }}
+        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}
+        restore-keys: |
+          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-
+    - name: Restore and refresh Cargo artifacts (read-only outside master)
+      if: github.ref != 'refs/heads/master'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ~/.cargo/registry

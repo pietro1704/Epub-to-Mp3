@@ -73,7 +73,9 @@ Pietro set these roles on 2026-11-22. He talks only to `epub-coord`.
 | `epub-android` | Arch pane, outside ai-jail (ai-memory only, so it can reach the host adb server) | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
 
 A task card states ID, goal, scope, files and worktree, acceptance, verification,
-out-of-scope items and where to record evidence.
+out-of-scope items and where to record evidence. Each agent keeps one warm
+worktree and switches branches between cards (warm DerivedData/`.build`/`target`);
+see the worktree and cache policy in the [execution policy](execution-policy.md).
 When `epub-coord` adds an iOS/macOS card, it adds the matching Flutter parity
 card for `epub-android` to the board at the same time. Between Apple cards,
 `epub-android` keeps Android/tablet and Linux/Windows matching the current

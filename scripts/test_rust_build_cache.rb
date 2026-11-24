@@ -16,8 +16,13 @@ class RustBuildCacheTest < Minitest::Test
     assert_equal 'composite', action.fetch('runs').fetch('using')
     assert_equal 'toolchain', steps.first.fetch('id')
     assert_includes steps.first.fetch('run'), 'rust-cache-identity.cjs'
-    cache = steps.last
+    cache = steps.find { |step| step['uses'].to_s.start_with?('actions/cache@') }
+    reader = steps.find { |step| step['uses'].to_s.start_with?('actions/cache/restore@') }
     assert_equal 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9', cache.fetch('uses')
+    # Only master writes (per-PR copies exceeded the 10 GB repository limit); every other ref restores.
+    assert_equal "github.ref == 'refs/heads/master'", cache.fetch('if')
+    assert_equal "github.ref != 'refs/heads/master'", reader.fetch('if')
+    assert_equal cache.fetch('with'), reader.fetch('with')
     options = cache.fetch('with')
     assert_equal ['~/.cargo/registry', '~/.cargo/git', "${{ inputs.cache-target == 'true' && 'target' || '' }}"],
                  options.fetch('path').lines.map(&:strip).reject(&:empty?)
@@ -35,7 +40,6 @@ class RustBuildCacheTest < Minitest::Test
     refute_includes key, "'crates/**/*.rs'"
     assert_equal 1, prefixes.length
     assert key.start_with?(prefixes.first), 'Lockfile changes may reuse dependencies within the same toolchain'
-    refute cache.key?('if'), 'A hit must never skip validation commands'
   end
 
   def test_every_adopted_job_restores_after_setup_and_still_runs_its_original_validation
