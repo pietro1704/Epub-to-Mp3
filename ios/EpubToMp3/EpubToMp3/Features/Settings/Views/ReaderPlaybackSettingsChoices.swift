@@ -19,6 +19,19 @@ final class ReaderPlaybackSettingsChoices {
     }
 
     func handlePlaybackSelection(row: Int) {
+        if row == 2 {
+            SettingsChoicePresentation.present(
+                controller: controller,
+                title: L10n.string("settings.remoteButtons"),
+                options: RemoteButtonMode.allCases.map { ($0.title, $0) },
+                currentValue: settings.remoteButtonMode
+            ) { [weak self] value in
+                guard let self else { return }
+                self.settings.remoteButtonMode = value
+                self.controller?.tableView.reloadSections(IndexSet(integer: self.playbackSection), with: .none)
+            }
+            return
+        }
         let forward = row == 0
         SettingsChoicePresentation.present(
             controller: controller,

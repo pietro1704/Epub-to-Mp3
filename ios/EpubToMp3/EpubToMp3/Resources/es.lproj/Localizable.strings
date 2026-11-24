@@ -419,6 +419,9 @@
 "settings.skipForward" = "Avanzar";
 "settings.skipBackward" = "Retroceder";
 "settings.seconds" = "%d segundos";
+"settings.remoteButtons" = "Botones de auriculares y coche";
+"settings.remoteButtons.chapter" = "Capítulo siguiente / anterior";
+"settings.remoteButtons.skip" = "Avanzar / retroceder en segundos";
 
 "conversion.systemVoiceFallback" = "Se usa temporalmente una voz instalada en el dispositivo. Se volverá a intentar la voz principal automáticamente.";
 "conversion.profileMissingVoices" = "Este libro también tiene pasajes en %@. No hay voz instalada para ellos, así que la voz principal los leerá. Puedes instalar una en Modelos.";

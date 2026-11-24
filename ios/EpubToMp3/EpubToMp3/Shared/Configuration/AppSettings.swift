@@ -39,6 +39,7 @@ final class AppSettings: ObservableObject {
         self.playbackBackwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackBackwardSecondsKey) as? Double
         )
+        self.remoteButtonMode = RemoteButtonMode.stored(in: defaults)
         reloadReaderPreferences(from: defaults, arguments: ProcessInfo.processInfo.arguments)
         loadingPersistedValues = false
         // Synchronous, like the `@Published` speech properties it replaces:
@@ -151,6 +152,11 @@ final class AppSettings: ObservableObject {
             }
             defaults.set(playbackForwardSeconds, forKey: Self.playbackForwardSecondsKey)
         }
+    }
+
+    /// What the car / headset next and previous buttons do. Read by the remote command handlers at event time.
+    @Published var remoteButtonMode: RemoteButtonMode = .chapter {
+        didSet { defaults.set(remoteButtonMode.rawValue, forKey: RemoteButtonMode.storageKey) }
     }
 
     @Published var playbackBackwardSeconds: Double = 15 {
