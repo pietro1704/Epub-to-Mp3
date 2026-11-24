@@ -69,7 +69,13 @@ struct LanguageModelResolution: Decodable, Sendable, Equatable {
 struct CatalogLanguage: Decodable, Sendable, Equatable {
     let tag: String
     let modelCount: Int
-    enum CodingKeys: String, CodingKey { case tag; case modelCount = "model_count" }
+    /// 1-based position in the Rust catalog's shared popularity list; absent for languages outside it.
+    var popularityRank: Int? = nil
+    enum CodingKeys: String, CodingKey {
+        case tag
+        case modelCount = "model_count"
+        case popularityRank = "popularity_rank"
+    }
 }
 
 /// Result of `converter_book_language_json_v1`: the language before any job exists.

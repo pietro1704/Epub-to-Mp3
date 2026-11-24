@@ -89,6 +89,8 @@ final class ModelsByLanguageModel: ObservableObject {
     /// installing it and choosing it are three separate actions; hiding keeps an active explicit choice.
     @Published private(set) var showLowQuality = false
     @Published private(set) var loadFailure: String?
+    /// The catalog's languages with their shared popularity rank, as the language screen needs them.
+    @Published private(set) var catalogLanguages: [CatalogLanguage] = []
     /// A licence the user must accept before the model can download.
     @Published private(set) var pendingTerms: PendingTerms?
 
@@ -137,6 +139,7 @@ final class ModelsByLanguageModel: ObservableObject {
         defer { isLoading = false }
         do {
             let languages = try await source.catalogLanguages()
+            catalogLanguages = languages
             snapshots = []
             lowLanguages = []
             for language in languages {

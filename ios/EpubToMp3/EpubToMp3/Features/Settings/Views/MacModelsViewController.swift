@@ -32,14 +32,29 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
     private let focusLanguage: String?
+    /// Set on the screen pushed from the language list: it shows that language's models only.
+    private let onlyLanguage: String?
+    private let languagesButton = NSButton(title: "", target: nil, action: nil)
+    /// While a screen is pushed over this one, only the topmost screen presents sheets.
+    private var coveredByPush = false
 
     init(settings: AppSettings, source: ModelsByLanguageSource = SpeechModelsSource(),
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil) {
         self.model = ModelsByLanguageModel(source: source, settings: settings, terms: termsAcceptance)
         self.model.priorityLanguage = focusLanguage
         self.focusLanguage = focusLanguage
+        self.onlyLanguage = nil
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("models.title")
+    }
+
+    /// The single-language screen: shares the model (and its loaded catalog) of the screen it is pushed from.
+    private init(sharing model: ModelsByLanguageModel, onlyLanguage: String) {
+        self.model = model
+        self.focusLanguage = nil
+        self.onlyLanguage = onlyLanguage
+        super.init(nibName: nil, bundle: nil)
+        title = (Locale.current.localizedString(forLanguageCode: onlyLanguage) ?? onlyLanguage).capitalized
     }
 
     @available(*, unavailable)
@@ -107,7 +122,20 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         narration.translatesAutoresizingMaskIntoConstraints = false
         let narrationBox = NSStackView(views: [narration])
         narrationBox.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 8, right: 16)
-        let stack = NSStackView(views: [narrationBox, statusLabel, scroll])
+        languagesButton.title = L10n.string("models.languages.open")
+        languagesButton.bezelStyle = .rounded
+        languagesButton.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
+        languagesButton.imagePosition = .imageTrailing
+        languagesButton.target = self
+        languagesButton.action = #selector(showLanguages)
+        languagesButton.setAccessibilityIdentifier("models.languages")
+        languagesButton.setAccessibilityLabel(L10n.string("models.languages"))
+        languagesButton.isHidden = onlyLanguage != nil
+        narrationBox.isHidden = onlyLanguage != nil
+        let languagesBox = NSStackView(views: [languagesButton])
+        languagesBox.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 8, right: 16)
+        languagesBox.isHidden = onlyLanguage != nil
+        let stack = NSStackView(views: [narrationBox, languagesBox, statusLabel, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -124,6 +152,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         model.objectWillChange
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
             .store(in: &observations)
+        guard onlyLanguage == nil else { refresh(); return }
         Task { [weak self] in
             await self?.model.load()
             self?.refresh()
@@ -139,7 +168,14 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         statusLabel.stringValue = model.isLoading ? L10n.string("models.loading")
             : (model.loadFailure != nil ? L10n.string("models.loadFailed") : "")
         statusLabel.isHidden = statusLabel.stringValue.isEmpty
-        items = model.state.sections.flatMap { section -> [Item] in
+        let sections: [ModelsByLanguageViewState.Section]
+        if let onlyLanguage {
+            sections = model.state.section(for: onlyLanguage).map { [$0] } ?? []
+        } else {
+            sections = model.state.relevantSections(priority: focusLanguage, systemPreferred: Locale.preferredLanguages)
+        }
+        languagesButton.isEnabled = !model.catalogLanguages.isEmpty
+        items = sections.flatMap { section -> [Item] in
             var result: [Item] = []
             let name = languageTitle(section.language)
             let automatic = section.chosen == nil ? L10n.string("models.automatic") : nil
@@ -434,8 +470,20 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         }
     }
 
+    @objc private func showLanguages() {
+        let list = MacModelsLanguagesViewController(languages: model.catalogLanguages)
+        list.onSelect = { [weak list, model] tag in
+            list?.pushDetail(MacModelsViewController(sharing: model, onlyLanguage: tag))
+        }
+        coveredByPush = true
+        pushDetail(list, onPop: { [weak self] in
+            self?.coveredByPush = false
+            self?.refresh()
+        })
+    }
+
     private func presentPendingTermsIfNeeded() {
-        guard model.pendingTerms != nil, view.window?.attachedSheet == nil else { return }
+        guard model.pendingTerms != nil, !coveredByPush, view.window?.attachedSheet == nil else { return }
         let alert = NSAlert()
         alert.messageText = L10n.string("settings.modelTerms.acceptTitle")
         alert.informativeText = L10n.string("settings.modelInstall.termsRequired")
@@ -447,7 +495,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func presentNewFailures() {
-        guard let (id, message) = model.failures.first(where: { !shownFailures.contains($0.key) }) else { return }
+        guard !coveredByPush, let (id, message) = model.failures.first(where: { !shownFailures.contains($0.key) }) else { return }
         shownFailures.insert(id)
         showInfo(title: L10n.string("settings.modelInstall.failed"), message: message)
     }

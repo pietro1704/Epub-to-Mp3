@@ -19,6 +19,8 @@ final class ModelsScreenController: UITableViewController {
     private let settings: AppSettings
     private let audition = VoiceAuditionPresentation()
     private let focusLanguage: String?
+    /// Set on the screen pushed from the language list: it shows that language's models only.
+    private let onlyLanguage: String?
     private var groups: [Group] = []
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
@@ -27,10 +29,21 @@ final class ModelsScreenController: UITableViewController {
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil) {
         self.settings = settings
         self.focusLanguage = focusLanguage
+        self.onlyLanguage = nil
         self.model = ModelsByLanguageModel(source: source, settings: settings, terms: termsAcceptance)
         self.model.priorityLanguage = focusLanguage
         super.init(style: .insetGrouped)
         title = L10n.string("models.title")
+    }
+
+    /// The single-language screen: shares the model (and its loaded catalog) of the screen it is pushed from.
+    private init(sharing model: ModelsByLanguageModel, settings: AppSettings, onlyLanguage: String) {
+        self.settings = settings
+        self.focusLanguage = nil
+        self.onlyLanguage = onlyLanguage
+        self.model = model
+        super.init(style: .insetGrouped)
+        title = (Locale.current.localizedString(forLanguageCode: onlyLanguage) ?? onlyLanguage).capitalized
     }
 
     @available(*, unavailable)
@@ -45,6 +58,7 @@ final class ModelsScreenController: UITableViewController {
         model.objectWillChange
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
             .store(in: &observations)
+        guard onlyLanguage == nil else { refresh(); return }
         Task { [weak self] in
             await self?.model.load()
             self?.refresh()
@@ -52,7 +66,13 @@ final class ModelsScreenController: UITableViewController {
     }
 
     private func refresh() {
-        groups = model.state.sections.flatMap { section -> [Group] in
+        let sections: [ModelsByLanguageViewState.Section]
+        if let onlyLanguage {
+            sections = model.state.section(for: onlyLanguage).map { [$0] } ?? []
+        } else {
+            sections = model.state.relevantSections(priority: focusLanguage, systemPreferred: Locale.preferredLanguages)
+        }
+        groups = sections.flatMap { section -> [Group] in
             var result: [Group] = []
             let local = section.local, online = section.online
             if !local.isEmpty { result.append(Group(language: section.language, kind: .local, rows: local, isFirstOfLanguage: true)) }
@@ -74,22 +94,22 @@ final class ModelsScreenController: UITableViewController {
     /// Section 0 holds the narration settings the old voice-models screen carried
     /// (default voice, reserve voice, system-voice fallback, online consent); the
     /// model groups follow.
-    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback, showLowQuality }
+    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback, showLowQuality, languages }
 
     override func numberOfSections(in tableView: UITableView) -> Int { groups.count + 1 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? NarrationRow.allCases.count : groups[section - 1].rows.count
+        section == 0 ? (onlyLanguage == nil ? NarrationRow.allCases.count : 0) : groups[section - 1].rows.count
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        if section == 0 { return L10n.string("settings.audioEngine") }
+        if section == 0 { return onlyLanguage == nil ? L10n.string("settings.audioEngine") : nil }
         let group = groups[section - 1]
         return L10n.string(group.kind == .local ? "models.section.local" : "models.section.online", languageTitle(group.language))
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 { return L10n.string("settings.audioEngineFooter") }
+        if section == 0 { return onlyLanguage == nil ? L10n.string("settings.audioEngineFooter") : nil }
         let group = groups[section - 1]
         guard group.kind == .local || group.isFirstOfLanguage,
               model.state.sections.first(where: { $0.language == group.language })?.chosen == nil else { return nil }
@@ -204,6 +224,18 @@ final class ModelsScreenController: UITableViewController {
                            isOn: model.showLowQuality, accessibilityIdentifier: "models.showLowQuality")
             cell.onValueChanged = { [weak self] show in Task { await self?.model.setShowLowQuality(show) } }
             return cell
+        case .languages:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Narration", for: indexPath)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("models.languages.open")
+            content.image = UIImage(systemName: "globe")
+            cell.contentConfiguration = content
+            cell.accessoryView = nil
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            cell.accessibilityIdentifier = "models.languages"
+            cell.accessibilityTraits = .button
+            return cell
         }
     }
 
@@ -247,9 +279,19 @@ final class ModelsScreenController: UITableViewController {
 
     // MARK: actions
 
+    private func showLanguages() {
+        let list = ModelsLanguagesScreenController(languages: model.catalogLanguages) { [weak self] tag in
+            guard let self else { return }
+            self.navigationController?.pushViewController(
+                ModelsScreenController(sharing: self.model, settings: self.settings, onlyLanguage: tag), animated: true)
+        }
+        navigationController?.pushViewController(list, animated: true)
+    }
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
         if indexPath.section == 0 {
+            if NarrationRow(rawValue: indexPath.row) == .languages { showLanguages() }
             return
         }
         let group = groups[indexPath.section - 1]
