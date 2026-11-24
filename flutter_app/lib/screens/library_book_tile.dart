@@ -207,16 +207,19 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
+    // The pill is the surface colour over any cover: the stock green/orange measured 1.5-2.8:1
+    // on it. These keep the hue with at least 3:1 (icon); the label uses the text colour.
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final (icon, label, color) = switch (status) {
       LibraryStatus.offlineReady => (
         Icons.check_circle,
         t.offlineReady,
-        Colors.green,
+        dark ? const Color(0xff81c784) : const Color(0xff2e7d32),
       ),
       LibraryStatus.caching => (
         Icons.cloud_download,
         t.cachingLabel,
-        Colors.orange,
+        dark ? const Color(0xffffb74d) : const Color(0xff9a4a00),
       ),
       LibraryStatus.textOnly => (Icons.book, '', Colors.transparent),
     };
@@ -235,7 +238,7 @@ class _StatusBadge extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.w600,
               fontSize: 10,
             ),
