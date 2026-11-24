@@ -119,4 +119,33 @@ class DeviceFarmTest < Minitest::Test
     assert_includes summary, 'FAIL a8 monkey: crash -> /tmp/f.log'
     assert_includes summary, 'UNLOCK needed: UNLOCK_tablet'
   end
+  def test_the_a8_is_one_device_reachable_by_usb_serial_or_wifi_address
+    usb = '52008714b40355ad'
+    wifi = '192.168.0.178:5555'
+    assert_equal [usb, wifi], DeviceFarm.aliases(usb)
+    assert_equal [wifi, usb], DeviceFarm.aliases(wifi), 'either name resolves to the same device'
+    assert_equal [DeviceFarm::SERIALS[1]], DeviceFarm.aliases(DeviceFarm::SERIALS[1]), 'the tablet has one name'
+    listing = "List of devices attached\n#{wifi}\tdevice\n192.168.0.130:46183\tdevice\n"
+    assert_equal wifi, DeviceFarm.pick_alias(usb, listing), 'USB unplugged: the Wi-Fi address serves'
+    both = "List of devices attached\n#{usb}\tdevice\n#{wifi}\tdevice\n"
+    assert_equal usb, DeviceFarm.pick_alias(usb, both), 'both attached: USB first'
+    offline = "List of devices attached\n#{usb}\toffline\n#{wifi}\tdevice\n"
+    assert_equal wifi, DeviceFarm.pick_alias(usb, offline)
+    assert_equal usb, DeviceFarm.pick_alias(usb, "List of devices attached\n"), 'nothing attached: keep the logical name'
+  end
+
+  def test_the_owners_personal_files_and_the_media_player_are_never_changed
+    [
+      ['shell', 'rm /sdcard/Music/Nanda/aula1.mp3'], ['shell', 'rm', '-f', '/sdcard/Download/jardim-das-aflicoes.epub'],
+      ['shell', 'mv /sdcard/Music/Nanda /sdcard/Music/x'], %w[shell rmdir /sdcard/Music/Nanda],
+      %w[shell am force-stop org.videolan.vlc], %w[shell pm disable-user org.videolan.vlc],
+      %w[shell monkey -p org.videolan.vlc 5], ['push', 'a.mp3', '/sdcard/Music/Nanda/'],
+      %w[shell cp /sdcard/Download/a.epub /sdcard/Download/b.epub]
+    ].each { |args| assert_raises(DeviceFarm::Forbidden, args.join(' ')) { DeviceFarm.safe!(args) } }
+    [
+      %w[shell ls /sdcard/Music/Nanda], %w[shell ls -l /sdcard/Download/jardim-das-aflicoes.epub],
+      ['pull', '/sdcard/Download/jardim-das-aflicoes.epub', '/tmp/x.epub'], %w[shell stat /sdcard/Music/Nanda],
+      %w[shell pm list packages org.videolan.vlc]
+    ].each { |args| assert_equal args, DeviceFarm.safe!(args) }
+  end
 end
