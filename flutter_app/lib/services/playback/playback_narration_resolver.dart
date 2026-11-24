@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/language_model_choices.dart';
 import '../../models/language_model_resolution.dart';
 import '../../models/tts_preferences.dart';
+import '../../models/narration_plan.dart';
+import '../conversion/embedded_conversion_contract.dart';
 import '../conversion/embedded_converter.dart';
 
 /// What the job should do about the narration, given the book language.
@@ -145,6 +147,9 @@ Future<PlaybackNarration> resolvePlaybackNarration({
 
   /// The language the user set for this book; it overrides what was detected.
   String? correctedLanguage,
+
+  /// The voice the listener set for this one book; it reads the book's main language.
+  TtsSelection? bookVoice,
 }) async {
   if (explicitSelection) return const UnchangedNarration();
   try {
@@ -153,25 +158,60 @@ Future<PlaybackNarration> resolvePlaybackNarration({
       bookId: bookId,
       path: bookPath,
     );
-    final language = primaryBookLanguage(analysis, corrected: correctedLanguage);
-    if (language == null) return const UnchangedNarration();
     final primary = configured.primary;
     final automaticPrimary = primary.representsSameRequest(
       TtsSelection.automaticPiper,
     );
-    final resolution = await converter.resolveLanguageModel(
+    final installed = (await installedModelIds()).toList()..sort();
+    final voices = await systemVoices();
+    // The narration plan is Rust's one answer for the language and the voice (the listener's
+    // book voice first); a converter without it, or a plan that fails, keeps the per-language
+    // resolution below.
+    var language = primaryBookLanguage(analysis, corrected: correctedLanguage);
+    LanguageModelResolution? resolution;
+    if (converter is NarrationPlanCapable &&
+        (converter as NarrationPlanCapable).supportsNarrationPlan) {
+      try {
+        final plan = await (converter as NarrationPlanCapable).bookNarrationPlan(
+          NarrationPlanRequest(
+            analysis: analysis,
+            declared: analysis.declared,
+            userCorrection: correctedLanguage,
+            bookVoice: bookVoice,
+            perLanguageChoices: choices.byLanguage,
+            // The automatic Piper entry is not a model id: Rust ranks installed ones.
+            primary: automaticPrimary ? null : primary,
+            allowOnlineFallback: configured.allowOnlineFallback,
+            // Policy 2 is the one that lets the installed system voice stand in.
+            allowAutomaticSystemVoiceFallback: configured.policyVersion == 2,
+            installedModelIds: installed,
+            systemVoices: voices,
+            platform: platform,
+            androidApi: androidApi,
+          ),
+        );
+        // Undetermined: today's narration; the language question is the recovery's.
+        if (plan.needsLanguageQuestion || plan.decision.language == null) {
+          return const UnchangedNarration();
+        }
+        language = plan.decision.language;
+        resolution = plan.main;
+      } on Object catch (error) {
+        debugPrint('Narration plan unavailable, resolving by language: $error');
+      }
+    }
+    if (language == null) return const UnchangedNarration();
+    resolution ??= await converter.resolveLanguageModel(
       LanguageModelRequest(
         bookLanguage: language,
         platform: platform,
         androidApi: androidApi,
         perLanguageChoices: choices.byLanguage,
-        // The automatic Piper entry is not a model id: Rust ranks installed ones.
         primary: automaticPrimary ? null : primary,
         allowOnlineFallback: configured.allowOnlineFallback,
-        // Policy 2 is the one that lets the installed system voice stand in.
         allowAutomaticSystemVoiceFallback: configured.policyVersion == 2,
-        installedModelIds: (await installedModelIds()).toList()..sort(),
-        systemVoices: await systemVoices(),
+        installedModelIds: installed,
+        systemVoices: voices,
       ),
     );
     final selection = resolution.selection;
