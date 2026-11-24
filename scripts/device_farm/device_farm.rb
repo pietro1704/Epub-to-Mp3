@@ -14,7 +14,9 @@
 #   ruby scripts/device_farm/device_farm.rb loop      # forever (touch STATE/stop to end it)
 #
 # Safety rules (enforced in code, see `safe!`): the farm never uninstalls the app, never clears
-# its data, and never deletes models, books or preferences on a device; it pauses a device that
+# its data, and never deletes models, books or preferences on a device; it never changes the
+# owner's personal files (/sdcard Music, Download, ...) or the media player (org.videolan.vlc),
+# read-only commands excepted; it pauses a device that
 # is hot (>= 41 C) or below 30% battery without charger, skips a locked device (an UNLOCK note is
 # written for the owner), force-stops the app after every round, and yields the adb lock to a
 # manual `with-adb` request between steps.
@@ -29,6 +31,10 @@ module DeviceFarm
   PACKAGE = ENV.fetch('DEVICE_FARM_PACKAGE', 'com.pietrocode.epubtomp3.flutter_app.verification')
   ADB_PORT = ENV.fetch('ANDROID_ADB_SERVER_PORT', '5073')
   SERIALS = (ENV['DEVICE_FARM_SERIALS'] || '52008714b40355ad,192.168.0.130:46183').split(',')
+  # One physical device can have several adb names (USB serial and Wi-Fi address). Each group is
+  # a list of names of the same device; the farm addresses a device by whichever name is attached.
+  ALIAS_GROUPS = (ENV['DEVICE_FARM_ALIASES'] || '52008714b40355ad=192.168.0.178:5555')
+                 .split(',').map { |group| group.split('=') }.freeze
   STATE = ENV.fetch('DEVICE_FARM_STATE', File.join(ENV.fetch('XDG_CACHE_HOME', File.join(Dir.home, '.cache')), 'epub2mp3-device-farm'))
   LOCK_PATH = ENV.fetch('DEVICE_FARM_LOCK', '/tmp/epub2mp3.adb.lock')
   WANTED_PATH = "#{LOCK_PATH}.manual-wanted"
@@ -38,9 +44,13 @@ module DeviceFarm
   FLUTTER_APP = File.join(ROOT, 'flutter_app')
   SUITE_TARGET = 'integration_test/farm_suite_test.dart'
   FORBIDDEN = [
-    /\buninstall\b/, /\bpm\s+clear\b/, /\bpm\s+uninstall\b/, /\brm\s+-[a-z]*r/, /\bwipe\b/, /\bfactory/i,
+    /\buninstall\b/, /\bpm\s+clear\b/, /\bpm\s+uninstall\b/, /\brm\b/, /\bmv\b/, /\brmdir\b/, /\bunlink\b/, /\bwipe\b/, /\bfactory/i,
     /\bsettings\s+put\s+(?!global verifier_verify_adb_installs)/, /\bcmd\s+package\s+uninstall/
   ].freeze
+
+  # The owner's personal files and the media player: only read-only commands may mention them.
+  PERSONAL = %r{/(?:sdcard|storage/emulated/0|storage/self/primary)/(?:Music|Download|Movies|DCIM|Pictures|Documents)|org\.videolan\.vlc}i
+  READ_ONLY_VERBS = %w[ls stat du cat find wc pull].freeze
 
   class Forbidden < StandardError; end
 
@@ -48,7 +58,45 @@ module DeviceFarm
   def self.safe!(command)
     text = Array(command).join(' ')
     FORBIDDEN.each { |pattern| raise Forbidden, "refused (destructive): #{text}" if text.match?(pattern) }
+    raise Forbidden, "refused (personal files or media player): #{text}" if text.match?(PERSONAL) && !read_only?(command)
     command
+  end
+
+  def self.read_only?(command)
+    words = Array(command).join(' ').split
+    words.shift if words.first == 'shell'
+    verb = words.first.to_s
+    READ_ONLY_VERBS.include?(verb) || (verb == 'pm' && words[1] == 'list') || verb == 'dumpsys'
+  end
+
+  # The names under which one device may be attached, the given one first.
+  def self.aliases(serial)
+    group = ALIAS_GROUPS.find { |names| names.include?(serial) }
+    group ? [serial, *(group - [serial])] : [serial]
+  end
+
+  # The first name of the device that `adb devices` lists as ready; the logical name when none is.
+  def self.pick_alias(serial, listing)
+    ready = listing.lines.filter_map do |line|
+      name, state = line.split
+      name if state == 'device'
+    end
+    aliases(serial).find { |name| ready.include?(name) } || serial
+  end
+
+  # USB serial or Wi-Fi address, whichever is attached; reconnects a dropped Wi-Fi name first.
+  def self.resolve(serial)
+    names = aliases(serial)
+    return serial if names.size == 1
+    listing, = Open3.capture2e(env, 'adb', 'devices')
+    chosen = pick_alias(serial, listing)
+    return chosen if listing.lines.any? { |line| line.split.first == chosen && line.split[1] == 'device' }
+    names.select { |name| name.include?(':') }.each do |address|
+      Open3.capture2e(env, 'adb', 'connect', address)
+    end
+    pick_alias(serial, Open3.capture2e(env, 'adb', 'devices').first)
+  rescue StandardError
+    serial
   end
 
   def self.env
@@ -60,7 +108,7 @@ module DeviceFarm
     out = +''
     status = nil
     Timeout.timeout(timeout) do
-      out, status = Open3.capture2e(env, 'adb', '-s', serial, *args)
+      out, status = Open3.capture2e(env, 'adb', '-s', resolve(serial), *args)
     end
     [out, status.success?]
   rescue Timeout::Error
