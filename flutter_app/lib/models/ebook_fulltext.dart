@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'fallback_chapter_name.dart';
 
 part 'ebook_fulltext.freezed.dart';
 part 'ebook_fulltext.g.dart';
@@ -63,9 +64,9 @@ abstract class FulltextChapter with _$FulltextChapter {
   String get displayTitle {
     final candidate = name?.trim();
     if (candidate == null || candidate.isEmpty || _looksLikeMimeType(candidate)) {
-      return 'Chapter $index';
+      return FallbackChapterName.of(index);
     }
-    return cleanTitle(candidate);
+    return FallbackChapterName.localizedGenerated(candidate) ?? cleanTitle(candidate);
   }
 
   static bool _looksLikeMimeType(String value) {

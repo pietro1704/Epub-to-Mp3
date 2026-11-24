@@ -197,6 +197,8 @@
   "remoteButtonModeDescription": "What the buttons of your car, headphones and lock screen do.",
   "remoteButtonModeChapter": "Chapter",
   "remoteButtonModeSeconds": "Skip seconds",
+  "fallbackChapterName": "Chapter {number}",
+  "@fallbackChapterName": {"placeholders": {"number": {"type": "int"}}},
   "ttsShowLowQuality": "Show low-quality models",
   "ttsManualModelUnavailable": "Could not prepare this narration model.",
   "readerNarrationModel": "Narration model",

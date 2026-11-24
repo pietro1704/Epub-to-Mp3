@@ -535,6 +535,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get remoteButtonModeSeconds => 'Pular segundos';
 
   @override
+  String fallbackChapterName(int number) {
+    return 'Capítulo $number';
+  }
+
+  @override
   String get ttsShowLowQuality => 'Mostrar qualidade baixa';
 
   @override

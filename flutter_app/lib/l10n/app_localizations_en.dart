@@ -534,6 +534,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get remoteButtonModeSeconds => 'Skip seconds';
 
   @override
+  String fallbackChapterName(int number) {
+    return 'Chapter $number';
+  }
+
+  @override
   String get ttsShowLowQuality => 'Show low-quality models';
 
   @override
