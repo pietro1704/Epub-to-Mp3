@@ -46,7 +46,9 @@ enum LanguageModelPlayback {
                     return snapshot.entries.filter { $0.installation.state == .installed }.map(\.identity.modelID)
                 },
                 systemVoiceLanguages: { Array(ModelsByLanguageModel.installedSystemVoiceLanguages()) },
-                profileLanguages: { ReaderModelSwitch.profileLanguages(of: $0) })
+                profileLanguages: { ReaderModelSwitch.profileLanguages(of: $0) },
+                bookAnalysis: { await ReaderModelSwitch.analysis(of: $0, library: library) },
+                userLanguage: { ReaderModelSwitch.correctedLanguage(of: $0) })
         }
     }
 
@@ -82,9 +84,15 @@ enum LanguageModelPlayback {
         }
     }
 
-    /// The language the model is resolved for. (First step of the fix: still the analysis tag only.)
+    /// The language the model is resolved for: the user's correction, else the analysis' primary language
+    /// (`BookLanguageAnalysis.resolvedLanguage`). A caller that only knows a tag keeps using `bookLanguage`.
     static func resolvedLanguage(of book: BookEntity, _ dependencies: Dependencies) async -> String? {
-        await dependencies.bookLanguage(book)
+        let correction = dependencies.userLanguage(book)
+        if let analysis = await dependencies.bookAnalysis(book) {
+            return analysis.resolvedLanguage(userCorrection: correction)
+        }
+        if let correction, !correction.isEmpty { return correction }
+        return await dependencies.bookLanguage(book)
     }
 
     /// Languages of the book's profile, other than its main one, that have no usable voice. A warning before playing,
