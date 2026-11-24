@@ -51,4 +51,11 @@ jobs:
           final class T: XCTestCase { func testOK() { XCTAssertTrue(true) } }' | sed 's/^          //' > Tests/T.swift
           xcodegen generate
           echo "== tiny"
+          xcrun simctl list devices available | head -12
+          sleep 30
           xcodebuild -project Tiny.xcodeproj -scheme Tiny -showdestinations 2>&1 | grep -E "platform:iOS Sim|error" | cut -c1-140
+          echo "== tiny test by name"
+          xcodebuild test -project Tiny.xcodeproj -scheme Tiny -destination "platform=iOS Simulator,name=iPhone 16,OS=18.5" CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "Executed|TEST (SUCC|FAIL)|error|Unable|platform:iOS Sim" | cut -c1-160 | head -12
+          echo "== tiny test by id"
+          udid=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"]; puts d["com.apple.CoreSimulator.SimRuntime.iOS-18-5"].find{|x|x["name"]=="iPhone 16"}["udid"]')
+          xcodebuild test -project Tiny.xcodeproj -scheme Tiny -destination "id=$udid" CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "Executed|TEST (SUCC|FAIL)|error|Unable|platform:iOS Sim" | cut -c1-160 | head -12
