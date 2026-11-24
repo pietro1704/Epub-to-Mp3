@@ -3,7 +3,8 @@ import '../features/settings/local_audio_storage_screen.dart';
 import '../models/tts_preferences.dart';
 import '../models/tts_catalog.dart';
 import '../models/tts_session_selection.dart';
-import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
+import '../views/reader_narration_menu.dart'
+    show installedNarrationModelIdsProvider;
 import 'models_screen.dart';
 import 'reading_preferences_screen.dart';
 import '../services/conversion/embedded_converter.dart';
@@ -88,6 +89,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: Text(t.autoScrollDesc, style: tt.bodySmall),
                   value: settings.readerAutoScroll,
                   onChanged: (v) => notifier.setReaderAutoScroll(v),
+                ),
+                const Divider(height: 1, indent: 56),
+
+                // Footnotes are read inline by default (shared Rust narration).
+                SwitchListTile(
+                  key: const ValueKey('tts-footnote-narration'),
+                  secondary: Icon(
+                    Icons.notes_outlined,
+                    color: cs.onSurfaceVariant,
+                  ),
+                  title: Text(t.ttsFootnoteNarration),
+                  subtitle: Text(
+                    t.ttsFootnoteNarrationDescription,
+                    style: tt.bodySmall,
+                  ),
+                  value:
+                      settings.ttsPreferences.footnoteNarration ==
+                      FootnoteNarration.inline,
+                  onChanged: (value) => notifier.setTtsPreferences(
+                    settings.ttsPreferences.withFootnoteNarration(
+                      value ? FootnoteNarration.inline : FootnoteNarration.skip,
+                    ),
+                  ),
                 ),
               ],
             ),

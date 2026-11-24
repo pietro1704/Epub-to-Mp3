@@ -922,6 +922,18 @@ abstract class AppLocalizations {
   /// **'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.'**
   String get ttsAutomaticSystemFallbackDescription;
 
+  /// No description provided for @ttsFootnoteNarration.
+  ///
+  /// In en, this message translates to:
+  /// **'Read footnotes in the text'**
+  String get ttsFootnoteNarration;
+
+  /// No description provided for @ttsFootnoteNarrationDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Each note is read where it is referenced, between \"Footnote N\" markers. Turn off to skip the notes.'**
+  String get ttsFootnoteNarrationDescription;
+
   /// No description provided for @ttsEngineSystem.
   ///
   /// In en, this message translates to:

@@ -455,6 +455,13 @@ class AppLocalizationsPt extends AppLocalizations {
       'Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.';
 
   @override
+  String get ttsFootnoteNarration => 'Ler notas de rodapé no texto';
+
+  @override
+  String get ttsFootnoteNarrationDescription =>
+      'Cada nota é lida onde é citada, entre os avisos \"Início/Fim da nota de rodapé N\". Desative para pular as notas.';
+
+  @override
   String get ttsEngineSystem => 'Voz do sistema';
 
   @override

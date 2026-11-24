@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'tts_session_selection.dart';
 
 bool isLowQualityPiperModel(String engine, String? modelId) {
@@ -34,7 +35,11 @@ class TtsSelection {
   }
 
   bool representsSameRequest(TtsSelection other) {
-    if (engine != other.engine || modelId != other.modelId || voice != other.voice) { return false; }
+    if (engine != other.engine ||
+        modelId != other.modelId ||
+        voice != other.voice) {
+      return false;
+    }
     final first = session;
     final second = other.session;
     if ((manualModel || other.manualModel) &&
@@ -43,12 +48,21 @@ class TtsSelection {
         first?.modelRevision != second?.modelRevision) {
       return false;
     }
-    if (first != null && second != null && first.runtime != second.runtime) { return false; }
+    if (first != null && second != null && first.runtime != second.runtime) {
+      return false;
+    }
     final options = first?.options ?? const <String, String>{};
     final otherOptions = second?.options ?? const <String, String>{};
-    return options.length == otherOptions.length && options.entries.every((entry) => otherOptions[entry.key] == entry.value);
+    return options.length == otherOptions.length &&
+        options.entries.every(
+          (entry) => otherOptions[entry.key] == entry.value,
+        );
   }
-  static const automaticPiper = TtsSelection(engine: 'piper', modelId: 'piper-auto');
+
+  static const automaticPiper = TtsSelection(
+    engine: 'piper',
+    modelId: 'piper-auto',
+  );
   static const faber = TtsSelection(
     engine: 'piper',
     modelId: 'pt_BR-faber-medium',
@@ -75,10 +89,18 @@ class TtsSelection {
     engine: json['engine'] as String,
     modelId: json['model_id'] as String?,
     voice: json['voice'] as String?,
-    session: json['session'] == null ? null : TtsSessionSelection.fromJson(Map<String, dynamic>.from(json['session'] as Map)),
+    session: json['session'] == null
+        ? null
+        : TtsSessionSelection.fromJson(
+            Map<String, dynamic>.from(json['session'] as Map),
+          ),
     manualModel: json['manual_model'] == true,
   );
 }
+
+/// How the narration treats footnotes (decided and applied by the shared Rust core).
+/// `inline` reads each note at its reference; `skip` leaves the notes out.
+enum FootnoteNarration { inline, skip }
 
 class TtsPreferences {
   /// Use supported app choices without rewriting a saved preference or job.
@@ -96,15 +118,29 @@ class TtsPreferences {
       secondary: secondaryIsLow ? null : savedSecondary,
       allowOnlineFallback: allowOnlineFallback,
       policyVersion: policyVersion,
+      footnoteNarration: footnoteNarration,
     );
   }
 
   TtsPreferences withPrimary(TtsSelection selection) => TtsPreferences(
     primary: selection,
-    secondary: secondary?.representsSameRequest(selection) == true ? null : secondary,
+    secondary: secondary?.representsSameRequest(selection) == true
+        ? null
+        : secondary,
     allowOnlineFallback: allowOnlineFallback,
     policyVersion: policyVersion,
+    footnoteNarration: footnoteNarration,
   );
+
+  TtsPreferences withFootnoteNarration(FootnoteNarration value) =>
+      TtsPreferences(
+        primary: primary,
+        secondary: secondary,
+        allowOnlineFallback: allowOnlineFallback,
+        policyVersion: policyVersion,
+        footnoteNarration: value,
+      );
+
   /// Policy 2 continues with an installed system voice when the chosen voices
   /// fail; policy 3 continues natively but only with the chosen voices.
   bool get allowAutomaticSystemFallback => policyVersion == 2;
@@ -114,6 +150,7 @@ class TtsPreferences {
     secondary: secondary,
     allowOnlineFallback: allowOnlineFallback,
     policyVersion: allowed ? 2 : 3,
+    footnoteNarration: footnoteNarration,
   );
 
   const TtsPreferences({
@@ -121,21 +158,27 @@ class TtsPreferences {
     this.secondary,
     this.allowOnlineFallback = false,
     this.policyVersion = 1,
+    this.footnoteNarration = FootnoteNarration.inline,
   });
+
   /// New app preferences only; legacy jobs retain their captured strict policy.
   const TtsPreferences.appDefaults({this.primary = TtsSelection.automaticPiper})
     : secondary = TtsSelection.system,
       allowOnlineFallback = false,
-      policyVersion = 2;
+      policyVersion = 2,
+      footnoteNarration = FootnoteNarration.inline;
   final TtsSelection primary;
   final TtsSelection? secondary;
   final bool allowOnlineFallback;
   final int policyVersion;
+  final FootnoteNarration footnoteNarration;
   Map<String, dynamic> toJson({bool includeManualModel = true}) => {
     'primary': primary.toJson(includeManualModel: includeManualModel),
     'secondary': secondary?.toJson(includeManualModel: includeManualModel),
     'allow_online_fallback': allowOnlineFallback,
     if (policyVersion != 1) 'policy_version': policyVersion,
+    if (footnoteNarration != FootnoteNarration.inline)
+      'footnote_narration': footnoteNarration.name,
   };
   factory TtsPreferences.fromJson(Map<String, dynamic> json) => TtsPreferences(
     primary: TtsSelection.fromJson(
@@ -148,9 +191,13 @@ class TtsPreferences {
           ),
     allowOnlineFallback: json['allow_online_fallback'] == true,
     policyVersion: json['policy_version'] as int? ?? 1,
+    footnoteNarration: json['footnote_narration'] == 'skip'
+        ? FootnoteNarration.skip
+        : FootnoteNarration.inline,
   );
   String optionsJson({String? modelsRoot, String? language}) => jsonEncode({
-    if (primary.session != null || secondary?.session != null) 'contract_version': 2,
+    if (primary.session != null || secondary?.session != null)
+      'contract_version': 2,
     'tts_preferences': toJson(includeManualModel: false),
     'models_root': ?modelsRoot,
     'language': ?language,

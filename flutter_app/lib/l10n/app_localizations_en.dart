@@ -454,6 +454,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.';
 
   @override
+  String get ttsFootnoteNarration => 'Read footnotes in the text';
+
+  @override
+  String get ttsFootnoteNarrationDescription =>
+      'Each note is read where it is referenced, between \"Footnote N\" markers. Turn off to skip the notes.';
+
+  @override
   String get ttsEngineSystem => 'System voice';
 
   @override
