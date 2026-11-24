@@ -2,6 +2,7 @@ name: iOS sim probe
 on:
   push:
     branches: [ci/ios-simulator-tests]
+    paths: [".github/workflows/ios-sim-probe.yml"]
 permissions:
   contents: read
 jobs:
@@ -17,10 +18,18 @@ jobs:
       - run: brew install xcodegen
       - working-directory: ios/EpubToMp3
         run: |
-          uname -m; xcodebuild -version; xcodegen generate
-          xcrun simctl list devices available | head -30
-          for s in EpubToMp3 EpubToMp3-UnitTests; do echo "== $s"; xcodebuild -project EpubToMp3.xcodeproj -scheme $s -showdestinations 2>&1 | tail -15; done
-          echo "== arch override"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations ARCHS=arm64 2>&1 | tail -8
-          echo "== showBuildSettings"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -sdk iphonesimulator -showBuildSettings 2>&1 | grep -E "NATIVE_ARCH_ACTUAL|ARCHS |ONLY_ACTIVE|IPHONEOS_DEPLOYMENT|SUPPORTED_PLATFORMS" | sort | uniq | head
+          xcodegen generate
+          udid=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"]; puts d["com.apple.CoreSimulator.SimRuntime.iOS-18-5"].find{|x|x["name"]=="iPhone 16"}["udid"]')
+          echo "udid $udid"
+          xcrun simctl list runtimes -v | grep -i "ios 18"
+          xcrun simctl boot $udid; xcrun simctl bootstatus $udid -b | tail -2
+          echo "== A: explicit id dry-run"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination "platform=iOS Simulator,id=$udid" -showBuildSettings 2>&1 | tail -3
+          echo "== B: build-for-testing id"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -destination "platform=iOS Simulator,id=$udid" -dry-run test 2>&1 | tail -12
+          echo "== C: after boot showdestinations"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim|Ineligible|error|warning" | head
+          echo "== D: sdk flag"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -sdk iphonesimulator -showdestinations 2>&1 | grep -E "platform:iOS Sim" | head -4
+          echo "== E: xcodebuild -list"
+          xcodebuild -project EpubToMp3.xcodeproj -list 2>&1 | head -30
