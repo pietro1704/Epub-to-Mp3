@@ -22,30 +22,36 @@ final class HomeWidgetGalleryUITests: XCTestCase {
 
         let icon = springboard.icons.matching(NSPredicate(format: "label CONTAINS[c] %@", "EpubToMp3")).firstMatch
         // Measured 2026-11-24 on the 16e: after Home the icon sits on Home Screen page 2 and is visible, but
-        // `isHittable` is false until the Home animation settles; swiping before that walked past it into the App
-        // Library. Wait first, then look on the neighbouring pages (back first, then forward).
-        func isHittableSoon(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool {
+        // `isHittable` is false until the Home animation settles, and asking it for an icon on another page RECORDS a
+        // failure ("Activation point invalid"). So decide by the icon's frame on the screen, never by `isHittable`:
+        // wait for the animation, then look on the neighbouring pages (back first, then forward).
+        func isOnScreen(_ element: XCUIElement) -> Bool {
+            guard element.exists else { return false }
+            let frame = element.frame
+            return !frame.isEmpty && springboard.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+        }
+        func onScreenSoon(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool {
             let end = Date().addingTimeInterval(timeout)
             while Date() < end {
-                if element.exists && element.isHittable { return true }
+                if isOnScreen(element) { return true }
                 usleep(250_000)
             }
             return false
         }
-        if !isHittableSoon(icon) {
-            for _ in 0..<2 where !icon.isHittable { springboard.swipeRight(); _ = isHittableSoon(icon, timeout: 2) }
+        if !onScreenSoon(icon) {
+            for _ in 0..<2 where !isOnScreen(icon) { springboard.swipeRight(); _ = onScreenSoon(icon, timeout: 2) }
         }
-        if !icon.isHittable {
-            for _ in 0..<4 where !icon.isHittable { springboard.swipeLeft(); _ = isHittableSoon(icon, timeout: 2) }
+        if !isOnScreen(icon) {
+            for _ in 0..<4 where !isOnScreen(icon) { springboard.swipeLeft(); _ = onScreenSoon(icon, timeout: 2) }
         }
-        // Diagnostics for a supervised run: which icons SpringBoard really exposes (page, label, hittable).
-        let report = springboard.icons.allElementsBoundByIndex.map { "\($0.label) hittable=\($0.isHittable)" }.joined(separator: "\n")
+        // Diagnostics for a supervised run: which icons SpringBoard really exposes (page, label, frame).
+        let report = springboard.icons.allElementsBoundByIndex.map { "\($0.label) frame=\($0.frame)" }.joined(separator: "\n")
         print("SpringBoard icons:\n\(report)")
         let attachment = XCTAttachment(string: report)
         attachment.name = "springboard-icon-labels"
         attachment.lifetime = .keepAlways
         add(attachment)
-        XCTAssertTrue(icon.waitForExistence(timeout: 4) && icon.isHittable, "The app icon must be on the Home Screen")
+        XCTAssertTrue(isOnScreen(icon), "The app icon must be on the Home Screen")
         icon.press(forDuration: 1.2)
 
         let edit = element(in: springboard, labels: ["Edit Home Screen", "Editar Tela de Início", "Editar pantalla de inicio"])
