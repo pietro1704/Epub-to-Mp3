@@ -80,8 +80,9 @@ final class FullPlayerFittingTests: XCTestCase {
             XCTAssertTrue(host.bounds.insetBy(dx: -0.5, dy: -0.5).contains(frame), "Outside viewport: \(view)", file: file, line: line)
             XCTAssertFalse(view.hasAmbiguousLayout, "Ambiguous layout: \(view)", file: file, line: line)
             if view is UIButton || view === content.slider || view === content.airPlayContainer {
-                XCTAssertGreaterThanOrEqual(frame.height, 44, file: file, line: line)
-                XCTAssertGreaterThanOrEqual(frame.width, 44, file: file, line: line)
+                // Auto Layout leaves float residue (43.99999) on a 44 pt target.
+                XCTAssertGreaterThanOrEqual(frame.height, 44 - 0.01, file: file, line: line)
+                XCTAssertGreaterThanOrEqual(frame.width, 44 - 0.01, file: file, line: line)
             }
         }
         if !content.coverContainer.isHidden {

@@ -174,10 +174,13 @@ final class IOSMainReaderControllerTests: XCTestCase {
         XCTAssertFalse(main.isLoadingBookContent)
         XCTAssertGreaterThan(viewport.contentSize.height, viewport.bounds.height + 600)
         let navigation = try XCTUnwrap(main.view.subviews.compactMap { $0 as? UINavigationBar }.first)
-        let shownTop = child.view.frame.minY
-        XCTAssertGreaterThan(shownTop, 0)
-        let raw = CGPoint(x: 0, y: 257.375)
-        viewport.setContentOffset(raw, animated: false)
+        // The scrolling layout overlays the bar (ADR 2026-11-23 reader-paginated-bar-insets): the reader's top stays
+        // at the root's top whether the chrome is shown or hidden, so showing it never shifts the text.
+        XCTAssertEqual(child.view.frame.minY, 0, accuracy: 0.5)
+        viewport.setContentOffset(CGPoint(x: 0, y: 257.375), animated: false)
+        // UIKit snaps the offset to the screen's pixel grid (1/3 pt at 3x), so the round trip
+        // must restore what the viewport actually stored, not the unsnapped literal.
+        let raw = viewport.contentOffset
         for hidden in [true, false, true, false] {
             main.captureReaderViewportTransition()
             XCTAssertTrue(main.applyReaderPresentation(.init(isReaderActive: true, isLoading: false, isChromeHidden: hidden)))
@@ -186,8 +189,8 @@ final class IOSMainReaderControllerTests: XCTestCase {
                 ($0.firstItem as? UIView) === child.view && $0.firstAttribute == .top && $0.isActive
             }
             XCTAssertEqual(topConstraints.count, 1)
-            let expectedAnchor: UIView = hidden ? main.view : navigation
-            XCTAssertTrue((topConstraints.first?.secondItem as? UIView) === expectedAnchor)
+            XCTAssertTrue((topConstraints.first?.secondItem as? UIView) === main.view,
+                          "Scrolling layout keeps the reader anchored to the root for both chrome states")
             main.view.setNeedsLayout()
             main.view.layoutIfNeeded()
             main.completeReaderChromeLayoutTransition()
@@ -195,7 +198,7 @@ final class IOSMainReaderControllerTests: XCTestCase {
             await withCheckedContinuation { continuation in
                 DispatchQueue.main.async { continuation.resume() }
             }
-            XCTAssertEqual(child.view.frame.minY, hidden ? 0 : shownTop, accuracy: 0.5)
+            XCTAssertEqual(child.view.frame.minY, 0, accuracy: 0.5)
             XCTAssertEqual(navigation.isHidden, hidden)
             XCTAssertEqual(viewport.contentOffset.y, raw.y, accuracy: 0.01)
             XCTAssertFalse(main.applyReaderPresentation(.init(isReaderActive: true, isLoading: false, isChromeHidden: hidden)),
