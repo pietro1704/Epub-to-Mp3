@@ -310,6 +310,23 @@ class AppLocalizationsEs extends AppLocalizations {
   String get libraryColumns => 'Columnas';
 
   @override
+  String get bookLanguageTitle => 'Idioma del libro';
+
+  @override
+  String get bookLanguageAutomatic => 'Detección automática';
+
+  @override
+  String get bookLanguageHelp =>
+      'Esta elección vale para este libro o fragmento. Elige Detección automática para quitar tu corrección.';
+
+  @override
+  String get bookLanguageInconclusive =>
+      'No se pudo identificar el idioma tras analizar otros fragmentos. Elige el idioma de este libro o fragmento.';
+
+  @override
+  String get bookLanguageMenu => 'Idioma del libro';
+
+  @override
   String get sortLibrary => 'Ordenar biblioteca';
 
   @override

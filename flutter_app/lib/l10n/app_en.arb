@@ -118,6 +118,11 @@
   "searchResultsCapped": "Showing first 100 results",
 
   "libraryColumns": "Columns",
+  "bookLanguageTitle": "Book language",
+  "bookLanguageAutomatic": "Automatic detection",
+  "bookLanguageHelp": "This choice applies to this book or passage. Choose Automatic detection to remove your correction.",
+  "bookLanguageInconclusive": "The language could not be identified after analyzing additional passages. Choose the language for this book or passage.",
+  "bookLanguageMenu": "Book language",
   "sortLibrary": "Sort library",
   "playbackPosition": "Playback position",
   "playbackSpeed": "Playback speed",
