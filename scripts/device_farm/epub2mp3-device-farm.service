@@ -1,0 +1,18 @@
+# systemd --user unit for the device farm loop:
+#   cp scripts/device_farm/epub2mp3-device-farm.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now epub2mp3-device-farm
+# The repository path is the checkout the loop runs from; ANDROID_HOME is the SDK the build uses.
+[Unit]
+Description=EpubToMp3 Android device test farm (A8 + tablet)
+
+[Service]
+WorkingDirectory=%h/Developer/Epub-to-Mp3
+Environment=ANDROID_ADB_SERVER_PORT=5073
+Environment=ANDROID_HOME=%h/.local/share/mise/installs/android-sdk/11.0
+ExecStart=/usr/bin/env mise exec -- ruby scripts/device_farm/device_farm.rb loop
+Restart=on-failure
+RestartSec=60
+Nice=10
+
+[Install]
+WantedBy=default.target
