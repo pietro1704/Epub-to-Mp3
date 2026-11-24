@@ -328,7 +328,7 @@ void main() {
       await player.raw.load();
       player.sourceChapterIndices = [4, 9, 11];
       final preparations = <int>[];
-      player.onPrepareSourceChapter = (chapter) async {
+      player.onPrepareSourceChapter = (chapter, {required seekable}) async {
         preparations.add(chapter);
         final count = entries.indexWhere((entry) => entry.index == chapter) + 1;
         await player.setQueue(entries.take(count).toList());

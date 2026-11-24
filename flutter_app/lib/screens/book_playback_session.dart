@@ -26,7 +26,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   final _platformVoiceSession = PlatformVoiceNoticeSession();
   final _playbackStartup = ReaderPlaybackStartup();
   RustPlaybackConversionService? _activeConversionService;
-  (int, Completer<bool>)? _chapterPreparation;
+  final _chapterPreparation = ChapterPreparation();
 
   void _showConversionError(Object error) {
     if (!mounted) return;
@@ -224,23 +224,21 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       for (var index = 0; index < source.length; index++)
         if (source[index].text.trim().isNotEmpty) index,
     ];
-    player.onPrepareSourceChapter = (target) {
+    player.onPrepareSourceChapter = (target, {required seekable}) {
       if (!mounted || player.currentBookId != widget.bookId) {
         return Future.value(false);
       }
-      _finishChapterPreparation(false);
       _playbackStartup.invalidate();
-      final ready = Completer<bool>();
-      _chapterPreparation = (target, ready);
+      final ready = _chapterPreparation.start(target, seekable: seekable);
       unawaited(
         _startLocalConversion(playbackChapterIndex: target, prepareOnly: true)
             .whenComplete(() {
-              if (identical(_chapterPreparation?.$2, ready)) {
-                _finishChapterPreparation(false);
+              if (_chapterPreparation.target == target) {
+                _chapterPreparation.finish(false);
               }
             }),
       );
-      return ready.future;
+      return ready;
     };
     // This book's own narration speed (Reading preferences) applies while it plays.
     unawaited(player.setSpeed(ref.read(readerSettingsProvider(widget.bookId)).audioRate));
@@ -299,24 +297,11 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     }
   }
 
-  void _chapterQueueUpdated() {
-    final target = _chapterPreparation?.$1;
-    if (target != null &&
-        _playableChapters.any(
-          (chapter) =>
-              chapter.index == target &&
-              chapter.status == 'completed' &&
-              chapter.downloadUrl != null,
-        )) {
-      _finishChapterPreparation(true);
-    }
-  }
+  void _chapterQueueUpdated() =>
+      _chapterPreparation.queueUpdated(_playableChapters);
 
-  void _finishChapterPreparation(bool ready) {
-    final preparation = _chapterPreparation;
-    _chapterPreparation = null;
-    preparation?.$2.complete(ready);
-  }
+  void _finishChapterPreparation(bool ready) =>
+      _chapterPreparation.finish(ready);
 
   void _startResumeListener(AudioPlayerInterface player) {
     _positionSub?.cancel();
@@ -329,7 +314,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         .listen((chapter) {
           // The decoder can report its old item while we append a new one.
           // Keep the explicitly requested conversion inside the window.
-          if (_chapterPreparation == null) _publishPlaybackWindow(chapter);
+          if (_chapterPreparation.target == null) _publishPlaybackWindow(chapter);
         });
     _positionSub = player.position.listen((_) {
       final index = player.currentIndexValue;

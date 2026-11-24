@@ -186,7 +186,11 @@ mixin _AudioPlayerNavigation on AudioPlayerInterface {
         final source = sourceIndices[next];
         var nextIndex = _queuedIndex(source);
         if (nextIndex == null) {
-          if (await onPrepareSourceChapter?.call(source) != true ||
+          if (await onPrepareSourceChapter?.call(
+                    source,
+                    seekable: offset != null,
+                  ) !=
+                  true ||
               !isCurrent()) {
             return;
           }
