@@ -127,4 +127,10 @@ class CiAptInstallTest < Minitest::Test
       assert_operator step.fetch('timeout-minutes'), :>=, 8, file
     end
   end
+
+  def test_release_desktop_installs_through_the_retrying_helper
+    text = File.read(File.join(ROOT, '.github/workflows/release-desktop.yml'))
+    refute_includes text, 'sudo apt-get'
+    assert_equal 2, text.scan('scripts/ci_apt_install.sh').size
+  end
 end
