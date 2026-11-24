@@ -3,9 +3,16 @@ name: Post-merge batch
 # Post-merge validation no longer runs once per merge (it kept every hosted macOS runner
 # busy and starved the pull request gates). This workflow starts one validation of the
 # current master head when it has none and no pull request check is waiting.
+# GitHub throttles `schedule` on this repository to a few runs per day (observed: one run in
+# 8 hours despite a 20-minute cron), which left master unvalidated. The decision is cheap and
+# idempotent, so it also runs when pull request CI or the merge workflow finishes, the events
+# that actually fire often; concurrency and the active-run check keep it to one validation.
 on:
   schedule:
     - cron: '*/20 * * * *'
+  workflow_run:
+    workflows: [CI, Merge eligible pull requests]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -29,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'schedule' && 'master' || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'master' }}
           persist-credentials: false
       - name: Decide and dispatch
         env:
