@@ -5,10 +5,10 @@ import XCTest
 @testable import EpubToMp3
 
 final class PlaybackPlanTests: XCTestCase {
-    private func snapshot(_ chapters: [JobSnapshot.Chapter], state: String = "running") -> JobSnapshot {
+    private func snapshot(_ chapters: [JobSnapshot.Chapter], state: String = "running", total: Int? = nil) -> JobSnapshot {
         JobSnapshot(jobId: "book", state: state, bookTitle: "Fixture", bookAuthor: nil,
                     coverUrl: nil, coverMimeType: nil, engine: nil, voice: nil, language: "en",
-                    progressPercent: nil, chaptersTotal: chapters.count, chaptersCompleted: nil,
+                    progressPercent: nil, chaptersTotal: total ?? chapters.count, chaptersCompleted: nil,
                     chapterProgress: chapters, outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
     }
     private func chapter(_ index: Int, url: URL? = nil) -> JobSnapshot.Chapter {
@@ -172,6 +172,60 @@ final class PlaybackPlanTests: XCTestCase {
             XCTAssertEqual(request.position, installedSuffix ? 0 : 150)
             XCTAssertEqual(request.navigationTarget, .chapterTime(installedSuffix ? 0 : 150))
         }
+    }
+
+    // CAR-REMOTE-CHAPTERS: a plain car head unit only sends next / previous track.
+
+    /// Streaming a book whose next chapter is not synthesized yet: it is not in `chapterProgress`, but "next" must still
+    /// request it instead of silently doing nothing (the car button seemed to hang).
+    @MainActor
+    func testNextRequestsTheChapterThatIsNotSynthesizedYet() {
+        let state = snapshot([chapter(0, url: URL(fileURLWithPath: "/0.wav")), chapter(1)], total: 3)
+        guard case .segment(let next) = PlaybackChapterQueue.navigation(direction: .forward,
+            snapshot: state, chapters: [], currentIndex: 1, position: 12, segmentMode: true, hasPlayer: true) else {
+            return XCTFail("Next must request chapter 2 even though it is not in the progress list yet")
+        }
+        XCTAssertEqual(next, 2)
+        guard case .none = PlaybackChapterQueue.navigation(direction: .forward,
+            snapshot: state, chapters: [], currentIndex: 2, position: 0, segmentMode: true, hasPlayer: true) else {
+            return XCTFail("The book's last chapter has no next")
+        }
+    }
+
+    /// The remote "previous" goes to the previous chapter from the middle of a chapter; the in-app button keeps
+    /// restarting the chapter first.
+    @MainActor
+    func testRemotePreviousFromMidChapterGoesToThePreviousChapter() {
+        let state = snapshot([chapter(0, url: URL(fileURLWithPath: "/0.wav")), chapter(1, url: URL(fileURLWithPath: "/1.wav")),
+                              chapter(2)], total: 3)
+        guard case .segment(let previous) = PlaybackChapterQueue.navigation(direction: .backward,
+            snapshot: state, chapters: [], currentIndex: 2, position: 40, segmentMode: true, hasPlayer: true,
+            restartsCurrentChapter: false) else {
+            return XCTFail("Remote previous from mid-chapter must land on the previous chapter")
+        }
+        XCTAssertEqual(previous, 1)
+        guard case .seekStart = PlaybackChapterQueue.navigation(direction: .backward,
+            snapshot: state, chapters: [], currentIndex: 2, position: 40, segmentMode: true, hasPlayer: true) else {
+            return XCTFail("The in-app previous button still restarts a chapter after three seconds")
+        }
+        guard case .seekStart = PlaybackChapterQueue.navigation(direction: .backward,
+            snapshot: state, chapters: [], currentIndex: 0, position: 40, segmentMode: true, hasPlayer: true,
+            restartsCurrentChapter: false) else {
+            return XCTFail("The first chapter has no previous: it restarts")
+        }
+    }
+
+    /// A streaming job that began at chapter 6 never started chapters 1-5, so they are missing from the progress
+    /// list; previous must still go back one chapter instead of reloading the same one.
+    @MainActor
+    func testPreviousReachesAnEarlierChapterTheJobNeverStarted() {
+        var state = snapshot([chapter(6, url: URL(fileURLWithPath: "/6.wav")), chapter(7)], total: 9)
+        state.chapterIndexBase = 1  // manifest indices are one-based: segment index = manifest index - 1
+        guard case .segment(let previous) = PlaybackChapterQueue.navigation(direction: .backward,
+            snapshot: state, chapters: [], currentIndex: 5, position: 1, segmentMode: true, hasPlayer: true) else {
+            return XCTFail("Previous must go to the chapter before the first one the job started")
+        }
+        XCTAssertEqual(previous, 4)
     }
 
     @MainActor

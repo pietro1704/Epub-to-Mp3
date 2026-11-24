@@ -319,7 +319,9 @@ final class AudioPlayer: ObservableObject {
 
     func nextChapter() { services.transport.navigateChapter(.forward) }
 
-    func previousChapter() { services.transport.navigateChapter(.backward) }
+    func previousChapter(restartsCurrentChapter: Bool = true) {
+        services.transport.navigateChapter(.backward, restartsCurrentChapter: restartsCurrentChapter)
+    }
 
     func setRate(_ rate: PlaybackRate) {
         services.transport.setRate(rate)

@@ -46,7 +46,7 @@ final class PlaybackServices {
         pause: { [weak authority] in authority?.pause() },
         toggle: { [weak authority] in authority?.togglePlayPause() },
         next: { [weak authority] in authority?.nextChapter() },
-        previous: { [weak authority] in authority?.previousChapter() },
+        previous: { [weak authority] in authority?.previousChapter(restartsCurrentChapter: false) },
         seek: { [weak authority] in authority?.seek(to: $0) },
         skip: { [weak authority] in authority?.skip(by: $0) },
         setRate: { [weak authority] in authority?.setRate($0) },
