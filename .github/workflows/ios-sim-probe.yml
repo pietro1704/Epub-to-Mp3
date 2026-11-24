@@ -7,10 +7,12 @@ permissions:
   contents: read
 jobs:
   probe:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -18,18 +20,11 @@ jobs:
       - run: brew install xcodegen
       - working-directory: ios/EpubToMp3
         run: |
+          sw_vers -productVersion; ls -d /Applications/Xcode*; xcode-select -p
           xcodegen generate
-          udid=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"]; puts d["com.apple.CoreSimulator.SimRuntime.iOS-18-5"].find{|x|x["name"]=="iPhone 16"}["udid"]')
-          echo "udid $udid"
-          xcrun simctl list runtimes -v | grep -i "ios 18"
-          xcrun simctl boot $udid; xcrun simctl bootstatus $udid -b | tail -2
-          echo "== A: explicit id dry-run"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination "platform=iOS Simulator,id=$udid" -showBuildSettings 2>&1 | tail -3
-          echo "== B: build-for-testing id"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -destination "platform=iOS Simulator,id=$udid" -dry-run test 2>&1 | tail -12
-          echo "== C: after boot showdestinations"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim|Ineligible|error|warning" | head
-          echo "== D: sdk flag"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -sdk iphonesimulator -showdestinations 2>&1 | grep -E "platform:iOS Sim" | head -4
-          echo "== E: xcodebuild -list"
-          xcodebuild -project EpubToMp3.xcodeproj -list 2>&1 | head -30
+          for x in /Applications/Xcode_*.app; do
+            case "$x" in *beta*|*Beta*|*16.[0-3]*|*15*) continue;; esac
+            echo "== $x"
+            DEVELOPER_DIR=$x/Contents/Developer xcodebuild -version | head -1
+            DEVELOPER_DIR=$x/Contents/Developer xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim"
+          done
