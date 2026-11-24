@@ -187,7 +187,13 @@ pub fn resolve(request: &ResolutionRequest) -> Resolution {
     };
     let mut reasons = Vec::new();
     let mut chosen = None;
-    if let Some(choice) = request.per_language_choices.get(&context.language) {
+    if let Some(voice) = &request.book_voice {
+        match context.usable(voice, true) {
+            Ok(()) => chosen = Some((voice.clone(), Source::BookVoice)),
+            Err(reason) => reasons.push(format!("book_voice:{reason}")),
+        }
+    }
+    if let (None, Some(choice)) = (&chosen, request.per_language_choices.get(&context.language)) {
         match context.usable(choice, true) {
             Ok(()) => chosen = Some((choice.clone(), Source::PerLanguage)),
             Err(reason) => reasons.push(format!("per_language_choice:{reason}")),

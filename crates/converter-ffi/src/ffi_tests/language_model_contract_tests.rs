@@ -63,6 +63,42 @@ fn language_model_resolution_round_trips_and_rejects_bad_requests() {
 }
 
 #[test]
+fn narration_plan_round_trips_and_rejects_bad_requests() {
+    unsafe {
+        let request = CString::new(
+            r#"{"schema_version":1,"platform":"Macos","installed_model_ids":["pt_BR-faber-medium"],
+                "book_voice":{"engine":"piper","model_id":"pt_BR-faber-medium"},
+                "profile":{"version":2,"detector":"whatlang-0.18/book-profile-v1","class":"monolingual","primary":"pt-BR",
+                "languages":[{"language":"pt-BR","chars":900,"fraction":1.0,"longest_section_chars":900}],
+                "incidental":["fr-FR"],"total_chars":900,"undetermined_chars":0}}"#,
+        )
+        .unwrap();
+        let text = converter_book_narration_plan_json_v1(request.as_ptr());
+        assert!(!text.is_null());
+        let value: serde_json::Value =
+            serde_json::from_str(CStr::from_ptr(text).to_str().unwrap()).unwrap();
+        converter_string_free(text);
+        assert_eq!(value["decision"]["language"], "pt-BR");
+        assert_eq!(value["main"]["source"], "book_voice");
+        assert_eq!(value["main_missing"], false);
+        assert_eq!(value["needs_language_question"], false);
+
+        for (body, expected) in [
+            (r#"{"schema_version":2,"platform":"Macos"}"#, "unsupported narration plan request schema"),
+            (r#"not json"#, "expected"),
+        ] {
+            let body = CString::new(body).unwrap();
+            assert!(converter_book_narration_plan_json_v1(body.as_ptr()).is_null());
+            let error = converter_last_error();
+            let message = CStr::from_ptr(error).to_str().unwrap().to_owned();
+            converter_string_free(error);
+            assert!(message.contains(expected), "{message}");
+        }
+        assert!(converter_book_narration_plan_json_v1(std::ptr::null()).is_null());
+    }
+}
+
+#[test]
 fn book_language_is_analyzed_from_a_file_before_any_job() {
     let portuguese = "O leitor abre o livro e acompanha a história. As personagens viajam por um país maravilhoso e descobrem uma pequena aldeia onde os amigos estão à sua espera. ".repeat(20);
     let book = fixture_chapters_with_text(3, &portuguese);

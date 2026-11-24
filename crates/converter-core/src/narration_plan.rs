@@ -81,19 +81,76 @@ pub fn plan(request: &PlanRequest) -> NarrationPlan {
         request.analysis.as_ref(),
         request.declared.as_deref(),
     );
-    let _ = (
-        resolve as fn(&ResolutionRequest) -> Resolution,
-        Status::Selected,
-    );
+    let Some(main_language) = decision.language.clone() else {
+        return NarrationPlan {
+            schema_version: SCHEMA_VERSION,
+            needs_language_question: true,
+            decision,
+            main: None,
+            language_voices: BTreeMap::new(),
+            main_missing: false,
+            notify_missing: Vec::new(),
+        };
+    };
+    let resolution_request = |language: &str, book_voice: Option<TtsSelection>| ResolutionRequest {
+        schema_version: crate::language_model_resolution::SCHEMA_VERSION,
+        book_language: language.to_owned(),
+        per_language_choices: request.per_language_choices.clone(),
+        book_voice,
+        primary: request.primary.clone(),
+        allow_online_fallback: request.allow_online_fallback,
+        allow_automatic_system_voice_fallback: request.allow_automatic_system_voice_fallback,
+        installed_model_ids: request.installed_model_ids.clone(),
+        system_voices: request.system_voices.clone(),
+        platform: request.platform,
+        android_api: request.android_api,
+    };
+    let main = resolve(&resolution_request(
+        &main_language,
+        request.book_voice.clone(),
+    ));
+    let main_base = base(&main_language);
+    let mut language_voices = BTreeMap::new();
+    let mut notify_missing = Vec::new();
+    // The listener's book voice reads the main language only: every other language of the profile has its own.
+    for share in request
+        .profile
+        .iter()
+        .flat_map(|profile| profile.languages.iter())
+    {
+        let language = base(&share.language);
+        if language == main_base {
+            continue;
+        }
+        let resolution = resolve(&resolution_request(&share.language, None));
+        match (resolution.status, resolution.selection) {
+            (Status::Selected | Status::SystemFallback, Some(selection)) => {
+                language_voices.insert(language, selection);
+            }
+            _ if share.role == LanguageRole::Significant => notify_missing.push(MissingNotice {
+                language,
+                role: share.role,
+            }),
+            _ => {}
+        }
+    }
     NarrationPlan {
         schema_version: SCHEMA_VERSION,
         needs_language_question: false,
+        main_missing: main.status == Status::MissingModel,
         decision,
-        main: None,
-        language_voices: BTreeMap::new(),
-        main_missing: false,
-        notify_missing: Vec::new(),
+        main: Some(main),
+        language_voices,
+        notify_missing,
     }
+}
+
+fn base(language: &str) -> String {
+    language
+        .split(['-', '_'])
+        .next()
+        .unwrap_or(language)
+        .to_ascii_lowercase()
 }
 
 #[cfg(test)]
@@ -283,7 +340,7 @@ mod tests {
     #[test]
     fn the_json_contract_is_snake_case_and_additive() {
         let request: PlanRequest = serde_json::from_str(
-            r#"{"schema_version":1,"platform":"macos","installed_model_ids":["pt_BR-faber-medium"],
+            r#"{"schema_version":1,"platform":"Macos","installed_model_ids":["pt_BR-faber-medium"],
                 "profile":{"version":2,"detector":"whatlang-0.18/book-profile-v1","class":"monolingual","primary":"pt-BR",
                 "languages":[{"language":"pt-BR","chars":900,"fraction":1.0,"longest_section_chars":900}],
                 "incidental":[],"total_chars":900,"undetermined_chars":0}}"#,
