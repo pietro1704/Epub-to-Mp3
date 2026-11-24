@@ -94,7 +94,9 @@ pub unsafe extern "C" fn converter_book_language_json_v1(path: *const c_char) ->
             let analysis = std::thread::Builder::new()
                 .name("converter-ffi-book-language".into())
                 .stack_size(8 * 1024 * 1024)
-                .spawn(move || converter_core::language::analyze_book_file(&path, &|| false))
+                .spawn(move || {
+                    converter_core::language::analyze_book_file_with_profile(&path, &|| false)
+                })
                 .map_err(|error| format!("Failed to start language analysis: {error}"))
                 .and_then(|handle| {
                     handle
@@ -102,12 +104,17 @@ pub unsafe extern "C" fn converter_book_language_json_v1(path: *const c_char) ->
                         .map_err(|_| "Book language analysis panicked".to_owned())?
                 });
             match analysis {
-                Ok(analysis) => {
+                Ok((analysis, profile)) => {
                     let mut value = match serde_json::to_value(&analysis) {
                         Ok(value) => value,
                         Err(error) => return fail(error.to_string()),
                     };
                     value["schema_version"] = json!(1);
+                    // Additive: the whole-book profile (class, languages with their shares).
+                    match serde_json::to_value(&profile) {
+                        Ok(profile) => value["profile"] = profile,
+                        Err(error) => return fail(error.to_string()),
+                    }
                     json_string(&value)
                 }
                 Err(error) => fail(error),

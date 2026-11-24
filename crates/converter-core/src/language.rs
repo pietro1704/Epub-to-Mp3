@@ -197,6 +197,20 @@ pub fn analyze_book_file(
     path: &std::path::Path,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<BookLanguageAnalysis, String> {
+    let book = read_supported_book(path, cancelled)?;
+    analyze_book(
+        book.chapters.iter().map(|chapter| chapter.text.as_str()),
+        book.language.as_deref(),
+        cancelled,
+    )
+    .map_err(|_| "cancelled".to_owned())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_supported_book(
+    path: &std::path::Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<crate::epub::Book, String> {
     if !path.is_file() {
         return Err(format!("book not found: {}", path.display()));
     }
@@ -209,14 +223,23 @@ pub fn analyze_book_file(
         return Err(format!("unsupported book type: {extension}"));
     }
     let source = crate::book_input::read_book_source(path).map_err(|error| error.to_string())?;
-    let book = crate::book_input::parse_book_source_with_cancel(path, &source, cancelled)
-        .map_err(|error| error.to_string())?;
-    analyze_book(
-        book.chapters.iter().map(|chapter| chapter.text.as_str()),
-        book.language.as_deref(),
-        cancelled,
-    )
-    .map_err(|_| "cancelled".to_owned())
+    crate::book_input::parse_book_source_with_cancel(path, &source, cancelled)
+        .map_err(|error| error.to_string())
+}
+
+/// The evidence sample and the whole-book profile of one book file (additive FFI payload).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn analyze_book_file_with_profile(
+    path: &std::path::Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(BookLanguageAnalysis, profile::BookLanguageProfile), String> {
+    let book = read_supported_book(path, cancelled)?;
+    let texts = || book.chapters.iter().map(|chapter| chapter.text.as_str());
+    let analysis = analyze_book(texts(), book.language.as_deref(), cancelled)
+        .map_err(|_| "cancelled".to_owned())?;
+    let profile = profile::profile(texts(), book.language.as_deref(), cancelled)
+        .map_err(|_| "cancelled".to_owned())?;
+    Ok((analysis, profile))
 }
 
 /// Expand evenly distributed samples instead of repeatedly testing the opening.
@@ -435,6 +458,25 @@ pub fn mismatch_message(language: &str, model: &str, message: &str) -> String {
     format!("{message} [[tts_language_mismatch_v1]]{context}[[/tts_language_mismatch_v1]]")
 }
 
+/// Whether a selection can speak `language`: a catalog model speaks only its own languages;
+/// a selection without a catalog model (system voice, Edge) is not language-bound here.
+pub fn selection_supports_language(
+    selection: &crate::tts_preferences::TtsSelection,
+    language: &str,
+) -> bool {
+    selection
+        .model_id
+        .as_deref()
+        .and_then(crate::model_catalog::model_by_id)
+        .map(|model| {
+            model
+                .languages
+                .iter()
+                .any(|value| value.eq_ignore_ascii_case(base(language)))
+        })
+        .unwrap_or(true)
+}
+
 /// Use a configured language-compatible secondary directly, without recording a failure.
 pub fn preferences_for_language(
     preferences: &crate::tts_preferences::TtsPreferences,
@@ -444,17 +486,7 @@ pub fn preferences_for_language(
         return preferences.clone();
     };
     let supports = |selection: &crate::tts_preferences::TtsSelection| {
-        selection
-            .model_id
-            .as_deref()
-            .and_then(crate::model_catalog::model_by_id)
-            .map(|model| {
-                model
-                    .languages
-                    .iter()
-                    .any(|value| value.eq_ignore_ascii_case(base(language)))
-            })
-            .unwrap_or(true)
+        selection_supports_language(selection, language)
     };
     if supports(&preferences.primary) {
         return preferences.clone();
@@ -465,7 +497,7 @@ pub fn preferences_for_language(
         .filter(|selection| supports(selection))
     {
         return crate::tts_preferences::TtsPreferences {
-            footnote_narration: Default::default(),
+            footnote_narration: preferences.footnote_narration,
             primary: secondary.clone(),
             secondary: None,
             policy_version: preferences.policy_version,
@@ -474,6 +506,9 @@ pub fn preferences_for_language(
     }
     preferences.clone()
 }
+
+#[path = "language_profile.rs"]
+pub mod profile;
 
 #[cfg(test)]
 #[path = "language_tests.rs"]

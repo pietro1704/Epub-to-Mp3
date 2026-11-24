@@ -118,9 +118,20 @@ impl ConversionWorker {
                 "Book language remains inconclusive after expanded sampling [[book_language_uncertain_v1]]{evidence}[[/book_language_uncertain_v1]]"
             )));
         }
+        // The whole book is read once and classified (cached by book identity): a monolingual book
+        // is narrated in its main language whatever quotations it contains.
+        let language_profile = crate::language::profile::load_or_compute(
+            &cache_dir.join("language-profile-v1.json"),
+            &book_key,
+            book.chapters.iter().map(|chapter| chapter.text.as_str()),
+            book.language.as_deref(),
+            &|| self.cancel.is_cancelled(),
+        )
+        .map_err(|_| WorkerError::Cancelled)?;
         let detected_language = request
             .language
             .as_deref()
+            .or(language_profile.primary.as_deref())
             .or(language_analysis.confirmed.as_deref());
         let results = Mutex::new(Vec::with_capacity(total));
         let completed = AtomicUsize::new(0);
@@ -130,6 +141,7 @@ impl ConversionWorker {
             cache_dir: &cache_dir,
             output_dir: &output_dir,
             book_key: &book_key,
+            language_profile: &language_profile,
             detected_language: detected_language,
             total: total,
             results: &results,

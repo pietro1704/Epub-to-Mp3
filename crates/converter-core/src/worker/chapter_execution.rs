@@ -24,6 +24,7 @@ pub(super) struct ChapterExecutionContext<'a> {
     pub(super) output_dir: &'a Path,
     pub(super) book_key: &'a str,
     pub(super) detected_language: Option<&'a str>,
+    pub(super) language_profile: &'a crate::language::profile::BookLanguageProfile,
     pub(super) total: usize,
     pub(super) results: &'a Mutex<Vec<(usize, PathBuf, String, ChapterMetadata)>>,
     pub(super) completed: &'a AtomicUsize,
@@ -38,7 +39,20 @@ impl ConversionWorker {
         source_index: usize,
         chapter: &epub::Chapter,
     ) -> Result<(), WorkerError> {
-        let request = context.request;
+        let language_profile = context.language_profile;
+        // A monolingual book is read entirely in its main language: every passage is routed to it
+        // (explicit passage corrections still win), so a quotation never asks for another voice.
+        let routed_request;
+        let request = match language_profile.monolingual_language() {
+            Some(primary) if context.request.language.is_none() => {
+                routed_request = ConversionRequest {
+                    language: Some(primary.to_owned()),
+                    ..context.request.clone()
+                };
+                &routed_request
+            }
+            _ => context.request,
+        };
         let book = context.book;
         let cache_dir = context.cache_dir;
         let output_dir = context.output_dir;
@@ -97,6 +111,33 @@ impl ConversionWorker {
         .map_err(|_| WorkerError::Cancelled)?;
         let language = detected_language.or(chapter_analysis.confirmed.as_deref());
         let language = request.language.as_deref().or(language);
+        // A bilingual or multilingual book is read with the first of its languages that the selected
+        // voice speaks, so a missing second-language model never stops the playback (a passage in
+        // a language without a voice is read with this main voice).
+        let language = match language {
+            Some(current)
+                if request.language.is_none()
+                    && language_profile.class
+                        != crate::language::profile::BookLanguageClass::Monolingual
+                    && !crate::language::selection_supports_language(
+                        &preferences.primary,
+                        current,
+                    ) =>
+            {
+                language_profile
+                    .languages
+                    .iter()
+                    .map(|share| share.language.as_str())
+                    .find(|candidate| {
+                        crate::language::selection_supports_language(
+                            &preferences.primary,
+                            candidate,
+                        )
+                    })
+                    .or(Some(current))
+            }
+            other => other,
+        };
         let resolved = preferences.resolve_automatic_piper(language, |selection| {
             let (model, config) = self.selection_model_paths(request, selection);
             model.is_file() && config.is_file()
@@ -158,6 +199,22 @@ impl ConversionWorker {
                 .as_slice(),
             )
         };
+        // The profile (and the detector) route the narration, so they are part of its identity.
+        let base_request_key = cache::sha256_bytes(
+            serde_json::to_vec(&(
+                "book-language-profile-v1",
+                crate::language::profile::DETECTOR,
+                &base_request_key,
+                language_profile.class,
+                language_profile
+                    .languages
+                    .iter()
+                    .map(|share| share.language.as_str())
+                    .collect::<Vec<_>>(),
+            ))
+            .expect("language profile identity")
+            .as_slice(),
+        );
         let base_request_key = super::heading_pauses::request_key(
             &base_request_key,
             &super::heading_pauses::Structure::new(text, &heading_ends, &paragraph_ends)

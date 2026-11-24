@@ -134,5 +134,6 @@ include!("typed_persistence_tests.rs");
 include!("typed_staging_tests.rs");
 include!("session_adapter_tests.rs");
 include!("seek_priority_tests.rs");
+include!("language_profile_tests.rs");
 #[path = "source_chunk_contract_tests.rs"]
 mod source_chunk_contract_tests;
