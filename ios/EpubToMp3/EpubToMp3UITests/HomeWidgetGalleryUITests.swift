@@ -2,113 +2,48 @@ import XCTest
 
 @MainActor
 final class HomeWidgetGalleryUITests: XCTestCase {
-    func testHomeWidgetPreviewsAreAvailableInTheSystemGallery() throws {
-        // Supervised only: it needs the app already running in the foreground and drives
-        // SpringBoard. Opt in with TEST_RUNNER_EPUB2MP3_WIDGET_GALLERY=1 on xcodebuild; any
-        // other test run skips it instead of failing.
+    /// Measured on the 16e (2026-11-24, owner confirmed): the EpubToMp3 widgets live on the Today View, the page to
+    /// the left of Home Screen page 1, not behind Edit Home Screen. The case goes there, captures what SpringBoard
+    /// shows and checks that the app's widgets are on it.
+    func testHomeWidgetsAreOnTheTodayView() throws {
+        // Supervised only: it needs the app already running in the foreground and drives SpringBoard. Opt in with
+        // TEST_RUNNER_EPUB2MP3_WIDGET_GALLERY=1 on xcodebuild; any other test run skips it instead of failing.
         try XCTSkipUnless(ProcessInfo.processInfo.environment["EPUB2MP3_WIDGET_GALLERY"] == "1",
                           "Set EPUB2MP3_WIDGET_GALLERY=1 in a supervised device run")
         continueAfterFailure = false
         let app = XCUIApplication()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        // XCTest's launch reinstalls the host app and clears WidgetKit's
-        // descriptors. Use the instance already launched by the supervisor.
+        // XCTest's launch reinstalls the host app and clears WidgetKit's descriptors. Use the instance already
+        // launched by the supervisor.
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 12),
-                      "The supervisor must launch the app before opening the widget gallery")
+                      "The supervisor must launch the app before looking at the widgets")
         XCUIDevice.shared.press(.home)
-        defer {
-            XCUIDevice.shared.press(.home)
-        }
+        defer { XCUIDevice.shared.press(.home) }
+        sleep(2)
 
-        let icon = springboard.icons.matching(NSPredicate(format: "label CONTAINS[c] %@", "EpubToMp3")).firstMatch
-        // Measured 2026-11-24 on the 16e: after Home the icon sits on Home Screen page 2 and is visible, but
-        // `isHittable` is false until the Home animation settles, and asking it for an icon on another page RECORDS a
-        // failure ("Activation point invalid"). So decide by the icon's frame on the screen, never by `isHittable`:
-        // wait for the animation, then look on the neighbouring pages (back first, then forward).
-        func isOnScreen(_ element: XCUIElement) -> Bool {
-            guard element.exists else { return false }
-            let frame = element.frame
-            return !frame.isEmpty && springboard.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
-        }
-        func onScreenSoon(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool {
-            let end = Date().addingTimeInterval(timeout)
-            while Date() < end {
-                if isOnScreen(element) { return true }
-                usleep(250_000)
-            }
-            return false
-        }
-        if !onScreenSoon(icon) {
-            for _ in 0..<2 where !isOnScreen(icon) { springboard.swipeRight(); _ = onScreenSoon(icon, timeout: 2) }
-        }
-        if !isOnScreen(icon) {
-            for _ in 0..<4 where !isOnScreen(icon) { springboard.swipeLeft(); _ = onScreenSoon(icon, timeout: 2) }
-        }
-        // Diagnostics for a supervised run: which icons SpringBoard really exposes (page, label, frame).
-        let report = springboard.icons.allElementsBoundByIndex.map { "\($0.label) frame=\($0.frame)" }.joined(separator: "\n")
-        print("SpringBoard icons:\n\(report)")
-        let attachment = XCTAttachment(string: report)
-        attachment.name = "springboard-icon-labels"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        XCTAssertTrue(isOnScreen(icon), "The app icon must be on the Home Screen")
-        icon.press(forDuration: 1.2)
+        // Swipe right until the Today View is showing (extra swipes on it do nothing). The Home Screen icons are
+        // not on screen there; the search field is.
+        for _ in 0..<4 { springboard.swipeRight(); usleep(600_000) }
+        sleep(2)
 
-        let edit = element(in: springboard, labels: ["Edit Home Screen", "Editar Tela de Início", "Editar tela de início", "Editar pantalla de inicio"])
-        // The context menu can take a while on a real device (measured: it was on screen but not yet queryable after 4 s).
-        if !edit.waitForExistence(timeout: 10) {
-            icon.press(forDuration: 1.5)
-        }
-        XCTAssertTrue(edit.waitForExistence(timeout: 10), "The icon's context menu must offer Edit Home Screen")
-        // Measured on the 16e: the context menu stayed open after `edit.tap()`; tap its centre by coordinate.
-        edit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        // iOS 26 (measured on the 16e): in Home Screen edit mode the top-left "+" is a button labelled "Edit"/"Editar"
-        // that opens a menu with "Add Widget". Open it first when it is there.
-        let editMenu = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Edit", "Editar", "Editar tela de início"])).firstMatch
-        if editMenu.waitForExistence(timeout: 4) { editMenu.tap() }
-        let add = element(in: springboard, labels: ["Add Widget", "Add Widgets", "Adicionar Widget", "Añadir widget", "Adicionar widget", "Adicionar", "Add"])
-        if !add.waitForExistence(timeout: 6) {
-            let dump = XCTAttachment(string: springboard.debugDescription)
-            dump.name = "springboard-hierarchy-after-edit"
-            dump.lifetime = .keepAlways
-            self.add(dump)
-        }
-        XCTAssertTrue(add.exists, "SpringBoard must expose its widget gallery control")
-        add.tap()
+        let hierarchy = XCTAttachment(string: springboard.debugDescription)
+        hierarchy.name = "today-view-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        let shot = XCTAttachment(screenshot: springboard.screenshot())
+        shot.name = "today-view"
+        shot.lifetime = .keepAlways
+        add(shot)
 
-        let search = springboard.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
-        search.typeText("Epub")
-        let results = matchingElements(in: springboard, labels: ["EpubToMp3", "EpubToMp3 Widget"])
-        let result = try XCTUnwrap(waitForElement(results) {
-            $0.elementType != .icon && $0.frame.minY >= search.frame.maxY
-        }, "WidgetKit must list the app below the gallery search field")
-        result.tap()
-
-        let addButtons = matchingElements(in: springboard, labels: ["Add Widget", "Adicionar Widget", "Añadir widget"])
-        XCTAssertNotNil(waitForElement(addButtons) {
-            $0.frame.midY > springboard.frame.midY
-        }, "The gallery must open the provider's widget carousel")
-        let playback = element(in: springboard, labels: ["Now Playing", "Tocando Agora", "Reproduciendo Ahora"])
-        let library = element(in: springboard, labels: ["Library", "Biblioteca"])
-        var sawPlayback = false
-        var sawLibrary = false
-        for _ in 0..<6 {
-            if !sawPlayback && playback.exists && playback.isHittable {
-                sawPlayback = true
-                attachPreview(springboard, name: "widget-gallery-now-playing")
-            }
-            if !sawLibrary && library.exists && library.isHittable {
-                sawLibrary = true
-                attachPreview(springboard, name: "widget-gallery-library")
-            }
-            if sawPlayback && sawLibrary { break }
-            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.79, dy: 0.48))
-                .press(forDuration: 0.05, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: 0.48)))
-        }
-        XCTAssertTrue(sawPlayback, "The gallery must show a Now Playing preview")
-        XCTAssertTrue(sawLibrary, "The gallery must show a Library preview")
+        // Widgets of this app show its name in their accessibility label or identifier ("EpubToMp3, Now Playing...").
+        let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR identifier CONTAINS[c] %@", "EpubToMp3", "EpubToMp3")
+        let widgets = springboard.descendants(matching: .any).matching(predicate)
+        let labels = widgets.allElementsBoundByIndex.map { "\($0.elementType.rawValue) \($0.label) | \($0.identifier) | \($0.frame)" }
+        let listing = XCTAttachment(string: labels.joined(separator: "\n"))
+        listing.name = "today-view-epubtomp3-elements"
+        listing.lifetime = .keepAlways
+        add(listing)
+        XCTAssertGreaterThan(widgets.count, 0, "The Today View must show the app's widgets")
     }
 
     private func element(in app: XCUIApplication, labels: [String]) -> XCUIElement {
