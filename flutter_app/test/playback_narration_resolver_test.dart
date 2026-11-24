@@ -21,7 +21,9 @@ class _Converter extends UnavailableEmbeddedConverter {
     this.confirmed = 'pt-BR',
     this.answer,
     this.failAnalysis = false,
+    this.analysis,
   });
+  BookLanguageAnalysis? analysis;
   String? confirmed;
   bool failAnalysis;
   LanguageModelResolution? answer;
@@ -32,6 +34,7 @@ class _Converter extends UnavailableEmbeddedConverter {
   Future<BookLanguageAnalysis> bookLanguage(String path) async {
     analyses++;
     if (failAnalysis) throw StateError('unreadable book');
+    if (analysis != null) return analysis!;
     return BookLanguageAnalysis(confirmed: confirmed, languages: [?confirmed]);
   }
 
@@ -69,7 +72,9 @@ Future<PlaybackNarration> _resolve(
   Set<String> installed = const {'pt_BR-faber-medium'},
   List<String> systemVoices = const [],
   bool explicitSelection = false,
+  String? correctedLanguage,
 }) => resolvePlaybackNarration(
+  correctedLanguage: correctedLanguage,
   converter: converter,
   cache: cache,
   bookId: 'book',
@@ -106,7 +111,68 @@ const _faberPrimary = TtsPreferences(
   policyVersion: 2,
 );
 
+BookLanguageAnalysis _analysis({
+  String? confirmed,
+  List<String> languages = const [],
+  String? declared,
+  String? primary,
+}) => BookLanguageAnalysis(
+  confirmed: confirmed,
+  declared: declared,
+  languages: languages,
+  profile: primary == null
+      ? null
+      : BookLanguageProfile(
+          classification: BookLanguageClass.monolingual,
+          primary: primary,
+          languages: [BookLanguageShare(language: primary, fraction: 1)],
+        ),
+);
+
 void main() {
+  group('the book language is the user correction, then the profile primary, then confirmed', () {
+    test('the profile primary decides, not the alphabetical first of the detected languages', () async {
+      final (cache, path) = await _fixture();
+      final converter = _Converter(
+        analysis: _analysis(languages: ['fr-FR', 'pt-BR'], declared: 'fr', primary: 'pt-BR'),
+        answer: _answer(LanguageModelStatus.missingModel, missing: _missing),
+      );
+      await _resolve(converter, cache, path);
+      expect(converter.requests.single.bookLanguage, 'pt-BR');
+    });
+
+    test('Rust\'s confirmed language is used when there is no profile', () async {
+      final (cache, path) = await _fixture();
+      final converter = _Converter(
+        analysis: _analysis(confirmed: 'en', languages: ['cy', 'en']),
+        answer: _answer(LanguageModelStatus.missingModel, missing: _missing),
+      );
+      await _resolve(converter, cache, path);
+      expect(converter.requests.single.bookLanguage, 'en');
+    });
+
+    test('the user correction wins over what was detected', () async {
+      final (cache, path) = await _fixture();
+      final converter = _Converter(
+        analysis: _analysis(confirmed: 'en', languages: ['en'], primary: 'en'),
+        answer: _answer(LanguageModelStatus.missingModel, missing: _missing),
+      );
+      await _resolve(converter, cache, path, correctedLanguage: 'pt-BR');
+      expect(converter.requests.single.bookLanguage, 'pt-BR');
+    });
+
+    test('nothing detected and nothing corrected keeps today\'s narration', () async {
+      final (cache, path) = await _fixture();
+      final converter = _Converter(
+        analysis: _analysis(languages: ['fr-FR', 'pt-BR'], declared: 'fr'),
+        answer: _answer(LanguageModelStatus.missingModel, missing: _missing),
+      );
+      final result = await _resolve(converter, cache, path);
+      expect(result, isA<UnchangedNarration>());
+      expect(converter.requests, isEmpty, reason: 'neither the first detected nor the declared language is guessed');
+    });
+  });
+
   group('identical to today when the book language fits the primary', () {
     test('a compatible concrete primary leaves the job untouched', () async {
       final (cache, path) = await _fixture();

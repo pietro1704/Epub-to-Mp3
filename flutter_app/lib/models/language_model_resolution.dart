@@ -247,6 +247,17 @@ class BookLanguageProfile {
 }
 
 /// `converter_book_language_json_v1`: what Rust detected in the book file.
+/// The language a book is narrated in: what the user corrected, else the primary of the
+/// whole-book profile, else the language Rust confirmed. The detected `languages` are an
+/// alphabetical set (its first entry is not the main language) and `declared` is only the
+/// file's metadata, so neither is ever used to pick the narration. Null when none is known.
+String? primaryBookLanguage(BookLanguageAnalysis analysis, {String? corrected}) {
+  for (final candidate in [corrected, analysis.profile?.primary, analysis.confirmed]) {
+    if (candidate != null && candidate.trim().isNotEmpty) return candidate;
+  }
+  return null;
+}
+
 class BookLanguageAnalysis {
   const BookLanguageAnalysis({
     required this.languages,
