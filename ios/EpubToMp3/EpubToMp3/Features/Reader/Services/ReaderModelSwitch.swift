@@ -21,7 +21,7 @@ enum ReaderModelSwitch {
         }
     }
 
-    private static var cachedLanguages: [String: String] = [:]
+    private static var cachedAnalyses: [String: BookLanguageAnalysis] = [:]
     private struct Listing { let language: String; let snapshot: SpeechModelSnapshot }
     private static var listings: [String: Listing] = [:]
     private static var cachedSystemVoiceLanguages: Set<String>?
@@ -29,23 +29,36 @@ enum ReaderModelSwitch {
 
     /// Test hook: forget everything cached for the menu.
     static func resetCachesForTesting() {
-        cachedLanguages = [:]
+        cachedAnalyses = [:]
         cachedProfileLanguages = [:]
         listings = [:]
         cachedSystemVoiceLanguages = nil
     }
 
-    /// The authoritative language of the book, analyzed once per book by Rust.
-    static func bookLanguage(of book: BookEntity, library: LibraryStore) async -> String? {
-        if let cached = cachedLanguages[book.id] { return cached }
+    /// The language the user set for the whole book, read each time (never cached: a correction changes it at once).
+    static func correctedLanguage(of book: BookEntity) -> String? {
+        (try? BookLanguageCorrections().decision(bookID: book.id))?.bookLanguage
+    }
+
+    /// The book's language analysis, made once per book by Rust.
+    static func analysis(of book: BookEntity, library: LibraryStore) async -> BookLanguageAnalysis? {
+        if let cached = cachedAnalyses[book.id] { return cached }
         guard let url = try? await library.openBookFileAsync(id: book.id) else { return nil }
-        let analysis = try? await Task.detached(priority: .userInitiated) {
+        guard let analysis = try? await Task.detached(priority: .userInitiated, operation: {
             try ConverterFFIAdapter().bookLanguage(at: url)
-        }.value
-        guard let tag = analysis?.confirmed ?? analysis?.languages.first ?? analysis?.declared else { return nil }
-        cachedLanguages[book.id] = tag
-        cachedProfileLanguages[book.id] = analysis?.profile?.languages.map(\.language) ?? []
-        return tag
+        }).value else { return nil }
+        cachedAnalyses[book.id] = analysis
+        cachedProfileLanguages[book.id] = analysis.profile?.languages.map(\.language) ?? []
+        return analysis
+    }
+
+    /// The authoritative language of the book: the user's correction, else the profile's primary language, else the
+    /// confirmed one (never the first sampled language or the declared tag).
+    static func bookLanguage(of book: BookEntity, library: LibraryStore) async -> String? {
+        let analysis = await analysis(of: book, library: library)
+        let correction = correctedLanguage(of: book)
+        guard let analysis else { return correction.flatMap { $0.isEmpty ? nil : $0 } }
+        return analysis.resolvedLanguage(userCorrection: correction)
     }
 
     /// The languages of the book's profile, known once `bookLanguage(of:library:)` analyzed it (empty before, and for an

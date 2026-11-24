@@ -215,4 +215,69 @@ final class LanguageModelPlaybackTests: XCTestCase {
             XCTAssertEqual(TtsLanguageMismatch.decode(error)?.language, "en")
         }
     }
+
+    // MARK: Primary language of the book (HOTFIX A0)
+
+    private func analysis(languages: [String], confirmed: String? = "fr-FR", declared: String? = "pt",
+                          primary: String? = "pt-BR") throws -> BookLanguageAnalysis {
+        let profile = primary.map { """
+            ,"profile":{"class":"monolingual","primary":"\($0)","languages":[],"incidental":["fr-FR"]}
+            """ } ?? ""
+        let json = """
+            {"declared":\(declared.map { "\"\($0)\"" } ?? "null"),"confirmed":\(confirmed.map { "\"\($0)\"" } ?? "null"),
+             "languages":[\(languages.map { "\"\($0)\"" }.joined(separator: ","))],
+             "samples_examined":32,"inconclusive_samples":0\(profile)}
+            """
+        return try JSONDecoder().decode(BookLanguageAnalysis.self, from: Data(json.utf8))
+    }
+
+    private final class Requests { var resolved: [LanguageModelResolutionRequest] = [] }
+
+    private func analysisDependencies(_ analysis: BookLanguageAnalysis, correction: String? = nil,
+                                      requests: Requests) -> LanguageModelPlayback.Dependencies {
+        var dependencies = LanguageModelPlayback.Dependencies(
+            bookLanguage: { _ in analysis.languages.first },
+            resolve: { request in
+                requests.resolved.append(request)
+                return LanguageModelResolution(bookLanguage: request.bookLanguage, status: .selected, selection: self.faber,
+                                               source: .perLanguage, reasons: [], missing: nil)
+            },
+            installedModelIDs: { ["pt_BR-faber-medium"] }, systemVoiceLanguages: { ["pt-BR"] })
+        dependencies.bookAnalysis = { _ in analysis }
+        dependencies.userLanguage = { _ in correction }
+        return dependencies
+    }
+
+    func testAPortugueseBookWithAFrenchQuotationResolvesTheModelOfThePrimaryLanguage() async throws {
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let requests = Requests()
+        // `languages` is an alphabetical set of the sampled languages: fr-FR sorts before pt-BR.
+        let analysis = try analysis(languages: ["fr-FR", "pt-BR"], confirmed: "fr-FR", primary: "pt-BR")
+        _ = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
+            dependencies: analysisDependencies(analysis, requests: requests))
+        XCTAssertEqual(requests.resolved.map(\.bookLanguage), ["pt-BR"],
+                       "The resolver gets the profile's primary language, not the first sampled one")
+    }
+
+    func testABookTheUserCorrectedResolvesTheCorrectedLanguage() async throws {
+        let (settings, defaults, name) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let requests = Requests()
+        let analysis = try analysis(languages: ["fr-FR", "pt-BR"], primary: "pt-BR")
+        _ = await LanguageModelPlayback.outcome(for: book, settings: settings, hasExplicitSelection: false,
+            dependencies: analysisDependencies(analysis, correction: "en-US", requests: requests))
+        XCTAssertEqual(requests.resolved.map(\.bookLanguage), ["en-US"], "The user's correction reaches the model resolver")
+    }
+
+    func testTheLanguageRuleIsCorrectionThenProfilePrimaryThenConfirmedNeverTheFirstSampleOrTheDeclaredTag() throws {
+        let both = try analysis(languages: ["fr-FR", "pt-BR"], confirmed: "es-ES", primary: "pt-BR")
+        XCTAssertEqual(both.resolvedLanguage(userCorrection: "en-US"), "en-US")
+        XCTAssertEqual(both.resolvedLanguage(userCorrection: nil), "pt-BR")
+        XCTAssertEqual(both.resolvedLanguage(userCorrection: ""), "pt-BR", "An empty correction is no correction")
+        let older = try analysis(languages: ["fr-FR", "pt-BR"], confirmed: "es-ES", primary: nil)
+        XCTAssertEqual(older.resolvedLanguage(userCorrection: nil), "es-ES", "An older library without a profile keeps the confirmed language")
+        let unknown = try analysis(languages: ["fr-FR"], confirmed: nil, declared: "pt", primary: nil)
+        XCTAssertNil(unknown.resolvedLanguage(userCorrection: nil), "Neither languages.first nor the declared tag decides")
+    }
 }

@@ -31,6 +31,10 @@ enum LanguageModelPlayback {
         var systemVoiceLanguages: () -> [String]
         /// The languages of the book's profile (after `bookLanguage` analyzed it); empty when unknown.
         var profileLanguages: (BookEntity) async -> [String] = { _ in [] }
+        /// The book's language analysis, when the caller has one (`bookLanguage` stays for callers that only know a tag).
+        var bookAnalysis: (BookEntity) async -> BookLanguageAnalysis? = { _ in nil }
+        /// The language the user set for the whole book (BookLanguageCorrections); wins over every analysis.
+        var userLanguage: (BookEntity) -> String? = { _ in nil }
 
         @MainActor
         static func live(library: LibraryStore) -> Self {
@@ -42,7 +46,9 @@ enum LanguageModelPlayback {
                     return snapshot.entries.filter { $0.installation.state == .installed }.map(\.identity.modelID)
                 },
                 systemVoiceLanguages: { Array(ModelsByLanguageModel.installedSystemVoiceLanguages()) },
-                profileLanguages: { ReaderModelSwitch.profileLanguages(of: $0) })
+                profileLanguages: { ReaderModelSwitch.profileLanguages(of: $0) },
+                bookAnalysis: { await ReaderModelSwitch.analysis(of: $0, library: library) },
+                userLanguage: { ReaderModelSwitch.correctedLanguage(of: $0) })
         }
     }
 
@@ -50,7 +56,7 @@ enum LanguageModelPlayback {
         for book: BookEntity, settings: AppSettings, hasExplicitSelection: Bool, dependencies: Dependencies
     ) async -> Outcome {
         guard !hasExplicitSelection else { return .useSettings }
-        guard let language = await dependencies.bookLanguage(book) else { return .useSettings }
+        guard let language = await resolvedLanguage(of: book, dependencies) else { return .useSettings }
         var request = LanguageModelResolutionRequest(bookLanguage: language, platform: LanguageModelResolutionRequest.currentPlatform)
         request.perLanguageChoices = settings.languageModelChoices
         request.primary = settings.primaryTtsSelection
@@ -78,12 +84,23 @@ enum LanguageModelPlayback {
         }
     }
 
+    /// The language the model is resolved for: the user's correction, else the analysis' primary language
+    /// (`BookLanguageAnalysis.resolvedLanguage`). A caller that only knows a tag keeps using `bookLanguage`.
+    static func resolvedLanguage(of book: BookEntity, _ dependencies: Dependencies) async -> String? {
+        let correction = dependencies.userLanguage(book)
+        if let analysis = await dependencies.bookAnalysis(book) {
+            return analysis.resolvedLanguage(userCorrection: correction)
+        }
+        if let correction, !correction.isEmpty { return correction }
+        return await dependencies.bookLanguage(book)
+    }
+
     /// Languages of the book's profile, other than its main one, that have no usable voice. A warning before playing,
     /// never a block: the main voice reads those passages and installing a model stays an explicit action.
     static func missingProfileLanguages(
         for book: BookEntity, settings: AppSettings, dependencies: Dependencies
     ) async -> [String] {
-        guard let main = await dependencies.bookLanguage(book) else { return [] }
+        guard let main = await resolvedLanguage(of: book, dependencies) else { return [] }
         let mainKey = SpeechPreferences.languageKey(main)
         var seen: Set<String> = [mainKey]
         var missing: [String] = []
