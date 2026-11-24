@@ -57,7 +57,16 @@ jobs:
       - run: mise install
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-      - name: Pick an iPhone Simulator and start booting it (overlaps the Rust build)
+      - run: mise exec -- rustup target add aarch64-apple-ios-sim
+      - uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: ffi-ios-sim-nopiper
+      - name: Install the project generator
+        run: brew install xcodegen
+      - name: Build converter-ffi for the Simulator (no Piper)
+        run: mise run converter-ffi:ios-simulator
+      # The Mac build guard refuses to compile Rust while a Simulator is booted, so boot after it.
+      - name: Pick an iPhone Simulator and start booting it (overlaps the Swift build)
         id: sim
         if: inputs.seed_only != true
         run: |
@@ -75,14 +84,6 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           echo "SDK $sdk_version -> $udid"
           xcrun simctl boot "$udid"
-      - run: mise exec -- rustup target add aarch64-apple-ios-sim
-      - uses: ./.github/actions/rust-build-cache
-        with:
-          namespace: ffi-ios-sim-nopiper
-      - name: Install the project generator
-        run: brew install xcodegen
-      - name: Build converter-ffi for the Simulator (no Piper)
-        run: mise run converter-ffi:ios-simulator
       - name: Generate the project
         working-directory: ios/EpubToMp3
         run: xcodegen generate
