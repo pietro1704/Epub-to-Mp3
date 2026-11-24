@@ -34,25 +34,33 @@ no heavy native lease: the wait only queries the device (#1435). The lease is ta
 work; if another job owns it the workflow waits up to `EPUB_NATIVE_WAIT_SECONDS` (one `WAITING_FOR_LEASE` line). If the
 30 minutes pass, re-enqueue the same run; do not cancel a run only because the phone is locked.
 
-## Supervised case: `HomeWidgetGalleryUITests` (WidgetKit gallery)
-The case drives SpringBoard and needs the app already running in the foreground, so the workflow alone cannot pass it:
+## Supervised case: `HomeWidgetGalleryUITests` (widgets on the Today View)
+Facts measured on the 16e (iOS 26, pt-BR) on 2026-11-24 and confirmed by the owner: the EpubToMp3 widgets live on the **Today
+View** (the page to the left of Home Screen page 1), not behind Edit Home Screen; the app icon is on Home Screen page 2. The
+case `testHomeWidgetsAreOnTheTodayView` goes to the Today View, attaches a screenshot, the SpringBoard hierarchy and the list of
+elements labelled "EpubToMp3", and asserts there is at least one. It needs the app already running in the foreground, so the
+workflow alone cannot pass it:
 1. Export `TEST_RUNNER_EPUB2MP3_WIDGET_GALLERY=1` and `EPUB2MP3_WIDGET_GALLERY=1` and run the workflow once for
-   `EpubToMp3UITests/HomeWidgetGalleryUITests/testHomeWidgetPreviewsAreAvailableInTheSystemGallery` (audited as `@ui-test`).
-   It builds and installs, then fails with "The supervisor must launch the app": expected.
+   `EpubToMp3UITests/HomeWidgetGalleryUITests/testHomeWidgetsAreOnTheTodayView` (audited as `@ui-test`). It builds and installs,
+   then ends with "XCTest did not verify an executed passing test": expected (the supervisor has not launched the app).
 2. Run `TEST_RUNNER_EPUB2MP3_WIDGET_GALLERY=1 mise exec -- ruby scripts/native_job.rb build -- xcodebuild test-without-building
    -xctestrun ios/EpubToMp3/.build/Build/Products/EpubToMp3_iphoneos26.2-arm64.xctestrun -destination id=<xcodeDeviceID from
-   the report> -only-testing:EpubToMp3UITests/HomeWidgetGalleryUITests/... -parallel-testing-enabled NO -resultBundlePath <new>`.
+   the report> -only-testing:EpubToMp3UITests/HomeWidgetGalleryUITests/testHomeWidgetsAreOnTheTodayView
+   -parallel-testing-enabled NO -resultBundlePath <new>`.
 3. As soon as the log prints the test case start, `xcrun devicectl device process launch --device <id> com.pietrocode.epubtomp3`
-   (the case waits 12 s for the app to be in the foreground). The phone must stay unlocked and untouched (~10 min).
+   (the case waits 12 s for the app to be in the foreground). The phone must stay unlocked and untouched (~1 min).
 4. Close the app afterwards (`devicectl device process terminate --pid`).
+Prerequisites to check before asking the owner for the phone: Developer Mode on, UI automation authorized in Settings (without it
+the runner fails with `LocalAuthentication -1 "Falha de autenticação"`), iPhone Mirroring closed, phone unlocked.
+Lessons from the iterations: on iOS 26 `isHittable` on an icon that is on another page RECORDS a failure ("Activation point
+invalid"): decide by frame; Edit Home Screen's former "+" is a button labelled Editar/Edit; a cold device build can exceed the
+workflow's 30 min build limit on this Mac (the next one is incremental).
 
 ## iPhone Mirroring (the owner had it active)
 - Ran fine with Mirroring active: the unit tests (`EpubToMp3Tests`) and the UIKit presentation tests run through the
   workflow: `RemoteButtonModeRowTests` 1/1 and `ModelsLanguagesScreenIOSTests` 2/2.
-- The supervised widget case reached SpringBoard (the three `swipeLeft` events were synthesized) but then failed
-  `HomeWidgetGalleryUITests.swift:25`, "The app icon must be on the Home Screen": no hittable icon matched
-  `label CONTAINS[c] "EpubToMp3"` after three swipes. Not established whether Mirroring, the icon label ("Epub-to-Mp3" is the
-  Mac app name) or an App Library placement caused it. Next try: Mirroring closed, and print the SpringBoard icon labels
-  before the assertion.
+- The earlier failure ("The app icon must be on the Home Screen") was not Mirroring: the icon label is `EpubToMp3`, and the
+  run only missed it because it asked `isHittable` before the Home animation settled and then swiped past page 2 into the
+  App Library. With Mirroring closed the case passes (run 2026-11-24 16:51, 23 s).
 - Not verified: whether Mirroring affects `lockState` (`passcodeRequired`) or the wait for an unlock. The waits seen on
   2026-11-24 happened before Mirroring was known to be active.
