@@ -58,7 +58,11 @@ final class HomeWidgetGalleryUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 4))
         // Measured on the 16e: the context menu stayed open after `edit.tap()`; tap its centre by coordinate.
         edit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let add = element(in: springboard, labels: ["Add Widget", "Add Widgets", "Adicionar Widget", "Añadir widget", "Adicionar", "Add"])
+        // iOS 26 (measured on the 16e): in Home Screen edit mode the top-left "+" is a button labelled "Edit"/"Editar"
+        // that opens a menu with "Add Widget". Open it first when it is there.
+        let editMenu = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Edit", "Editar", "Editar tela de início"])).firstMatch
+        if editMenu.waitForExistence(timeout: 4) { editMenu.tap() }
+        let add = element(in: springboard, labels: ["Add Widget", "Add Widgets", "Adicionar Widget", "Añadir widget", "Adicionar widget", "Adicionar", "Add"])
         if !add.waitForExistence(timeout: 6) {
             let dump = XCTAttachment(string: springboard.debugDescription)
             dump.name = "springboard-hierarchy-after-edit"
