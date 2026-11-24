@@ -3,6 +3,8 @@ import UIKit
 
 @MainActor
 final class ReaderContentsPresentation {
+    /// The user picked a chapter in the contents sheet (READER-FOLLOW-NARRATION: a manual move).
+    var onUserJump: (() -> Void)?
     private let document: ReaderBookDocument
     private let composition: ReaderViewComposition
     private let library: LibraryStore
@@ -101,6 +103,7 @@ final class ReaderContentsPresentation {
 
     private func jumpToChapter(_ chapterIndex: Int) {
         guard document.fulltext?.chapters.indices.contains(chapterIndex) == true else { return }
+        onUserJump?()
         readingPosition.persistReadingProgress()
         document.selectedChapter = chapterIndex
         textPresentation.showChapter(chapterIndex)

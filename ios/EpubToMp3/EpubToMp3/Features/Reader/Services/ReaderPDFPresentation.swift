@@ -40,7 +40,10 @@ final class ReaderPDFPresentation {
         view.onReaderLongPress = { [weak self] point in self?.showActions(at: point) }
         for name in [Notification.Name.PDFViewPageChanged, .PDFViewVisiblePagesChanged] {
             NotificationCenter.default.publisher(for: name, object: view).sink { [weak self] _ in
-                MainActor.assumeIsolated { self?.publishPosition() }
+                MainActor.assumeIsolated {
+                    self?.noteViewportMove()
+                    self?.publishPosition()
+                }
             }.store(in: &observers)
         }
         NotificationCenter.default.publisher(for: .PDFViewSelectionChanged, object: view).sink { [weak view] _ in
@@ -61,6 +64,7 @@ final class ReaderPDFPresentation {
             player.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.refreshPairing() }.store(in: &observers)
         }
         applyLayout(settings?.readerLayout ?? .scrolling)
+        startFollowingNarration()
     }
 
     func load(document: PDFDocument?, metadata: Data?) {
@@ -186,10 +190,33 @@ final class ReaderPDFPresentation {
         Task { @MainActor in pairing?.release(owner: owner) }
     }
 
-    /// Publishes whether a visible page holds the narrated character (see ReaderNarrationPairing).
+    /// Publishes whether a visible page holds the narrated character (see ReaderNarrationPairing) and, while the
+    /// narration is playing and has left the visible pages, follows it (READER-FOLLOW-NARRATION).
     private func refreshPairing() {
         guard let player else { return }
-        player.readerPairing.publish(paired: computePaired(player), owner: ObjectIdentifier(self))
+        let paired = computePaired(player)
+        player.readerPairing.publish(paired: paired, owner: ObjectIdentifier(self))
+        follower?.evaluate(paired: paired)
+    }
+
+    /// Any page change that the reader did not make itself came from the user (page turn, scroll, contents).
+    /// PDFKit may post a late notification for the reader's own move: landing on the narrated page is never a
+    /// reason to stop following, so a paired page is ignored.
+    private func noteViewportMove() {
+        guard hasLoaded, !isViewportTransitioning, let player, !computePaired(player) else { return }
+        follower?.userTurnedThePage()
+    }
+
+    private var follower: ReaderNarrationFollower?
+
+    /// Starts following the narration of `bookID`; the reader owns the lifetime of the player subscription.
+    private func startFollowingNarration() {
+        guard follower == nil, let player else { return }
+        let follower = ReaderNarrationFollower(player: player, bookID: bookID) { [weak self] location in
+            self?.revealPlaybackLocation(location)
+        }
+        follower.start { [weak self] in self?.refreshPairing() }
+        self.follower = follower
     }
 
     private func computePaired(_ player: AudioPlayer) -> Bool {
@@ -282,6 +309,7 @@ final class ReaderPDFPresentation {
     }
 
     func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
+        if follower?.isRevealing != true { follower?.userAskedToGoToReading() }
         let index = location.chapterIndex
         guard let map = audioMap, map.chapters.indices.contains(index) else { return }
         let text = map.chapters[index].text
