@@ -130,6 +130,29 @@ BookLanguageAnalysis _analysis({
 );
 
 void main() {
+  group('the resolution source "book_voice" (Rust R2) is tolerated', () {
+    test('it decodes as a plain source string', () {
+      final resolution = LanguageModelResolution.parse(
+        '{"schema_version":1,"book_language":"pt-BR","status":"selected","source":"book_voice",'
+        '"selection":{"engine":"piper","model_id":"pt_BR-cadu-medium"},"reasons":[]}',
+      );
+      expect(resolution.status, LanguageModelStatus.selected);
+      expect(resolution.source, 'book_voice');
+      expect(resolution.selection?.modelId, 'pt_BR-cadu-medium');
+    });
+
+    test("a book's own voice narrates the book instead of the configured primary", () async {
+      final (cache, path) = await _fixture();
+      const bookVoice = TtsSelection(engine: 'piper', modelId: 'pt_BR-cadu-medium');
+      final converter = _Converter(
+        answer: _answer(LanguageModelStatus.selected, selection: bookVoice, source: 'book_voice'),
+      );
+      final result = await _resolve(converter, cache, path);
+      expect(result, isA<ResolvedNarration>());
+      expect((result as ResolvedNarration).preferences.primary.modelId, 'pt_BR-cadu-medium');
+    });
+  });
+
   group('the book language is the user correction, then the profile primary, then confirmed', () {
     test('the profile primary decides, not the alphabetical first of the detected languages', () async {
       final (cache, path) = await _fixture();
