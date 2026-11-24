@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_app/models/language_model_resolution.dart';
+import 'package:flutter_app/services/conversion/embedded_conversion_contract.dart';
+import 'package:flutter_app/models/narration_plan.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,6 +106,9 @@ void main() {
           'ttsCatalogLanguages' => '{"schema_version":1,"languages":[{"tag":"pt","model_count":2}]}',
           'ttsResolveLanguageModel' => '{"book_language":"pt-BR","status":"system_fallback","selection":{"engine":"system"},"source":"system"}',
           'bookLanguage' => '{"declared":"pt","confirmed":"pt-BR","languages":["pt-BR"]}',
+          'bookNarrationPlan' => '{"schema_version":1,"decision":{"language":"pt-BR","source":"user_correction","preselect":null,"declared_conflict":null},'
+              '"main":{"schema_version":1,"book_language":"pt-BR","status":"selected","source":"book_voice","selection":{"engine":"piper","model_id":"pt_BR-cadu-medium"},"reasons":[]},'
+              '"language_voices":{},"main_missing":false,"notify_missing":[],"needs_language_question":false}',
           _ => null,
         };
       });
@@ -125,6 +130,21 @@ void main() {
       expect(request['book_language'], 'pt-BR');
       expect(request['android_api'], 34);
       expect((calls[2].arguments as Map)['path'], '/books/a.epub');
+    });
+
+    test('the narration plan reaches the native method as one request JSON and decodes the answer', () async {
+      final converter = AndroidEmbeddedConverter(channel: channel);
+      expect((converter as NarrationPlanCapable).supportsNarrationPlan, isTrue);
+      final plan = await (converter as NarrationPlanCapable).bookNarrationPlan(
+        const NarrationPlanRequest(userCorrection: 'pt-BR', platform: 'Android', androidApi: 34),
+      );
+      expect(plan.decision.source, NarrationDecisionSource.userCorrection);
+      expect(plan.main?.source, 'book_voice');
+      expect(plan.main?.selection?.modelId, 'pt_BR-cadu-medium');
+      expect(calls.single.method, 'bookNarrationPlan');
+      final request = jsonDecode((calls.single.arguments as Map)['request'] as String) as Map;
+      expect(request['user_correction'], 'pt-BR');
+      expect(request['android_api'], 34);
     });
   });
 }
