@@ -32,6 +32,28 @@ extension DeviceWorkflowTests {
         XCTAssertTrue(notices[0].contains(" since="))
     }
 
+    /// DEVICE-WAIT-RELEASES-LEASE: a locked iPhone must not freeze every other native job on the Mac. The heavy lease is
+    /// taken only once the device is unlocked, and held from then on.
+    func testWaitingForUnlockDoesNotHoldTheHeavyLease() throws {
+        _ = try appFixture()
+        let heavy = root.appendingPathComponent("heavy.lock")
+        var freeDuringWait: [Bool] = []
+        let phases = NSMutableArray()
+        let work = try workflow(["test"], runner: fakeRunner(phases: phases, lockedQueries: 3),
+                                sleeper: { _ in freeDuringWait.append((try? FileLease(heavy)) != nil) })
+        XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+        XCTAssertEqual(freeDuringWait, [true, true, true], "Another job must be able to take the lease while the phone is locked")
+        XCTAssertTrue((phases as? [String] ?? []).contains("build"), "The run still builds and tests once unlocked")
+    }
+
+    func testTimeoutWhileLockedNeverTookTheHeavyLease() throws {
+        let heavy = root.appendingPathComponent("heavy.lock")
+        let work = try workflow(["test"], runner: fakeRunner(phases: NSMutableArray(), locked: true),
+                                environment: ["DEVICE_UNLOCK_WAIT_SECONDS": "10"])
+        XCTAssertThrowsError(try work.execute())
+        XCTAssertNotNil(try? FileLease(heavy), "A blocked run leaves the lease free")
+    }
+
     func testZeroWaitKeepsTheImmediateRefusal() throws {
         let phases = NSMutableArray()
         let work = try workflow(["test"], runner: fakeRunner(phases: phases, locked: true),
