@@ -416,6 +416,7 @@
 "settings.seconds" = "%d segundos";
 
 "conversion.systemVoiceFallback" = "Usando uma voz instalada no aparelho temporariamente. A voz principal será tentada novamente automaticamente.";
+"conversion.profileMissingVoices" = "Este livro também tem trechos em %@. Não há voz instalada para eles, então a voz principal vai lê-los. Você pode instalar uma em Modelos.";
 
 "settings.secondaryVoice" = "Voz secundária";
 "settings.noSecondary" = "Nenhuma";

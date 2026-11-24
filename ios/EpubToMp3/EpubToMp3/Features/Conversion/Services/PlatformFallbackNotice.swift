@@ -28,8 +28,26 @@ enum PlatformFallbackNotice {
     static func show(engine: String? = nil, modelID: String? = nil, voice: String? = nil) {
 #if !APP_FOUNDATION_HOST_TESTS
         let active = SpeechModelPresentationStore.shared.displayName(engine: engine, modelID: modelID, voice: voice)
-        let message = active.map { L10n.string("conversion.secondaryVoiceUsed", $0) }
-            ?? L10n.string("conversion.systemVoiceFallback")
+        present(active.map { L10n.string("conversion.secondaryVoiceUsed", $0) } ?? L10n.string("conversion.systemVoiceFallback"))
+#endif
+    }
+
+    /// BOOK-LANGUAGE-PROFILE: before playing, name the languages of the book that have no voice. The main voice reads
+    /// them and playback goes on; installing a model stays an explicit action in Models.
+    static func showMissingProfileLanguages(_ languages: [String], locale: Locale = .current) {
+#if !APP_FOUNDATION_HOST_TESTS
+        guard !languages.isEmpty else { return }
+        present(message(forMissingLanguages: languages, locale: locale))
+#endif
+    }
+
+    static func message(forMissingLanguages languages: [String], locale: Locale = .current) -> String {
+        let names = languages.map { locale.localizedString(forLanguageCode: $0) ?? $0 }
+        return L10n.string("conversion.profileMissingVoices", ListFormatter.localizedString(byJoining: names))
+    }
+
+#if !APP_FOUNDATION_HOST_TESTS
+    private static func present(_ message: String) {
 #if os(iOS)
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow),
@@ -71,6 +89,6 @@ enum PlatformFallbackNotice {
                              userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { label.removeFromSuperview() }
 #endif
-#endif
     }
+#endif
 }

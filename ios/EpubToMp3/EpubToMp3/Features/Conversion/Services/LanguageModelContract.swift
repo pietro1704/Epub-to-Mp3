@@ -85,9 +85,35 @@ struct BookLanguageAnalysis: Decodable, Sendable, Equatable {
     let languages: [String]
     let samplesExamined: Int
     let inconclusiveSamples: Int
+    /// The whole-book profile (additive; absent from an older library).
+    var profile: BookLanguageProfile? = nil
     enum CodingKeys: String, CodingKey {
-        case declared, confirmed, languages
+        case declared, confirmed, languages, profile
         case samplesExamined = "samples_examined"
         case inconclusiveSamples = "inconclusive_samples"
+    }
+}
+
+/// `profile` of `converter_book_language_json_v1` (CONTEXT.md, "Book language profile"): the languages the book
+/// really contains; quotations in other languages are only listed as `incidental`.
+struct BookLanguageProfile: Decodable, Sendable, Equatable {
+    enum Kind: String, Decodable, Sendable { case monolingual, bilingual, multilingual }
+    struct Entry: Decodable, Sendable, Equatable {
+        let language: String
+        let chars: Int
+        let fraction: Double
+        let longestSectionChars: Int
+        enum CodingKeys: String, CodingKey {
+            case language, chars, fraction
+            case longestSectionChars = "longest_section_chars"
+        }
+    }
+    let kind: Kind
+    let primary: String
+    let languages: [Entry]
+    let incidental: [String]
+    enum CodingKeys: String, CodingKey {
+        case kind = "class"
+        case primary, languages, incidental
     }
 }

@@ -416,6 +416,7 @@
 "settings.seconds" = "%d seconds";
 
 "conversion.systemVoiceFallback" = "Using an installed device voice temporarily. The primary voice will be retried automatically.";
+"conversion.profileMissingVoices" = "This book also has passages in %@. No voice is installed for them, so the main voice reads them. You can install one in Models.";
 
 "settings.secondaryVoice" = "Secondary voice";
 "settings.noSecondary" = "None";

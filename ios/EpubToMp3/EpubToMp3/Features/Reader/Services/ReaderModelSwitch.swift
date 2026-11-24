@@ -25,10 +25,12 @@ enum ReaderModelSwitch {
     private struct Listing { let language: String; let snapshot: SpeechModelSnapshot }
     private static var listings: [String: Listing] = [:]
     private static var cachedSystemVoiceLanguages: Set<String>?
+    private static var cachedProfileLanguages: [String: [String]] = [:]
 
     /// Test hook: forget everything cached for the menu.
     static func resetCachesForTesting() {
         cachedLanguages = [:]
+        cachedProfileLanguages = [:]
         listings = [:]
         cachedSystemVoiceLanguages = nil
     }
@@ -42,8 +44,13 @@ enum ReaderModelSwitch {
         }.value
         guard let tag = analysis?.confirmed ?? analysis?.languages.first ?? analysis?.declared else { return nil }
         cachedLanguages[book.id] = tag
+        cachedProfileLanguages[book.id] = analysis?.profile?.languages.map(\.language) ?? []
         return tag
     }
+
+    /// The languages of the book's profile, known once `bookLanguage(of:library:)` analyzed it (empty before, and for an
+    /// older library without a profile).
+    static func profileLanguages(of book: BookEntity) -> [String] { cachedProfileLanguages[book.id] ?? [] }
 
     /// Installed system voices are scanned once, off the main thread: asking AVFoundation for them can take
     /// a noticeable time, and it used to happen on the tap that opens the menu.
