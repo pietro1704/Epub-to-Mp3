@@ -37,10 +37,12 @@ if [ "$workflow" = ci.yml ]; then
   fi
 fi
 echo "Dispatching $workflow on $branch @ ${remote_sha:0:12} (scope=$scope${filter:+, filter=$filter})"
-gh workflow run "$workflow" -R "$repo" "${args[@]}" || { echo "Dispatch failed (is the branch based on a master with the ci.yml 'scope' input?)" >&2; exit 3; }
+out="$(gh workflow run "$workflow" -R "$repo" "${args[@]}" 2>&1)" || { echo "$out" >&2; echo "Dispatch failed (is the branch based on a master with the ci.yml 'scope' input?)" >&2; exit 3; }
 
-run_id=""
+# Newer gh prints the run URL; otherwise take the first dispatched run that did not exist before.
+run_id="$(grep -Eo '/actions/runs/[0-9]+' <<<"$out" | head -1 | grep -Eo '[0-9]+$' || true)"
 for _ in $(seq 1 30); do
+  [ -z "$run_id" ] || break
   sleep 4
   for id in $(gh run list -R "$repo" -w "$workflow" -b "$branch" -e workflow_dispatch -L 50 --json databaseId --jq '.[].databaseId'); do
     if ! grep -qx "$id" <<<"$existing"; then run_id="$id"; break 2; fi
@@ -53,7 +55,7 @@ echo "Run: $url"
 deadline=$(( $(date +%s) + timeout_min * 60 )); delay=15; last=""
 while :; do
   state="$(gh run view "$run_id" -R "$repo" --json status,conclusion --jq '.status + " " + (.conclusion // "")')" || state="$last"
-  progress="$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" --jq '[.jobs[] | select(.status == "completed")] | length as $d | "\($d)/\(.jobs | length) jobs done"' 2>/dev/null || true)"
+  progress="$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs | ([.[] | select(.status == "completed")] | length) as $d | "\($d)/\(length) jobs done"' 2>/dev/null || true)"
   [ "$state $progress" != "$last" ] && echo "$(date +%H:%M:%S) ${state% } ($progress)"
   last="$state $progress"
   case "$state" in completed*) break ;; esac
