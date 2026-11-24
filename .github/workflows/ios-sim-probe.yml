@@ -18,11 +18,10 @@ jobs:
       - run: brew install xcodegen
       - working-directory: ios/EpubToMp3
         run: |
-          xcodegen generate >/dev/null
-          t() { echo "== $1 | $2"; xcodebuild -project EpubToMp3.xcodeproj -scheme "$1" -destination "$2" -dry-run test 2>&1 | grep -E "Unable|platform:iOS Sim|error:|TEST|Ineligible" | cut -c1-170 | head -6; }
-          t EpubToMp3-UnitTests "platform=iOS Simulator,name=iPhone 16,OS=18.5"
-          t EpubToMp3-UnitTests "platform=iOS Simulator,name=iPhone 16,OS=18.5,arch=arm64"
-          t EpubToMp3 "platform=iOS Simulator,name=iPhone 16,OS=18.5"
-          t EpubToMp3-IntegrationTests "platform=iOS Simulator,name=iPhone 16,OS=18.5"
-          echo "== build-for-testing generic -dry-run"
-          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -destination "generic/platform=iOS Simulator" -dry-run build-for-testing 2>&1 | grep -E "Unable|error:|BUILD|TEST" | head -5
+          cp project.yml /tmp/project.orig
+          t() { echo "== $1"; xcodegen generate >/dev/null; xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination "platform=iOS Simulator,name=iPhone 16,OS=18.5" -dry-run build 2>&1 | grep -E "Unable|error:|BUILD" | cut -c1-120 | head -3; }
+          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig > project.yml; t "v1 no ARCHS sim line"
+          sed 's/iphoneos iphonesimulator macosx/iphoneos iphonesimulator/' /tmp/project.orig > project.yml; t "v3 no macosx platform"
+          sed 's/"iphoneos iphonesimulator macosx"/"iphoneos iphonesimulator"/; s/supportedDestinations: \[iOS, macOS\]/supportedDestinations: [iOS]/' /tmp/project.orig > project.yml; t "v5 iOS-only destinations"
+          grep -v 'DEVELOPMENT_TEAM' /tmp/project.orig > project.yml; t "v4 no team"
+          cp /tmp/project.orig project.yml; t "v0 original"
