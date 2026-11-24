@@ -106,6 +106,15 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 self.playbackSession.cancel(stopPlayer: false)
             }
             .store(in: &cancellables)
+        player.$pendingNavigation
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] navigation in
+                guard let self, self.playbackSession.localPlaybackGeneration == navigation.jobID,
+                      let control = self.playbackSession.localPlaybackControl else { return }
+                StreamingSeekPriority.apply(navigation, to: control)
+            }
+            .store(in: &cancellables)
         player.$activeStreamingChapterIndex
             .compactMap { $0 }
             .removeDuplicates()

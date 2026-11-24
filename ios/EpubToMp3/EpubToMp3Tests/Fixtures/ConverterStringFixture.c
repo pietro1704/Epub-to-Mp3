@@ -88,6 +88,9 @@ void converter_job_control_set_playback_window(const void *control, size_t chapt
 bool converter_job_control_chapter_is_in_playback_window(const void *control, size_t chapter) {
     (void)chapter; return control != NULL;
 }
+bool converter_job_control_chapter_is_preempted(const void *control, size_t chapter) {
+    (void)control; (void)chapter; return false;
+}
 char *converter_session_convert_streaming_job_options_json_v1(
     const void *session, const char *output, const char *job, const char *options,
     int32_t first, int32_t last, void *progress, void *chapter, void *chunk, void *context,

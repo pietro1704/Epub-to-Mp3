@@ -160,7 +160,7 @@ final class MacReaderPlaybackSession {
                     { [weak self] event in
                         guard let self, self.localPlaybackGeneration == jobID, event.jobId == jobID,
                               self.player.snapshot?.jobId == jobID else { return }
-                        guard playbackControl.contains(chapterIndex: event.chapterIndex) else { return }
+                        guard playbackControl.acceptsChunks(forChapter: event.chapterIndex) else { return }
                         self.startingVoicePosition = nil
                         let firstPlayableChapter = self.localPlaybackChapters.isEmpty
                         let chapter = event.playableChapter
@@ -186,7 +186,7 @@ final class MacReaderPlaybackSession {
                                 guard let self else { return false }
                                 return self.localPlaybackGeneration == jobID
                                     && self.player.snapshot?.jobId == jobID
-                                    && playbackControl.contains(chapterIndex: chapterIndex)
+                                    && playbackControl.acceptsChunks(forChapter: chapterIndex)
                             },
                             onAccepted: { [weak self] in
                                 guard let self, self.localPlaybackGeneration == jobID else { return }
