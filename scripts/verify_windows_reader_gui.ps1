@@ -258,6 +258,25 @@ $window = [IntPtr]::Zero
 $flutterView = [IntPtr]::Zero
 $dialog = $null
 
+# EPUB2MP3_UI_TRACE: the app appends one JSON line per shown chapter. The Flutter accessibility
+# tree cannot expose long reader text, so the reader content is verified from this record while
+# the clicks still go through the native desktop.
+$tracePath = Join-Path $evidencePath 'ui-trace.jsonl'
+Remove-Item -LiteralPath $tracePath -ErrorAction SilentlyContinue
+$env:EPUB2MP3_UI_TRACE = $tracePath
+
+function Wait-ForTraceEvent([string]$Description, [string]$Event, [scriptblock]$Match, [int]$TimeoutSeconds = 35) {
+  Wait-ForReaderUi $Description {
+    if (Test-Path -LiteralPath $tracePath) {
+      foreach ($line in Get-Content -LiteralPath $tracePath -Encoding UTF8) {
+        $item = $null
+        try { $item = $line | ConvertFrom-Json } catch { continue }
+        if ($item.event -eq $Event -and (& $Match $item)) { return $item }
+      }
+    }
+  } -TimeoutSeconds $TimeoutSeconds
+}
+
 function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup, [int]$TimeoutSeconds = 35) {
   $clock = [Diagnostics.Stopwatch]::StartNew()
   while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
@@ -536,7 +555,7 @@ try {
 
   $book = Wait-ForReaderUi 'the imported EPUB in Library' { Find-AppText '^Amostra p.blica do CLI(?:\s|$)' }
   Click-FlutterElement $book
-  $chapterOne = (Wait-ForReaderUi 'the opening chapter passage' { Find-AppText 'a neblina cobria a colina' }).Name
+  $chapterOne = (Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter' { param($item) $item.head -match 'a neblina cobria a colina' }).head
   Save-ReaderFrame 'chapter-1'
 
   # The reader chrome shows the recent tool beside More; Contents lives in the menu.
@@ -546,7 +565,7 @@ try {
   Click-FlutterElement $contents
   $secondEntry = Wait-ForReaderUi 'the second chapter in the table of contents' { Find-AppText '^O mapa antigo$' }
   Click-FlutterElement $secondEntry
-  $chapterTwo = (Wait-ForReaderUi 'the second chapter passage' { Find-AppText 'um mapa antigo, dobrado' }).Name
+  $chapterTwo = (Wait-ForTraceEvent 'the second chapter passage' 'reader.chapter' { param($item) $item.head -match 'um mapa antigo, dobrado' }).head
   Save-ReaderFrame 'chapter-2'
 
   [ordered]@{

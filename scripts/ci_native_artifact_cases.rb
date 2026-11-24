@@ -15,6 +15,16 @@ class CiRuntimeScopeTest
     assert positions.each_cons(2).all? { |before, after| before < after }, 'Wait for the native picker after choosing local import'
   end
 
+  def test_windows_reader_content_is_verified_from_the_app_trace_not_the_accessibility_tree
+    script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    assert_includes script, '$env:EPUB2MP3_UI_TRACE = $tracePath'
+    assert_operator script.index('$env:EPUB2MP3_UI_TRACE'), :<, script.index('Start-Process -FilePath $executable')
+    assert_match(/Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter'/, script)
+    assert_match(/Wait-ForTraceEvent 'the second chapter passage' 'reader.chapter'/, script)
+    refute_match(/Find-AppText 'a neblina cobria a colina'/, script)
+    refute_match(/Find-AppText 'um mapa antigo, dobrado'/, script)
+  end
+
   def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
     workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
     job = workflow.fetch('jobs').fetch('windows-package-faber')
