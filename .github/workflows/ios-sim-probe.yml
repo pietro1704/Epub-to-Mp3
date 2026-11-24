@@ -1,0 +1,26 @@
+name: iOS sim probe
+on:
+  push:
+    branches: [ci/ios-simulator-tests]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: brew install xcodegen
+      - working-directory: ios/EpubToMp3
+        run: |
+          uname -m; xcodebuild -version; xcodegen generate
+          xcrun simctl list devices available | head -30
+          for s in EpubToMp3 EpubToMp3-UnitTests; do echo "== $s"; xcodebuild -project EpubToMp3.xcodeproj -scheme $s -showdestinations 2>&1 | tail -15; done
+          echo "== arch override"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations ARCHS=arm64 2>&1 | tail -8
+          echo "== showBuildSettings"
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -sdk iphonesimulator -showBuildSettings 2>&1 | grep -E "NATIVE_ARCH_ACTUAL|ARCHS |ONLY_ACTIVE|IPHONEOS_DEPLOYMENT|SUPPORTED_PLATFORMS" | sort | uniq | head
