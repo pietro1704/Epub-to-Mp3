@@ -91,11 +91,23 @@ void main() {
       await _pump(tester, container, bookId: 'book-a');
       expect(find.byKey(const ValueKey('reading-mode-book')), findsOneWidget);
       expect(find.byKey(const ValueKey('reading-mode-default')), findsOneWidget);
-      expect(find.text('Only for this book'), findsWidgets, reason: 'a book opens in its own mode');
+      expect(find.text('Only this book'), findsWidgets, reason: 'a book opens in its own mode (Apple wording)');
       await tester.tap(find.byKey(const ValueKey('reading-theme-sepia')));
       await tester.pumpAndSettle();
       expect(container.read(readerSettingsProvider('book-a')).readerTheme, ReaderTheme.sepia);
       expect(AppSettings(prefs).readerTheme, isNot(ReaderTheme.sepia), reason: 'the default stays');
+    });
+
+    testWidgets('each mode says in Apple wording whom the changes apply to', (tester) async {
+      final (container, _) = await _container();
+      await _pump(tester, container, bookId: 'book-a');
+      expect(
+        find.text('Changes apply only to this book. Choose Use the default to go back to the default.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('reading-mode-default')));
+      await tester.pumpAndSettle();
+      expect(find.text('Changes apply to every book without settings of its own.'), findsOneWidget);
     });
 
     testWidgets('Use the default clears the override and is hidden when there is none', (tester) async {

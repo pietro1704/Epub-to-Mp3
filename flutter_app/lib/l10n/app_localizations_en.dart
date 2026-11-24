@@ -31,7 +31,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readingModeDefault => 'Default for all books';
 
   @override
-  String get readingModeBook => 'Only for this book';
+  String get readingModeBook => 'Only this book';
 
   @override
   String get readingUseDefault => 'Use the default';
@@ -40,7 +40,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readingSpeedLabel => 'Narration speed';
 
   @override
-  String get readingBookHint => 'These choices apply to this book only.';
+  String get readingDefaultHint =>
+      'Changes apply to every book without settings of its own.';
+
+  @override
+  String get readingBookHint =>
+      'Changes apply only to this book. Choose Use the default to go back to the default.';
 
   @override
   String get readerLayoutScrolling => 'Scrolling';

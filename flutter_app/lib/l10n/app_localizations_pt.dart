@@ -40,7 +40,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get readingSpeedLabel => 'Velocidade da narração';
 
   @override
-  String get readingBookHint => 'Estas escolhas valem só para este livro.';
+  String get readingDefaultHint =>
+      'As mudanças valem para todo livro sem ajustes próprios.';
+
+  @override
+  String get readingBookHint =>
+      'As mudanças valem só para este livro. Toque em Usar o padrão para voltar ao padrão.';
 
   @override
   String get readerLayoutScrolling => 'Rolagem';
