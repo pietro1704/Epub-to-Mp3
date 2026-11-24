@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/ebook_fulltext.dart';
 import '../../models/language_model_resolution.dart';
+import '../../models/narration_plan.dart';
 import 'embedded_conversion_contract.dart';
 import 'model_install/android_model_install_operations.dart';
 import 'model_install/model_install_models.dart';

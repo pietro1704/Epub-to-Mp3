@@ -432,6 +432,32 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     )
 }
 
+/// The narration plan of a book: language decision, main voice, other languages' voices and the
+/// missing-voice notices (pure; never downloads).
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookNarrationPlan(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    request_json: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookNarrationPlan",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let Ok(request) = read_string(&mut env, request_json) else {
+                return std::ptr::null_mut();
+            };
+            let Ok(request) = CString::new(request) else {
+                return std::ptr::null_mut();
+            };
+            let value = unsafe { converter_book_narration_plan_json_v1(request.as_ptr()) };
+            language_json_string(&env, value)
+        },
+    )
+}
+
 /// Language analysis of a book file. Blocking: call off the UI thread.
 #[no_mangle]
 pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeBookLanguage(

@@ -206,6 +206,21 @@ internal class ConversionModelChannels(
                         }
                     }
                 }
+                "bookNarrationPlan" -> {
+                    val request = call.argument<String>("request")
+                    if (request.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "request is required", null)
+                    } else {
+                        runNative(result) {
+                            // Pure and fast, but it runs on the converter executor like the other language calls.
+                            val value = nativeBookNarrationPlan(request)
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
                 "bookLanguage" -> {
                     val path = call.argument<String>("path")
                     if (path.isNullOrBlank()) {
