@@ -598,6 +598,18 @@ class AppLocalizationsEs extends AppLocalizations {
   String get modelsSubtitle => 'Elige la narración para cada idioma de libro';
 
   @override
+  String get modelsLanguagesTitle => 'Idiomas';
+
+  @override
+  String get modelsSystemLanguages => 'Idiomas del sistema';
+
+  @override
+  String get modelsPopularLanguages => 'Más populares';
+
+  @override
+  String get modelsOtherLanguages => 'Todos los idiomas';
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override
