@@ -157,9 +157,8 @@ jobs:
           cache: false
 
       - name: Install native Android prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
+        timeout-minutes: 10
+        run: bash scripts/ci_apt_install.sh clang libclang-dev cmake pkg-config
 
       # The runner image no longer puts an Android SDK on PATH (v0.9.0 failed with
       # "sdkmanager: command not found"); use the mise-managed SDK.
@@ -370,9 +369,8 @@ jobs:
 
       - name: Linux desktop deps
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev unzip binutils
+        timeout-minutes: 10
+        run: bash scripts/ci_apt_install.sh --install-recommends clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev unzip binutils
 
       - name: Provision the pinned Linux ONNX Runtime
         if: runner.os == 'Linux'
