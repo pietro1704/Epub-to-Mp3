@@ -504,3 +504,17 @@ final class ModelsByLanguageModel: ObservableObject {
         state = ModelsByLanguageViewState(sections: sections)
     }
 }
+
+// MARK: A2 - the language-first root of Models
+
+extension ModelsByLanguageModel {
+    /// The rows of the root ("the voice for each language"): which languages appear and what each resolves to now.
+    /// Rust resolves; this only gathers its inputs (the language's choice, the saved default, what is installed,
+    /// the system voices, the consent and the system-voice setting). `resolve` is a seam for tests.
+    func rootRows(
+        systemLanguages: [String] = Locale.preferredLanguages, bookLanguages: [String] = [],
+        resolve: ((LanguageModelResolutionRequest) -> LanguageModelResolution?)? = nil
+    ) -> [ModelsRootRows.Row] {
+        []
+    }
+}
