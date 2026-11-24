@@ -240,7 +240,7 @@ mod tests {
         let pt = "A tarde caiu devagar sobre a casa do jardim e ninguém ousou romper o silêncio que se instalara entre as velhas paredes. ";
         let en = "The afternoon fell slowly over the house in the garden and nobody dared to break the silence that had settled between the old walls. ";
         // English has slightly more text (a few points), the file says Portuguese: Portuguese leads.
-        let near = [en.repeat(26), pt.repeat(25)];
+        let near = [en.repeat(25), pt.repeat(27)];
         let tied = crate::language::profile::profile(
             near.iter().map(String::as_str),
             Some("pt-BR"),
