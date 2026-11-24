@@ -2,6 +2,7 @@
 
 use crate::piper::CancellationToken;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use thiserror::Error;
 
@@ -17,6 +18,49 @@ pub enum ConversionControlError {
     InvalidRecoveryJob,
 }
 
+/// Streaming seeks waiting for the first segment of their target, across every job of the process.
+static FOREGROUND_SEEKS: AtomicUsize = AtomicUsize::new(0);
+
+/// Longest a background job waits for a streaming seek (a stale hold can never freeze it).
+pub(crate) const FOREGROUND_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Counts one streaming seek as outstanding while it is alive.
+struct ForegroundHold;
+impl ForegroundHold {
+    fn new() -> Self {
+        FOREGROUND_SEEKS.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+impl Drop for ForegroundHold {
+    fn drop(&mut self) {
+        FOREGROUND_SEEKS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Background work (jobs that are not streaming playback) rests while a streaming seek has
+/// not produced its first segment yet, so the CPU and the TTS session go to the listener.
+/// Cancellation and `max` bound the wait; the browser build has no blocking sleep and skips it.
+pub(crate) fn wait_for_foreground(
+    streaming: bool,
+    cancelled: &dyn Fn() -> bool,
+    max: std::time::Duration,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let started = std::time::Instant::now();
+        while !streaming
+            && FOREGROUND_SEEKS.load(Ordering::Acquire) > 0
+            && !cancelled()
+            && started.elapsed() < max
+        {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = (streaming, cancelled, max);
+}
+
 #[derive(Default)]
 struct QueueState {
     attached: bool,
@@ -27,6 +71,11 @@ struct QueueState {
     recovery_job: Option<String>,
     playback_window: Option<(usize, usize)>,
     listening: Option<crate::tts_session::ListeningPlan>,
+    /// A chapter the user just navigated to while streaming: whatever else is in flight yields
+    /// at its next segment boundary until this chapter is taken.
+    urgent: Option<usize>,
+    /// Keeps other jobs resting until the urgent chapter has produced its first segment.
+    hold: Option<(usize, ForegroundHold)>,
 }
 
 pub(crate) struct GenerationLease<'a> {
@@ -79,7 +128,8 @@ impl ConversionControl {
 
     pub fn cancel(&self) {
         // Synchronize the flag with wait registration to avoid a lost wakeup.
-        let _queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        let mut queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        queue.hold = None;
         self.cancel.cancel();
         self.ready.notify_all();
     }
@@ -164,7 +214,9 @@ impl ConversionControl {
     }
 
     /// Keep intent before discovery; once attached, only unstarted selected
-    /// source identities can become the next synthesis boundary.
+    /// source identities can become the next synthesis boundary. While streaming (a listening
+    /// plan or a playback window exists) the chapter also preempts the one in progress: that
+    /// chapter yields at its next segment boundary and is resumed after this one.
     pub fn prioritize(&self, source_index: usize) -> Result<(), ConversionControlError> {
         let mut queue = self
             .queue
@@ -178,7 +230,54 @@ impl ConversionControl {
             return Err(ConversionControlError::UnavailableChapter(source_index));
         }
         rotate_to(&mut queue.remaining, source_index);
+        // The target must be eligible to be taken, or yielding to it would only stall the
+        // job: navigation with a listening plan moves the plan onto it (which also invalidates
+        // in-flight generations); with a playback window it must already be inside the window.
+        let eligible = if let Some(plan) = &mut queue.listening {
+            let _ = plan.move_to(crate::tts_session::ListeningPosition {
+                version: 2,
+                chapter_index: source_index,
+                text_offset: 0,
+            });
+            true
+        } else {
+            queue.playback_window.is_some_and(|(start, ahead)| {
+                source_index >= start && source_index <= start.saturating_add(ahead)
+            })
+        };
+        if eligible {
+            queue.urgent = Some(source_index);
+            queue.hold = Some((source_index, ForegroundHold::new()));
+        }
+        self.ready.notify_all();
         Ok(())
+    }
+
+    /// Streaming playback (a listening plan or a playback window) has priority over other jobs.
+    pub fn is_streaming(&self) -> bool {
+        let queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        queue.listening.is_some() || queue.playback_window.is_some()
+    }
+
+    /// A segment of `source_index` reached the listener: a seek to it has been served.
+    pub fn note_segment_done(&self, source_index: usize) {
+        let mut queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        if queue
+            .hold
+            .as_ref()
+            .is_some_and(|(chapter, _)| *chapter == source_index)
+        {
+            queue.hold = None;
+        }
+    }
+
+    /// Whether a chapter the user just navigated to must run before `source_index` continues.
+    pub fn preempts(&self, source_index: usize) -> bool {
+        self.queue
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .urgent
+            .is_some_and(|urgent| urgent != source_index)
     }
 
     pub(crate) fn attach(&self, selected: &[usize]) -> Result<(), ConversionControlError> {
@@ -225,7 +324,11 @@ impl ConversionControl {
                 })
             });
             if self.cancel.is_cancelled() || (!queue.paused && eligible.is_some()) {
-                return Ok(eligible.map(|position| queue.remaining.remove(position).unwrap()));
+                let taken = eligible.map(|position| queue.remaining.remove(position).unwrap());
+                if taken.is_some() && taken == queue.urgent {
+                    queue.urgent = None;
+                }
+                return Ok(taken);
             }
             if queue.remaining.is_empty() {
                 return Ok(None);
@@ -330,6 +433,10 @@ fn rotate_to(queue: &mut VecDeque<usize>, source_index: usize) {
         queue.rotate_left(position);
     }
 }
+
+/// Tests that start or observe streaming seeks share one process-wide counter: run them one at a time.
+#[cfg(test)]
+pub(crate) static SEEK_TEST_GATE: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -457,5 +564,70 @@ mod tests {
             result.expect("empty queue must not wait for resource policy"),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn a_streaming_seek_holds_background_work_until_its_first_segment() {
+        let _serial = SEEK_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let streaming = ConversionControl::new();
+        streaming.set_playback_window(0, 3);
+        streaming.attach(&[0, 1, 2]).unwrap();
+        assert_eq!(streaming.take().unwrap(), Some(0));
+        assert!(!streaming.preempts(0), "no seek yet");
+        streaming.prioritize(2).unwrap();
+        assert!(streaming.preempts(0), "the chapter in progress must yield");
+        assert!(
+            !streaming.preempts(2),
+            "the target does not yield to itself"
+        );
+
+        // Background work (not streaming) rests until the target produced its first segment.
+        let release = streaming.clone();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            release.note_segment_done(2);
+        });
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(240));
+        releaser.join().unwrap();
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+
+        // The streaming job itself, cancellation and a dropped control never wait.
+        streaming.prioritize(2).unwrap();
+        let started = std::time::Instant::now();
+        wait_for_foreground(true, &|| false, std::time::Duration::from_secs(5));
+        wait_for_foreground(false, &|| true, std::time::Duration::from_secs(5));
+        streaming.cancel();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        let dropped = ConversionControl::new();
+        dropped.set_playback_window(0, 3);
+        dropped.attach(&[0, 1, 2]).unwrap();
+        assert_eq!(dropped.take().unwrap(), Some(0));
+        dropped.prioritize(1).unwrap();
+        drop(dropped);
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+    }
+
+    #[test]
+    fn a_seek_outside_the_playback_window_does_not_preempt_or_hold_anything() {
+        let _serial = SEEK_TEST_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let control = ConversionControl::new();
+        control.set_playback_window(0, 1);
+        control.attach(&[0, 1, 2, 3]).unwrap();
+        assert_eq!(control.take().unwrap(), Some(0));
+        control.prioritize(3).unwrap();
+        assert!(
+            !control.preempts(0),
+            "an ineligible target would only stall the job"
+        );
+        let started = std::time::Instant::now();
+        wait_for_foreground(false, &|| false, std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
     }
 }

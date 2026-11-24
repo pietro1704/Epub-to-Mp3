@@ -82,6 +82,21 @@ Contract for clients (additive, shared Rust):
 - `Chapter.note_marks` (Rust API): reference end, label, body text and, when in the same
   document, the body range, on the unchanged text axis.
 
+## Streaming seek priority
+
+When the listener navigates while streaming (a listening position or a playback window is set),
+the destination is the top priority (card STREAM-SEEK-PRIORITY). `ConversionControl::prioritize`
+(FFI `converter_job_control_prioritize`, unchanged signature) now also preempts: the chapter in
+progress yields at its next segment boundary (`WorkerError::PlaybackWindowChanged`, requeued, its
+finished segments stay in the segment cache) and the target is synthesized next; the preempted
+chapter is resumed after it. The target must be eligible (with a listening plan the plan moves
+onto it; with a playback window it must already be inside the window), otherwise it only
+reorders the queue. Background jobs (no listening plan and no playback window, including jobs
+without a control) rest at their segment boundaries while the target has not delivered its first
+segment, bounded by 30 s and by cancellation. `converter_job_control_chapter_is_preempted(control,
+chapter) -> bool` (additive) lets chunk-delivery adapters drop in-flight chunks of a chapter that
+must yield. Seeks through `set_listening_position` already preempted and still do.
+
 ## Provider feedback
 
 **Provider pressure**:

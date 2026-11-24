@@ -144,12 +144,22 @@ impl ConversionWorker {
                 return Err(WorkerError::Cancelled);
             }
             if stale.load(Ordering::Acquire)
-                || self
-                    .control
-                    .as_ref()
-                    .is_some_and(|control| !control.generation_is_current(generation))
+                || self.control.as_ref().is_some_and(|control| {
+                    !control.generation_is_current(generation) || control.preempts(source_index)
+                })
             {
                 return Err(WorkerError::PlaybackWindowChanged);
+            }
+            // Streaming playback outranks background jobs: rest while a seek is being served.
+            crate::conversion_control::wait_for_foreground(
+                self.control
+                    .as_ref()
+                    .is_some_and(|control| control.is_streaming()),
+                &|| self.cancel.is_cancelled(),
+                crate::conversion_control::FOREGROUND_MAX_WAIT,
+            );
+            if self.cancel.is_cancelled() {
+                return Err(WorkerError::Cancelled);
             }
             // Commit policy changes only for a validated, accepted segment.
             // A cancelled/stale secondary must not consume recovery counters.
@@ -284,6 +294,9 @@ impl ConversionWorker {
                 });
             }
             output.write_all(&bytes)?;
+            if let Some(control) = &self.control {
+                control.note_segment_done(source_index);
+            }
             let consumed_chars = remainder
                 .first()
                 .map_or(segment.scalar_range.end, |next| next.scalar_range.start)

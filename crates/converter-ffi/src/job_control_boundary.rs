@@ -218,6 +218,25 @@ pub unsafe extern "C" fn converter_job_control_chapter_is_in_playback_window(
     )
 }
 
+/// Returns whether a streaming navigation (`converter_job_control_prioritize` while streaming)
+/// wants another chapter to run before `chapter_index` continues. A chapter that returns true
+/// yields at its next segment boundary and is resumed later; adapters stop delivering its
+/// in-flight chunks. Additive: older clients never call it.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_chapter_is_preempted(
+    control: *const ConverterJobControl,
+    chapter_index: usize,
+) -> bool {
+    ffi_guard("converter_job_control_chapter_is_preempted", false, || {
+        control
+            .as_ref()
+            .is_some_and(|control| control.control.preempts(chapter_index))
+    })
+}
+
+/// Makes `chapter_index` the next synthesis boundary. While streaming (a listening position or a
+/// playback window is set) and the chapter is eligible, it also preempts the chapter in progress
+/// and rests background jobs until its first segment has been delivered.
 #[no_mangle]
 pub unsafe extern "C" fn converter_job_control_prioritize(
     control: *const ConverterJobControl,
