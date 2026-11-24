@@ -17,7 +17,16 @@ on:
         type: boolean
         default: false
       base_sha:
-        description: Exact PR base SHA required for scoped manual validation
+        description: Exact PR base SHA required for diff-scoped manual validation (scope auto)
+        type: string
+        default: ''
+      scope:
+        description: "Branch evidence: auto classifies the diff against base_sha like the PR gate; otherwise run exactly this runtime"
+        type: choice
+        options: [auto, apple, rust, flutter, android, rails, all]
+        default: auto
+      test_filter:
+        description: "Branch evidence: comma-separated EpubToMp3Tests classes for the iOS Simulator job (empty = default selection)"
         type: string
         default: ''
 
@@ -53,13 +62,25 @@ jobs:
           FULL_VALIDATION: ${{ inputs.full_validation == true }}
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
+          EVIDENCE_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'auto' }}
         shell: ruby {0}
         run: |
           require 'open3'
           scopes = %w[rust flutter android apple rails lockfile native_host].to_h { |name| [name, false] }
           contracts = true
+          evidence_scope = ENV.fetch('EVIDENCE_SCOPE', 'auto')
+          evidence_scope = 'auto' if evidence_scope.empty?
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
+          elsif evidence_scope != 'auto'
+            # Manual branch evidence: run exactly the named runtime with the PR gate's own jobs.
+            abort "Unknown evidence scope: #{evidence_scope}" unless %w[apple rust flutter android rails all].include?(evidence_scope)
+            if evidence_scope == 'all'
+              scopes.transform_values! { true }
+            else
+              scopes[evidence_scope] = true
+              scopes['native_host'] = true if evidence_scope == 'apple'
+            end
           else
             abort 'A scoped run requires a pull request base' unless %w[pull_request workflow_dispatch].include?(ENV.fetch('EVENT_NAME')) && ENV.fetch('BASE_SHA').match?(/\A[0-9a-f]{40}\z/)
             changed, status = Open3.capture2('git', 'diff', '--no-renames', '--name-only', '-z', "#{ENV.fetch('BASE_SHA')}...HEAD")
@@ -555,6 +576,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.apple == 'true'
     uses: ./.github/workflows/ios-simulator-tests.yml
+    with:
+      tests: ${{ inputs.test_filter }}
     permissions:
       contents: read
 
@@ -613,3 +636,25 @@ jobs:
             expected = required ? 'success' : 'skipped'
             abort "Unexpected runtime result: #{job}" unless needs.fetch(job).fetch('result') == expected
           end
+
+  # Manual branch evidence only: a readable per-job / test-count / artifact summary of this run.
+  # Never part of the PR gate and never able to fail the run.
+  branch-evidence:
+    name: Branch evidence summary
+    needs: [pr-gate]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.full_validation != true
+    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci_branch_evidence_report.sh
+          persist-credentials: false
+      - name: Publish the evidence summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/ci_branch_evidence_report.sh "$GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY" || echo "Summary unavailable" >> "$GITHUB_STEP_SUMMARY"

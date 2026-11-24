@@ -42,6 +42,33 @@ A narrow validation request ends after its visible app journey
 and focused checks; expand only for a concrete failure or unresolved acceptance
 condition.
 
+## CI-first evidence
+
+GitHub Actions is the default place to build and test; the Mac (8 GiB Intel) and
+Arch (4 cores/7 GiB) are too weak to be the bottleneck. After pushing a branch,
+get build, unit, iOS Simulator, Rust, Flutter and Windows evidence from CI:
+
+```sh
+scripts/ci_branch_evidence.sh <branch> [scope] [filter]
+```
+
+`scope` is `auto` (default: the PR gate's own diff classification against
+`master`), `apple`, `rust`, `flutter`, `android`, `rails`, `all` or `windows`;
+`filter` is a comma-separated `EpubToMp3Tests` class list for the iOS Simulator
+job. The script dispatches `ci.yml` (`workflow_dispatch`) on the pushed head, so
+it runs the same jobs as the PR gate, ends with the `PR gate` job, prints the run
+URL and per-job results, test counts and artifact links (also written to the run
+summary), and exits non-zero on failure. It needs only bash and `gh`, on Mac or
+Arch. The branch must be based on a `master` that has the `scope` input.
+
+- Run local native builds only for visible-app checks, physical-device runs
+  (16e, A8, tablet) or quick single-file iteration. Do not run local
+  `xcodebuild`/`cargo`/`flutter` builds to collect pre-PR test evidence.
+- Open the PR only after a green branch-evidence run on the exact head being
+  published; cite the run URL in the PR body. A new push needs a new run.
+- Branch-evidence runs use their own concurrency group and never cancel PR-gate
+  runs. A pushed branch still ends in a PR or is deleted; drafts stay forbidden.
+
 ## Apple toolchain
 
 Use Xcode 26.3 for the physical iPhone 16e by default, as explicitly requested
@@ -302,7 +329,8 @@ PR ready. The updated head must pass its own required CI before merging. A hold
 or explicit acceptance requirement still applies to the change it covers.
 
 Finish the authorized local checks and any requested real-app journey before
-commit. Commit/push and PR creation are authorized by default for verified
+commit; build/test evidence comes from a green branch-evidence run on the pushed
+head (see CI-first evidence), cited in the PR body. Commit/push and PR creation are authorized by default for verified
 scoped changes; incomplete work stays local. When the owned branch is behind
 `origin/master`, preserve edits, fetch, rebase, resolve conflicts and rerun affected
 checks. Publish a rebased branch with an explicit expected-tip `--force-with-lease`
@@ -335,13 +363,15 @@ validated merging. Administrative bypass requires explicit approval for that PR.
 Release, website/Hugging Face publication and issue closure retain their own
 authorization boundaries.
 The merge workflow merges any ready PR whose gate passed, even with auto-merge
-off; to hold work, keep it on a pushed branch without a PR. The PR gate builds
-the macOS app only, so a change to `#if os(iOS)` code needs a guarded local iOS
-`build-for-testing` before its PR. After a rebase, earlier test results carry
+off; to hold work, keep it on a pushed branch without a PR. iOS-only UIKit
+code runs on a CI iOS Simulator (`ios-simulator` job); get that evidence from
+`scripts/ci_branch_evidence.sh <branch> apple`, not a local iOS build. After a rebase, earlier test results carry
 over without a rerun only when `git patch-id --stable` or the tested subtree
 bytes are unchanged; record that identity with the evidence.
 
-Continue available work while GitHub CI and merges run. Inspect relevant PR
+The one exception to not waiting on CI is `scripts/ci_branch_evidence.sh`, which
+waits for the single run it dispatched. Continue available work while GitHub CI
+and merges run. Inspect relevant PR
 state and CI in one bounded pass in response to a new message from Pietro, then
 defer further status queries until his next message.
 A push, PR creation, elapsed time, local task completion or CI notification does
