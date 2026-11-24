@@ -150,23 +150,37 @@ final class ModelsScreenController: UITableViewController {
     private func narrationCell(_ row: NarrationRow, at indexPath: IndexPath) -> UITableViewCell {
         switch row {
         case .primary, .secondary:
+            let secondary = row == .secondary
             let cell = tableView.dequeueReusableCell(withIdentifier: "Narration", for: indexPath)
+            let selection = secondary ? model.secondarySelection : model.primarySelection
             var content = cell.defaultContentConfiguration()
-            if row == .primary {
-                content.text = L10n.string("settings.audioEngineChoice")
-                content.secondaryText = model.title(for: model.primarySelection)
-                cell.accessibilityIdentifier = "settings.tts.primary"
-            } else {
-                content.text = L10n.string("settings.secondaryVoice")
-                content.secondaryText = model.secondarySelection.map(model.title(for:)) ?? L10n.string("settings.noSecondary")
-                cell.accessibilityIdentifier = "settings.tts.secondary"
-            }
+            // The headline is the engine; the voice or model inside it is the detail.
+            content.text = model.engineTitle(for: selection)
+            content.secondaryText = model.voiceTitle(for: selection)
             content.image = UIImage(systemName: "waveform")
             cell.contentConfiguration = content
-            cell.accessibilityValue = content.secondaryText
-            cell.accessoryView = nil
-            cell.accessoryType = .disclosureIndicator
-            cell.selectionStyle = .default
+            cell.accessoryView = UIImageView(image: UIImage(systemName: "chevron.up.chevron.down"))
+            cell.accessoryView?.tintColor = .secondaryLabel
+            cell.selectionStyle = .none
+            cell.isAccessibilityElement = false
+            // A transparent button over the cell opens the menu: it runs the choice the instant an option is
+            // tapped (an action sheet only runs it after its dismissal animation ends).
+            let tag = 4242
+            let button = (cell.contentView.viewWithTag(tag) as? UIButton) ?? {
+                let created = UIButton(type: .custom)
+                created.tag = tag
+                created.frame = cell.contentView.bounds
+                created.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                cell.contentView.addSubview(created)
+                return created
+            }()
+            button.showsMenuAsPrimaryAction = true
+            button.menu = narrationMenu(secondary: secondary)
+            button.isAccessibilityElement = true
+            button.accessibilityIdentifier = secondary ? "settings.tts.secondary" : "settings.tts.primary"
+            button.accessibilityLabel = L10n.string(secondary ? "settings.secondaryVoice" : "settings.audioEngineChoice")
+            button.accessibilityValue = [content.text, content.secondaryText].compactMap { $0 }.joined(separator: ", ")
+            button.accessibilityTraits = .button
             return cell
         case .automaticSystemFallback:
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
@@ -193,38 +207,42 @@ final class ModelsScreenController: UITableViewController {
         }
     }
 
-    /// The cancel action is added by `SettingsAlertPresentation.actionSheet`; adding a second one makes UIKit
-    /// throw (P0: tapping the default voice crashed the app).
-    func primaryChoicesAlert() -> UIAlertController {
-        let alert = UIAlertController(title: L10n.string("settings.audioEngineChoice"),
-                                      message: L10n.string("settings.audioEngineChoiceDescription"), preferredStyle: .actionSheet)
-        for choice in model.narrationChoices {
-            alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
-                self?.model.selectPrimary(choice.selection)
+    /// Engine first (System, Piper, Edge); inside Piper its downloaded models. Every leaf applies at once.
+    func narrationMenu(secondary: Bool) -> UIMenu {
+        let spec = model.narrationMenu(secondary: secondary)
+        var children: [UIMenuElement] = []
+        if spec.showsNone {
+            children.append(UIAction(title: L10n.string("settings.noSecondary"), state: spec.noneIsSelected ? .on : .off) { [weak self] _ in
+                self?.applyNarration(nil, secondary: true)
             })
         }
-        return alert
-    }
-
-    func secondaryChoicesAlert() -> UIAlertController {
-        let alert = UIAlertController(title: L10n.string("settings.secondaryVoice"), message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: L10n.string("settings.noSecondary"), style: .default) { [weak self] _ in
-            self?.model.selectSecondary(nil)
-        })
-        for choice in model.secondaryChoices {
-            alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
-                self?.model.selectSecondary(choice.selection)
-            })
+        for engine in spec.engines {
+            if engine.hasVoiceList {
+                let voices: [UIMenuElement] = engine.voices.isEmpty
+                    ? [UIAction(title: engine.hint ?? engine.title, attributes: .disabled) { _ in }]
+                    : engine.voices.map { voice in
+                        UIAction(title: voice.title, state: voice.isSelected ? .on : .off) { [weak self] _ in
+                            self?.applyNarration(voice.selection, secondary: secondary)
+                        }
+                    }
+                children.append(UIMenu(title: engine.title, image: engine.isSelected ? UIImage(systemName: "checkmark") : nil,
+                                       children: voices))
+            } else {
+                children.append(UIAction(title: engine.title, subtitle: engine.isEnabled ? nil : engine.hint,
+                                         attributes: engine.isEnabled ? [] : .disabled,
+                                         state: engine.isSelected ? .on : .off) { [weak self] _ in
+                    self?.applyNarration(engine.direct, secondary: secondary)
+                })
+            }
         }
-        return alert
+        return UIMenu(children: children)
     }
 
-    private func presentPrimaryChoices(source indexPath: IndexPath) {
-        SettingsAlertPresentation.actionSheet(primaryChoicesAlert(), on: self, tableView: tableView, source: indexPath)
-    }
-
-    private func presentSecondaryChoices(source indexPath: IndexPath) {
-        SettingsAlertPresentation.actionSheet(secondaryChoicesAlert(), on: self, tableView: tableView, source: indexPath)
+    /// Applies the choice and refreshes both narration rows in the same turn as the tap.
+    private func applyNarration(_ selection: TtsSelection?, secondary: Bool) {
+        if secondary { model.selectSecondary(selection) } else if let selection { model.selectPrimary(selection) }
+        tableView.reloadRows(at: [IndexPath(row: NarrationRow.primary.rawValue, section: 0),
+                                  IndexPath(row: NarrationRow.secondary.rawValue, section: 0)], with: .none)
     }
 
     // MARK: actions
@@ -232,11 +250,6 @@ final class ModelsScreenController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
         if indexPath.section == 0 {
-            switch NarrationRow(rawValue: indexPath.row) {
-            case .primary: presentPrimaryChoices(source: indexPath)
-            case .secondary: presentSecondaryChoices(source: indexPath)
-            default: break
-            }
             return
         }
         let group = groups[indexPath.section - 1]

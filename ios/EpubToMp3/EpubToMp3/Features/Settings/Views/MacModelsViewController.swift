@@ -18,13 +18,16 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let table = NSTableView()
     private let statusLabel = NSTextField(labelWithString: "")
     // The narration settings the old voice-models screen carried.
+    /// Engine first (System, Piper, Edge); the voice or model inside the engine has its own popup beside it.
     private let primaryPopup = NSPopUpButton()
+    private let primaryVoicePopup = NSPopUpButton()
     private let secondaryPopup = NSPopUpButton()
+    private let secondaryVoicePopup = NSPopUpButton()
+    private var primaryMenu: ModelsByLanguageModel.NarrationMenu?
+    private var secondaryMenu: ModelsByLanguageModel.NarrationMenu?
     private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let lowQualityButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private var primaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
-    private var secondaryChoices: [ModelsByLanguageModel.NarrationChoice] = []
     private var items: [Item] = []
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
@@ -70,6 +73,14 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         secondaryPopup.action = #selector(secondaryChanged)
         secondaryPopup.setAccessibilityIdentifier("settings.tts.secondary")
         secondaryPopup.setAccessibilityLabel(L10n.string("settings.secondaryVoice"))
+        primaryVoicePopup.target = self
+        primaryVoicePopup.action = #selector(primaryVoiceChanged)
+        primaryVoicePopup.setAccessibilityIdentifier("settings.tts.primary.voice")
+        primaryVoicePopup.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
+        secondaryVoicePopup.target = self
+        secondaryVoicePopup.action = #selector(secondaryVoiceChanged)
+        secondaryVoicePopup.setAccessibilityIdentifier("settings.tts.secondary.voice")
+        secondaryVoicePopup.setAccessibilityLabel(L10n.string("settings.secondaryVoice"))
         automaticFallbackButton.title = L10n.string("settings.automaticSystemFallback")
         automaticFallbackButton.target = self
         automaticFallbackButton.action = #selector(automaticFallbackChanged)
@@ -85,8 +96,8 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         lowQualityButton.setAccessibilityIdentifier("models.showLowQuality")
         lowQualityButton.setAccessibilityHelp(L10n.string("models.showLowQualityDescription"))
         let narration = NSGridView(views: [
-            [label("settings.audioEngineChoice"), primaryPopup],
-            [label("settings.secondaryVoice"), secondaryPopup],
+            [label("settings.audioEngineChoice"), NSStackView(views: [primaryPopup, primaryVoicePopup])],
+            [label("settings.secondaryVoice"), NSStackView(views: [secondaryPopup, secondaryVoicePopup])],
             [NSView(), automaticFallbackButton],
             [NSView(), onlineFallbackButton],
             [NSView(), lowQualityButton],
@@ -151,30 +162,64 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     // MARK: narration
 
     private func refreshNarration() {
-        primaryChoices = model.narrationChoices
-        secondaryChoices = model.secondaryChoices
-        primaryPopup.removeAllItems()
-        primaryPopup.addItems(withTitles: primaryChoices.map(\.title))
-        primaryPopup.selectItem(at: primaryChoices.firstIndex { $0.selection.representsSameRequest(as: model.primarySelection) } ?? -1)
-        secondaryPopup.removeAllItems()
-        secondaryPopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + secondaryChoices.map(\.title))
-        let secondaryIndex = model.secondarySelection.flatMap { selected in
-            secondaryChoices.firstIndex { $0.selection.representsSameRequest(as: selected) }
-        }
-        secondaryPopup.selectItem(at: secondaryIndex.map { $0 + 1 } ?? 0)
+        let primary = model.narrationMenu(secondary: false)
+        let secondary = model.narrationMenu(secondary: true)
+        primaryMenu = primary
+        secondaryMenu = secondary
+        fill(primaryPopup, voices: primaryVoicePopup, with: primary)
+        fill(secondaryPopup, voices: secondaryVoicePopup, with: secondary)
         automaticFallbackButton.state = model.allowAutomaticSystemVoiceFallback ? .on : .off
         onlineFallbackButton.state = model.allowOnlineFallback ? .on : .off
         lowQualityButton.state = model.showLowQuality ? .on : .off
     }
 
-    @objc private func primaryChanged() {
-        guard primaryChoices.indices.contains(primaryPopup.indexOfSelectedItem) else { return }
-        model.selectPrimary(primaryChoices[primaryPopup.indexOfSelectedItem].selection)
+    /// One engine popup (with "None" first for the reserve) and, for Piper, a second popup with its models.
+    private func fill(_ engines: NSPopUpButton, voices: NSPopUpButton, with menu: ModelsByLanguageModel.NarrationMenu) {
+        engines.removeAllItems()
+        if menu.showsNone { engines.addItem(withTitle: L10n.string("settings.noSecondary")) }
+        for engine in menu.engines {
+            engines.addItem(withTitle: engine.title)
+            engines.lastItem?.isEnabled = engine.isEnabled
+            engines.lastItem?.toolTip = engine.hint
+        }
+        let selected = menu.engines.firstIndex(where: \.isSelected).map { $0 + (menu.showsNone ? 1 : 0) }
+        engines.selectItem(at: menu.noneIsSelected ? 0 : (selected ?? -1))
+        voices.removeAllItems()
+        if let engine = menu.engines.first(where: { $0.isSelected && $0.hasVoiceList }) {
+            voices.addItems(withTitles: engine.voices.map(\.title))
+            voices.selectItem(at: engine.voices.firstIndex(where: \.isSelected) ?? -1)
+            voices.isHidden = false
+        } else {
+            voices.isHidden = true
+        }
     }
 
-    @objc private func secondaryChanged() {
-        let index = secondaryPopup.indexOfSelectedItem - 1
-        model.selectSecondary(secondaryChoices.indices.contains(index) ? secondaryChoices[index].selection : nil)
+    private func engineChosen(_ popup: NSPopUpButton, menu: ModelsByLanguageModel.NarrationMenu?, secondary: Bool) {
+        guard let menu else { return }
+        var index = popup.indexOfSelectedItem
+        if menu.showsNone {
+            if index == 0 { model.selectSecondary(nil); return }
+            index -= 1
+        }
+        guard menu.engines.indices.contains(index) else { return }
+        let engine = menu.engines[index]
+        // An engine with a model list starts on its already chosen model, else on its first one.
+        let selection = engine.direct ?? (engine.voices.first(where: \.isSelected) ?? engine.voices.first)?.selection
+        guard let selection else { return }
+        if secondary { model.selectSecondary(selection) } else { model.selectPrimary(selection) }
+    }
+
+    @objc private func primaryChanged() { engineChosen(primaryPopup, menu: primaryMenu, secondary: false) }
+    @objc private func secondaryChanged() { engineChosen(secondaryPopup, menu: secondaryMenu, secondary: true) }
+
+    @objc private func primaryVoiceChanged() { voiceChosen(primaryVoicePopup, menu: primaryMenu, secondary: false) }
+    @objc private func secondaryVoiceChanged() { voiceChosen(secondaryVoicePopup, menu: secondaryMenu, secondary: true) }
+
+    private func voiceChosen(_ popup: NSPopUpButton, menu: ModelsByLanguageModel.NarrationMenu?, secondary: Bool) {
+        guard let engine = menu?.engines.first(where: { $0.isSelected && $0.hasVoiceList }),
+              engine.voices.indices.contains(popup.indexOfSelectedItem) else { return }
+        let selection = engine.voices[popup.indexOfSelectedItem].selection
+        if secondary { model.selectSecondary(selection) } else { model.selectPrimary(selection) }
     }
 
     @objc private func automaticFallbackChanged() { model.allowAutomaticSystemVoiceFallback = automaticFallbackButton.state == .on }
