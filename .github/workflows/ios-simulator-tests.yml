@@ -75,6 +75,8 @@ jobs:
             abort "No iPhone Simulator" unless hit
             puts hit["udid"]')"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "SDK $sdk_version -> $udid"; xcrun simctl list devices | grep -F "$udid" || true
+          xcodebuild -showsdks | grep -i simulator || true
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
       - name: Run iOS XCTest on the Simulator
@@ -87,6 +89,7 @@ jobs:
           IFS=',' read -ra names <<< "$classes"
           for name in "${names[@]}"; do only+=("-only-testing:EpubToMp3Tests/${name// /}"); done
           mkdir -p ../../.reports/ios-simulator
+          xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations || true
           set -o pipefail
           xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests \
             -destination "id=${{ steps.sim.outputs.udid }}" \
