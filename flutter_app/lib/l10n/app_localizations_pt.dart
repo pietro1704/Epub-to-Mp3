@@ -659,4 +659,9 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get modelsMissingAction => 'Abrir Modelos';
+
+  @override
+  String bookLanguagesMissingModels(String languages) {
+    return 'Este livro também tem trechos em $languages. Não há voz instalada para eles, então serão lidos com a voz principal.';
+  }
 }

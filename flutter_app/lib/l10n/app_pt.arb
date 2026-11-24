@@ -226,5 +226,7 @@
   "modelsRowSubtitle": "{count, plural, =1{1 modelo} other{{count} modelos}}",
   "modelsMissingTitle": "Sem modelo de narração para {language}",
   "modelsMissingBody": "Instale um modelo de narração para este idioma e tente novamente.",
-  "modelsMissingAction": "Abrir Modelos"
+  "modelsMissingAction": "Abrir Modelos",
+  "bookLanguagesMissingModels": "Este livro também tem trechos em {languages}. Não há voz instalada para eles, então serão lidos com a voz principal.",
+  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}}
 }

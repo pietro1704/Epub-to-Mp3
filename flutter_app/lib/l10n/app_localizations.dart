@@ -1269,6 +1269,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open Models'**
   String get modelsMissingAction;
+
+  /// No description provided for @bookLanguagesMissingModels.
+  ///
+  /// In en, this message translates to:
+  /// **'This book also has passages in {languages}. No voice is installed for them, so they are read with the main voice.'**
+  String bookLanguagesMissingModels(String languages);
 }
 
 class _AppLocalizationsDelegate

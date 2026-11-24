@@ -182,6 +182,70 @@ class LanguageModelRequest {
   };
 }
 
+/// How the whole book is written (Rust's whole-book detector, BOOK-LANGUAGE-PROFILE).
+enum BookLanguageClass {
+  monolingual,
+  bilingual,
+  multilingual;
+
+  static BookLanguageClass parse(Object? value) =>
+      BookLanguageClass.values.firstWhere(
+        (candidate) => candidate.name == value,
+        orElse: () => BookLanguageClass.monolingual,
+      );
+}
+
+/// One language of the book and its share of the detected text.
+class BookLanguageShare {
+  const BookLanguageShare({required this.language, required this.fraction});
+  final String language;
+  final double fraction;
+}
+
+/// The `profile` Rust adds (additively) to the book language analysis: a monolingual book is read
+/// with its main voice whatever quotations it holds; a bilingual or multilingual one lists every
+/// language it is written in, so the missing models are known before playing.
+class BookLanguageProfile {
+  const BookLanguageProfile({
+    required this.classification,
+    required this.languages,
+    this.primary,
+    this.incidental = const [],
+  });
+  final BookLanguageClass classification;
+  final String? primary;
+  final List<BookLanguageShare> languages;
+  final List<String> incidental;
+
+  factory BookLanguageProfile.fromJson(Map<String, dynamic> json) =>
+      BookLanguageProfile(
+        classification: BookLanguageClass.parse(json['class']),
+        primary: json['primary'] as String?,
+        languages: [
+          for (final entry in (json['languages'] as List?) ?? const [])
+            if (entry is Map && entry['language'] is String)
+              BookLanguageShare(
+                language: entry['language'] as String,
+                fraction: (entry['fraction'] as num?)?.toDouble() ?? 0,
+              ),
+        ],
+        incidental: [
+          for (final tag in (json['incidental'] as List?) ?? const [])
+            tag as String,
+        ],
+      );
+
+  Map<String, dynamic> toJson() => {
+    'class': classification.name,
+    'primary': primary,
+    'languages': [
+      for (final share in languages)
+        {'language': share.language, 'fraction': share.fraction},
+    ],
+    'incidental': incidental,
+  };
+}
+
 /// `converter_book_language_json_v1`: what Rust detected in the book file.
 class BookLanguageAnalysis {
   const BookLanguageAnalysis({
@@ -191,7 +255,11 @@ class BookLanguageAnalysis {
     this.samplesExamined = 0,
     this.inconclusiveSamples = 0,
     this.detector,
+    this.profile,
   });
+
+  /// Whole-book profile; null for a Rust that predates it.
+  final BookLanguageProfile? profile;
 
   final String? declared;
 
@@ -214,6 +282,11 @@ class BookLanguageAnalysis {
         inconclusiveSamples:
             (json['inconclusive_samples'] as num?)?.toInt() ?? 0,
         detector: json['detector'] as String?,
+        profile: json['profile'] is Map
+            ? BookLanguageProfile.fromJson(
+                Map<String, dynamic>.from(json['profile'] as Map),
+              )
+            : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -223,6 +296,7 @@ class BookLanguageAnalysis {
     'samples_examined': samplesExamined,
     'inconclusive_samples': inconclusiveSamples,
     'detector': detector,
+    if (profile != null) 'profile': profile!.toJson(),
   };
 
   factory BookLanguageAnalysis.parse(String json) =>

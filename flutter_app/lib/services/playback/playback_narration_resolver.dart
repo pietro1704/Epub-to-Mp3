@@ -42,7 +42,8 @@ class BookLanguageCache {
   static const storageKey = 'bookLanguageAnalysis.v1';
 
   final SharedPreferences _prefs;
-  final Map<String, ({String stamp, BookLanguageAnalysis analysis})> _memory = {};
+  final Map<String, ({String stamp, BookLanguageAnalysis analysis})> _memory =
+      {};
 
   Future<BookLanguageAnalysis> analysis({
     required EmbeddedConverter converter,
@@ -90,7 +91,11 @@ class BookLanguageCache {
     }
   }
 
-  Future<void> _store(String bookId, String stamp, BookLanguageAnalysis analysis) {
+  Future<void> _store(
+    String bookId,
+    String stamp,
+    BookLanguageAnalysis analysis,
+  ) {
     final all = _all();
     all[bookId] = {'stamp': stamp, 'analysis': analysis.toJson()};
     return _prefs.setString(storageKey, jsonEncode(all));
@@ -131,7 +136,9 @@ Future<PlaybackNarration> resolvePlaybackNarration({
     final language = analysis.confirmed;
     if (language == null) return const UnchangedNarration();
     final primary = configured.primary;
-    final automaticPrimary = primary.representsSameRequest(TtsSelection.automaticPiper);
+    final automaticPrimary = primary.representsSameRequest(
+      TtsSelection.automaticPiper,
+    );
     final resolution = await converter.resolveLanguageModel(
       LanguageModelRequest(
         bookLanguage: language,
@@ -165,7 +172,8 @@ Future<PlaybackNarration> resolvePlaybackNarration({
         return ResolvedNarration(configured.withPrimary(selection), resolution);
       case LanguageModelStatus.missingModel:
         return MissingNarration(
-          resolution.missing?.language ?? LanguageModelChoices.baseLanguage(language),
+          resolution.missing?.language ??
+              LanguageModelChoices.baseLanguage(language),
           resolution.missing?.suggested ?? const [],
         );
       case LanguageModelStatus.unknown:
@@ -175,5 +183,73 @@ Future<PlaybackNarration> resolvePlaybackNarration({
     // Language analysis is an enhancement: never block listening because it failed.
     debugPrint('Language model resolution skipped: $error');
     return const UnchangedNarration();
+  }
+}
+
+/// The languages of a bilingual or multilingual book that have no usable narration, known BEFORE
+/// playing (BOOK-LANGUAGE-PROFILE). Never blocks and never downloads: a passage in such a language
+/// is read with the main voice and installing a model stays an explicit action in Models. A
+/// monolingual book returns nothing: its quotations never ask for another model.
+Future<List<String>> missingProfileLanguages({
+  required EmbeddedConverter converter,
+  required BookLanguageCache cache,
+  required String bookId,
+  required String bookPath,
+  required TtsPreferences configured,
+  required LanguageModelChoices choices,
+  required Future<Set<String>> Function() installedModelIds,
+  required Future<List<String>> Function() systemVoices,
+  required String platform,
+  int? androidApi,
+}) async {
+  try {
+    final analysis = await cache.analysis(
+      converter: converter,
+      bookId: bookId,
+      path: bookPath,
+    );
+    final profile = analysis.profile;
+    if (profile == null ||
+        profile.classification == BookLanguageClass.monolingual) {
+      return const [];
+    }
+    final own = LanguageModelChoices.baseLanguage(
+      analysis.confirmed ?? profile.primary ?? '',
+    );
+    final installed = (await installedModelIds()).toList()..sort();
+    final voices = await systemVoices();
+    final missing = <String>[];
+    for (final share in profile.languages) {
+      final base = LanguageModelChoices.baseLanguage(share.language);
+      if (base == own || missing.contains(base)) {
+        continue;
+      }
+      final resolution = await converter.resolveLanguageModel(
+        LanguageModelRequest(
+          bookLanguage: share.language,
+          platform: platform,
+          androidApi: androidApi,
+          perLanguageChoices: choices.byLanguage,
+          primary:
+              configured.primary.representsSameRequest(
+                TtsSelection.automaticPiper,
+              )
+              ? null
+              : configured.primary,
+          allowOnlineFallback: configured.allowOnlineFallback,
+          allowAutomaticSystemVoiceFallback: configured.policyVersion == 2,
+          installedModelIds: installed,
+          systemVoices: voices,
+        ),
+      );
+      if (resolution.status == LanguageModelStatus.missingModel) {
+        missing.add(base);
+      }
+    }
+    return missing;
+  } on Object catch (error) {
+    // The warning is an enhancement: never block listening because it failed.
+    debugPrint('Missing language models check skipped: $error');
+    return const [];
   }
 }
