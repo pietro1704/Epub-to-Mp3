@@ -36,11 +36,11 @@ final class DeviceSelectionTests: XCTestCase {
             environment: ["IOS_TESTS": "EpubToMp3Tests/PDFReaderParityTests/testUnaudited"]))
     }
 
-    func testModelsScreenAlertRegressionIsAuditedWithItsTwoCases() throws {
+    func testModelsScreenAlertRegressionIsAuditedWithItsFourCases() throws {
         let options = try Options(arguments: ["test"], root: root,
             environment: ["IOS_TESTS": "EpubToMp3Tests/ModelsScreenAlertTests"])
         XCTAssertEqual(options.testFilters, ["EpubToMp3Tests/ModelsScreenAlertTests"])
-        XCTAssertEqual(options.expectedTestCount, 2)
+        XCTAssertEqual(options.expectedTestCount, 4)
     }
 
     func testSkipBackRegressionsAreAuditedAsExactMethods() throws {
