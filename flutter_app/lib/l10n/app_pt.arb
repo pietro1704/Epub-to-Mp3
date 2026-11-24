@@ -237,6 +237,7 @@
   "@modelsSizeMb": {"placeholders": {"size": {"type": "int"}}},
   "modelsSizeMb": "{size} MB",
   "modelsFallbackSection": "Vozes de reserva",
+  "modelsLowQualitySection": "Piper · baixa qualidade",
   "modelsAutomatic": "Automático",
   "modelsAutomaticDesc": "Usa o melhor modelo instalado para o livro",
   "modelsLocalSection": "Neste dispositivo",

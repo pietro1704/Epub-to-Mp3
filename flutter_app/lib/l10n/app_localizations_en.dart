@@ -684,6 +684,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelsFallbackSection => 'Fallback voices';
 
   @override
+  String get modelsLowQualitySection => 'Piper · low quality';
+
+  @override
   String get modelsAutomatic => 'Automatic';
 
   @override

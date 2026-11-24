@@ -685,6 +685,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get modelsFallbackSection => 'Vozes de reserva';
 
   @override
+  String get modelsLowQualitySection => 'Piper · baixa qualidade';
+
+  @override
   String get modelsAutomatic => 'Automático';
 
   @override

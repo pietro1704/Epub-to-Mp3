@@ -242,6 +242,7 @@
   "@modelsSizeMb": {"placeholders": {"size": {"type": "int"}}},
   "modelsSizeMb": "{size} MB",
   "modelsFallbackSection": "Fallback voices",
+  "modelsLowQualitySection": "Piper · low quality",
   "modelsAutomatic": "Automatic",
   "modelsAutomaticDesc": "Uses the best installed model for the book",
   "modelsLocalSection": "On this device",

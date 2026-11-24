@@ -1324,6 +1324,12 @@ abstract class AppLocalizations {
   /// **'Fallback voices'**
   String get modelsFallbackSection;
 
+  /// No description provided for @modelsLowQualitySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Piper · low quality'**
+  String get modelsLowQualitySection;
+
   /// No description provided for @modelsAutomatic.
   ///
   /// In en, this message translates to:
