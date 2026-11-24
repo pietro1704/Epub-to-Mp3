@@ -34,6 +34,17 @@ final class MacReaderViewController: NSViewController {
         onBuildSelectionMenu: { [weak self] in self?.buildSelectionMenuItems(range: $0) ?? [] }
     )
     private func configureReader() { composition.configure() }
+    /// READER-FOLLOW-NARRATION-MAC: scrolls or turns to the spoken passage while the book is narrated.
+    private lazy var narrationFollowing = MacReaderNarrationFollowing(
+        document: document, composition: composition, player: player, settings: settings,
+        showChapterIndex: { [weak self] index in
+            guard let self else { return }
+            textPresentation.persistReadingProgress()
+            document.selectedChapter = index
+            textPresentation.showChapter(index)
+            selectCurrentTOCRow()
+            textPresentation.persistReadingProgress()
+        })
     private func showLoading(for book: BookEntity) { composition.loading.showLoading(for: book) }
     private func hideLoading() { composition.loading.hideLoading() }
     private func showLoadingError(_ error: Error) { composition.loading.showLoadingError(error) }
@@ -119,6 +130,7 @@ final class MacReaderViewController: NSViewController {
         observeOpenStage("reader_view_did_appear_started")
         super.viewDidAppear()
         view.window?.makeFirstResponder(view)
+        narrationFollowing.observe()
         observeOpenStage("reader_view_did_appear_completed")
     }
 
@@ -133,6 +145,7 @@ final class MacReaderViewController: NSViewController {
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
+        narrationFollowing.stop()
         persistReadingProgress()
     }
 
