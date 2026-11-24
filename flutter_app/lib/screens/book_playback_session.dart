@@ -125,9 +125,8 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     await _startLocalConversion(
       readerPosition: position,
       playbackChapterIndex: position.chapterIndex,
-      // The user just picked this narration for this listening: the language
-      // resolver does not override it.
-      explicitNarration: true,
+      // The voice just picked is the book's own: the plan applies it (source book_voice), so the
+      // language resolver is not bypassed and the new job still gets the book voice.
     );
   }
 

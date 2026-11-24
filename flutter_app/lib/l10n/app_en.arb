@@ -220,6 +220,7 @@
   "@fallbackChapterName": {"placeholders": {"number": {"type": "int"}}},
   "ttsShowLowQuality": "Show low-quality models",
   "ttsManualModelUnavailable": "Could not prepare this narration model.",
+  "readerBookVoiceTitle": "Voice for this book",
   "readerNarrationModel": "Narration model",
   "readerFootnotes": "Footnotes",
   "openReaderAtPlayback": "Open in reader",
