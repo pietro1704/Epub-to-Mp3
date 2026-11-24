@@ -289,6 +289,14 @@ final class MacReaderPlaybackSession {
                     && UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id
             }
             guard stillWanted(), let owner else { return }
+            if case .missing = outcome {} else {
+                // BOOK-LANGUAGE-PROFILE: warn about the profile's languages without a voice, before playing, never blocking.
+                let dependencies = LanguageModelPlayback.Dependencies.live(library: library)
+                Task { @MainActor [settings] in
+                    PlatformFallbackNotice.showMissingProfileLanguages(
+                        await LanguageModelPlayback.missingProfileLanguages(for: book, settings: settings, dependencies: dependencies))
+                }
+            }
             @MainActor func begin(_ options: ConversionOptions) {
                 handedOver = true
                 languageResolution = nil

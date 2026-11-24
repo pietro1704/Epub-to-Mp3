@@ -510,6 +510,14 @@ final class MainReaderScreenController: UIViewController {
                 for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
             let isCurrent = { [weak self] in self?.currentBook?.id == book.id && !Task.isCancelled }
             guard isCurrent() else { return }
+            if case .missing = outcome {} else {
+                // BOOK-LANGUAGE-PROFILE: warn about the profile's languages without a voice, before playing, never blocking.
+                let dependencies = LanguageModelPlayback.Dependencies.live(library: library)
+                Task { @MainActor [settings] in
+                    PlatformFallbackNotice.showMissingProfileLanguages(
+                        await LanguageModelPlayback.missingProfileLanguages(for: book, settings: settings, dependencies: dependencies))
+                }
+            }
             @MainActor func begin(options: ConversionOptions? = nil, recovery: TtsRecoveryAlert.Choice? = nil) {
                 startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: requestedChapter,
                                requestedRatio: requestedRatio, recovery: recovery, optionsOverride: options,

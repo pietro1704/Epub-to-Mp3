@@ -29,6 +29,8 @@ enum LanguageModelPlayback {
         var resolve: (LanguageModelResolutionRequest) throws -> LanguageModelResolution
         var installedModelIDs: () async -> [String]
         var systemVoiceLanguages: () -> [String]
+        /// The languages of the book's profile (after `bookLanguage` analyzed it); empty when unknown.
+        var profileLanguages: (BookEntity) async -> [String] = { _ in [] }
 
         @MainActor
         static func live(library: LibraryStore) -> Self {
@@ -39,7 +41,8 @@ enum LanguageModelPlayback {
                     guard let snapshot = try? await SpeechModelLibraryClient.shared.snapshot(probeRuntime: false) else { return [] }
                     return snapshot.entries.filter { $0.installation.state == .installed }.map(\.identity.modelID)
                 },
-                systemVoiceLanguages: { Array(ModelsByLanguageModel.installedSystemVoiceLanguages()) })
+                systemVoiceLanguages: { Array(ModelsByLanguageModel.installedSystemVoiceLanguages()) },
+                profileLanguages: { ReaderModelSwitch.profileLanguages(of: $0) })
         }
     }
 
@@ -73,6 +76,33 @@ enum LanguageModelPlayback {
             }
             return .use(preferences)
         }
+    }
+
+    /// Languages of the book's profile, other than its main one, that have no usable voice. A warning before playing,
+    /// never a block: the main voice reads those passages and installing a model stays an explicit action.
+    static func missingProfileLanguages(
+        for book: BookEntity, settings: AppSettings, dependencies: Dependencies
+    ) async -> [String] {
+        guard let main = await dependencies.bookLanguage(book) else { return [] }
+        let mainKey = SpeechPreferences.languageKey(main)
+        var seen: Set<String> = [mainKey]
+        var missing: [String] = []
+        let installed = await dependencies.installedModelIDs()
+        for language in await dependencies.profileLanguages(book) {
+            let key = SpeechPreferences.languageKey(language)
+            guard seen.insert(key).inserted else { continue }
+            var request = LanguageModelResolutionRequest(bookLanguage: language, platform: LanguageModelResolutionRequest.currentPlatform)
+            request.perLanguageChoices = settings.languageModelChoices
+            request.primary = settings.primaryTtsSelection
+            request.allowOnlineFallback = settings.allowOnlineAudioFallback
+            request.allowAutomaticSystemVoiceFallback = settings.allowAutomaticSystemVoiceFallback
+            request.installedModelIDs = installed
+            request.systemVoices = dependencies.systemVoiceLanguages()
+            // A resolver failure never blocks or warns.
+            guard let resolution = try? dependencies.resolve(request), resolution.status == .missingModel else { continue }
+            missing.append(key)
+        }
+        return missing
     }
 
     /// Options for a background conversion of a book (offline chapters): the language's resolved
