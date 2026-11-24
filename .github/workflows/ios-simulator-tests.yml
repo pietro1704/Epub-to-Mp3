@@ -18,7 +18,6 @@ on:
         default: ''
   push:
     branches: [ci/ios-simulator-tests]
-    paths-ignore: [".github/workflows/ios-sim-probe.yml"]
 
 permissions:
   contents: read
@@ -92,15 +91,20 @@ jobs:
           mkdir -p ../../.reports/ios-simulator
           xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations || true
           set -o pipefail
-          xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -derivedDataPath .build/ios-sim -jobs 3 -parallel-testing-enabled NO \
-            -resultBundlePath ../../.reports/ios-simulator/result.xcresult \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
-            CONVERTER_FFI_ENABLE_PIPER=0 \
-            "${only[@]}" 2>&1 | tee ../../.reports/ios-simulator/test.log || true
-          grep -E "Test Suite 'Selected tests'|Executed [0-9]+ tests" ../../.reports/ios-simulator/test.log | tail -3
-          grep -q "\*\* TEST SUCCEEDED \*\*" ../../.reports/ios-simulator/test.log
+          report=../../.reports/ios-simulator
+          # The project's ARCHS[sdk=iphonesimulator*] condition makes Xcode treat every concrete
+          # Simulator as ineligible for -scheme destinations, so build for the generic Simulator
+          # destination and run the xctestrun on the booted device.
+          common=(-project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -derivedDataPath .build/ios-sim
+            -jobs 3 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CONVERTER_FFI_ENABLE_PIPER=0)
+          xcodebuild build-for-testing "${common[@]}" -destination 'generic/platform=iOS Simulator' 2>&1 | tee "$report/build.log" | tail -5
+          xctestrun="$(find .build/ios-sim/Build/Products -name '*.xctestrun' | head -n 1)"
+          test -n "$xctestrun"
+          echo "xctestrun: $xctestrun"
+          xcodebuild test-without-building -xctestrun "$xctestrun" -destination "id=${{ steps.sim.outputs.udid }}" \
+            -parallel-testing-enabled NO -resultBundlePath "$report/result.xcresult" "${only[@]}" 2>&1 | tee "$report/test.log" | tail -40 || true
+          grep -E "Executed [0-9]+ tests" "$report/test.log" | tail -2
+          grep -q "\*\* TEST SUCCEEDED \*\*" "$report/test.log"
       - name: Shut the Simulator down
         if: always()
         run: xcrun simctl shutdown all || true
