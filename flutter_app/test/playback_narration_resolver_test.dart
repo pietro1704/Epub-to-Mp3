@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/language_model_choices.dart';
 import 'package:flutter_app/models/language_model_resolution.dart';
+import 'package:flutter_app/models/narration_plan.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/screens/missing_narration_dialog.dart';
 import 'package:flutter_app/screens/models_language_screen.dart';
@@ -47,6 +48,42 @@ class _Converter extends UnavailableEmbeddedConverter {
   }
 }
 
+/// A converter that answers the narration plan (Rust R2): the resolver asks it instead of the
+/// per-language resolution and keeps the legacy path only when the plan is unavailable.
+class _PlanConverter extends _Converter implements NarrationPlanCapable {
+  _PlanConverter({super.analysis, super.answer, this.plan, this.planFails = false});
+  NarrationPlan? plan;
+  bool planFails;
+  final planRequests = <NarrationPlanRequest>[];
+
+  @override
+  bool get supportsNarrationPlan => true;
+
+  @override
+  Future<NarrationPlan> bookNarrationPlan(NarrationPlanRequest request) async {
+    planRequests.add(request);
+    if (planFails) throw StateError('plan failed');
+    return plan!;
+  }
+}
+
+NarrationPlan _plan({
+  String? language = 'pt',
+  LanguageModelResolution? main,
+  bool mainMissing = false,
+  bool question = false,
+  List<NarrationMissingNotice> notices = const [],
+}) => NarrationPlan(
+  decision: NarrationDecision(
+    language: language,
+    source: language == null ? NarrationDecisionSource.undetermined : NarrationDecisionSource.profile,
+  ),
+  main: main,
+  mainMissing: mainMissing,
+  needsLanguageQuestion: question,
+  notifyMissing: notices,
+);
+
 const _faber = TtsSelection(engine: 'piper', modelId: 'pt_BR-faber-medium');
 const _choices = LanguageModelChoices({'pt': _faber});
 const _configured = TtsPreferences(
@@ -73,8 +110,10 @@ Future<PlaybackNarration> _resolve(
   List<String> systemVoices = const [],
   bool explicitSelection = false,
   String? correctedLanguage,
+  TtsSelection? bookVoice,
 }) => resolvePlaybackNarration(
   correctedLanguage: correctedLanguage,
+  bookVoice: bookVoice,
   converter: converter,
   cache: cache,
   bookId: 'book',
@@ -130,6 +169,74 @@ BookLanguageAnalysis _analysis({
 );
 
 void main() {
+  group('the narration comes from the plan when the converter has it', () {
+    test('the request carries the correction, the choices, the installed models and the book voice', () async {
+      final (cache, path) = await _fixture();
+      final converter = _PlanConverter(
+        analysis: _analysis(confirmed: 'en', languages: ['en'], primary: 'en'),
+        plan: _plan(
+          language: 'pt',
+          main: _answer(LanguageModelStatus.selected, selection: _faber, source: 'book_voice'),
+        ),
+      );
+      final result = await _resolve(
+        converter,
+        cache,
+        path,
+        choices: _choices,
+        installed: {'pt_BR-faber-medium'},
+        correctedLanguage: 'pt',
+        bookVoice: _faber,
+      );
+      final request = converter.planRequests.single;
+      expect(request.userCorrection, 'pt');
+      expect(request.bookVoice?.modelId, 'pt_BR-faber-medium');
+      expect(request.perLanguageChoices['pt']?.modelId, 'pt_BR-faber-medium');
+      expect(request.installedModelIds, ['pt_BR-faber-medium']);
+      expect(request.primary, isNull, reason: 'the automatic Piper entry is not a model id');
+      expect(converter.requests, isEmpty, reason: 'the per-language resolution is not asked at all');
+      expect(result, isA<ResolvedNarration>());
+      expect((result as ResolvedNarration).preferences.primary.modelId, 'pt_BR-faber-medium');
+    });
+
+    test('a main voice that is missing stops before any audio and suggests models', () async {
+      final (cache, path) = await _fixture();
+      final converter = _PlanConverter(
+        analysis: _analysis(confirmed: 'en', languages: ['en'], primary: 'en'),
+        plan: _plan(
+          language: 'en',
+          mainMissing: true,
+          main: LanguageModelResolution(
+            bookLanguage: 'en',
+            status: LanguageModelStatus.missingModel,
+            missing: _missing,
+          ),
+        ),
+      );
+      final result = await _resolve(converter, cache, path);
+      expect(result, isA<MissingNarration>());
+      expect((result as MissingNarration).language, 'en');
+      expect(result.suggested.single.modelId, 'en_US-lessac-medium');
+    });
+
+    test('an undetermined language keeps today\'s narration (the recovery asks when the job fails)', () async {
+      final (cache, path) = await _fixture();
+      final converter = _PlanConverter(plan: _plan(language: null, question: true));
+      expect(await _resolve(converter, cache, path), isA<UnchangedNarration>());
+    });
+
+    test('when the plan fails the per-language resolution still decides', () async {
+      final (cache, path) = await _fixture();
+      final converter = _PlanConverter(
+        analysis: _analysis(confirmed: 'en', languages: ['en'], primary: 'en'),
+        planFails: true,
+        answer: _answer(LanguageModelStatus.missingModel, missing: _missing),
+      );
+      expect(await _resolve(converter, cache, path), isA<MissingNarration>());
+      expect(converter.requests, hasLength(1));
+    });
+  });
+
   group('the resolution source "book_voice" (Rust R2) is tolerated', () {
     test('it decodes as a plain source string', () {
       final resolution = LanguageModelResolution.parse(
