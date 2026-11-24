@@ -3,7 +3,8 @@
 Build, unit and iOS Simulator test evidence comes from CI
 (`scripts/ci_branch_evidence.sh`, see [execution policy](execution-policy.md));
 this page covers only the visible-app and local-receipt checks that must run on
-this Mac.
+this Mac. Run them from the agent's one warm worktree (`git switch` between
+cards) so DerivedData and `.build` stay incremental.
 
 Use `mise run mac:validate -- MODE --derived-data PATH`. Select the smallest
 mode that proves the requested behavior. `inspect` is the default; no mode

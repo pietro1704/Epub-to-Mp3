@@ -1,0 +1,45 @@
+name: Cache cleanup
+
+# The repository cache limit is 10 GB. Caches of closed pull requests and deleted branches can
+# never be restored by anything useful, yet they push the hot master caches out (LRU). Remove
+# them when a PR closes (an event that fires reliably, unlike the throttled schedule), on a
+# schedule and on demand. Never touches master. Runs trusted base-branch code only; the pull
+# request head is never checked out.
+on:
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: '41 */8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be removed
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Remove unreachable caches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: scripts/ci_cache_cleanup.sh
+          persist-credentials: false
+      - name: Delete caches of closed pull requests, deleted branches and obsolete keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: bash scripts/ci_cache_cleanup.sh $([ "$DRY_RUN" = true ] && echo --dry-run)
