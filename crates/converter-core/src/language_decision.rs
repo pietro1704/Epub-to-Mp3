@@ -34,12 +34,34 @@ pub fn decide(
     analysis: Option<&BookLanguageAnalysis>,
     declared: Option<&str>,
 ) -> LanguageDecision {
-    let _ = (user_correction, profile, analysis, declared);
+    let correction = user_correction
+        .map(str::trim)
+        .filter(|tag| super::valid_tag(tag));
+    let primary = profile.and_then(|profile| profile.primary.as_deref());
+    let confirmed = analysis.and_then(|analysis| analysis.confirmed.as_deref());
+    let (language, source) = match (correction, primary, confirmed) {
+        (Some(tag), _, _) => (Some(tag), DecisionSource::UserCorrection),
+        (None, Some(tag), _) => (Some(tag), DecisionSource::Profile),
+        (None, None, Some(tag)) => (Some(tag), DecisionSource::Confirmed),
+        (None, None, None) => (None, DecisionSource::Undetermined),
+    };
+    let declared = declared.filter(|tag| super::valid_tag(tag));
     LanguageDecision {
-        language: None,
-        source: DecisionSource::Undetermined,
-        preselect: None,
-        declared_conflict: None,
+        language: language.map(str::to_owned),
+        source,
+        preselect: if language.is_none() {
+            declared.map(str::to_owned)
+        } else {
+            None
+        },
+        declared_conflict: match (language, declared) {
+            (Some(language), Some(declared))
+                if !super::base(language).eq_ignore_ascii_case(super::base(declared)) =>
+            {
+                Some(declared.to_owned())
+            }
+            _ => None,
+        },
     }
 }
 
@@ -47,8 +69,7 @@ impl LanguageDecision {
     /// Whether the job set-up must stop and ask: nothing determined the language, no passage was corrected
     /// and the sampling did not even see two languages to route between.
     pub fn blocks_job(&self, has_passage_overrides: bool, sampled_languages: usize) -> bool {
-        let _ = (has_passage_overrides, sampled_languages);
-        false
+        self.language.is_none() && !has_passage_overrides && sampled_languages < 2
     }
 }
 
@@ -197,7 +218,7 @@ mod tests {
     #[test]
     fn the_roles_of_a_bilingual_profile_are_main_significant_and_section() {
         let texts = [
-            "A tarde caiu devagar sobre a casa do jardim e ninguém ousou romper o silêncio que se instalara entre as velhas paredes. ".repeat(80),
+            "A tarde caiu devagar sobre a casa do jardim e ninguém ousou romper o silêncio que se instalara entre as velhas paredes. ".repeat(160),
             "The afternoon fell slowly over the house in the garden and nobody dared to break the silence that had settled between the old walls. ".repeat(12),
         ];
         let profile = crate::language::profile::profile(
