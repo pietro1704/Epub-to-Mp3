@@ -16,16 +16,39 @@ jobs:
         with:
           persist-credentials: false
       - run: brew install xcodegen
-      - working-directory: ios/EpubToMp3
-        run: |
-          show() { xcodegen generate >/dev/null; xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3-UnitTests -showdestinations 2>&1 | grep -E "platform:iOS Sim" | cut -c1-120; }
-          cp project.yml /tmp/project.orig
-          echo "== v1 drop ARCHS sdk line"
-          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig > project.yml; show
-          echo "== v2 drop ONLY_ACTIVE_ARCH sim line too"
-          grep -v 'ARCHS\[sdk=iphonesimulator' /tmp/project.orig | grep -v 'ONLY_ACTIVE_ARCH\[sdk' > project.yml; show
-          echo "== v3 drop macosx from SUPPORTED_PLATFORMS"
-          sed 's/iphoneos iphonesimulator macosx/iphoneos iphonesimulator/' /tmp/project.orig > project.yml; show
-          echo "== v4 SDKROOT-free: drop DEVELOPMENT_TEAM"
-          grep -v 'DEVELOPMENT_TEAM' /tmp/project.orig > project.yml; show
-          cp /tmp/project.orig project.yml
+      - run: |
+          mkdir -p /tmp/tiny/Sources /tmp/tiny/Tests && cd /tmp/tiny
+          cat > project.yml <<'YML'
+          name: Tiny
+          options:
+            deploymentTarget:
+              iOS: "15.0"
+          targets:
+            Tiny:
+              type: application
+              platform: iOS
+              sources: [Sources]
+              settings:
+                base:
+                  GENERATE_INFOPLIST_FILE: YES
+                  PRODUCT_BUNDLE_IDENTIFIER: com.example.tiny
+            TinyTests:
+              type: bundle.unit-test
+              platform: iOS
+              sources: [Tests]
+              dependencies: [{target: Tiny}]
+              settings:
+                base:
+                  GENERATE_INFOPLIST_FILE: YES
+          schemes:
+            Tiny:
+              build: {targets: {Tiny: all}}
+              test: {targets: [TinyTests]}
+          YML
+          echo 'import UIKit
+          @main class A: UIResponder, UIApplicationDelegate {}' | sed 's/^          //' > Sources/A.swift
+          echo 'import XCTest
+          final class T: XCTestCase { func testOK() { XCTAssertTrue(true) } }' | sed 's/^          //' > Tests/T.swift
+          xcodegen generate
+          echo "== tiny"
+          xcodebuild -project Tiny.xcodeproj -scheme Tiny -showdestinations 2>&1 | grep -E "platform:iOS Sim|error" | cut -c1-140
