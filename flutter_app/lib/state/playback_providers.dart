@@ -124,3 +124,18 @@ final remoteButtonModeSyncProvider = Provider<void>((ref) {
     handler.remoteButtonMode = mode;
   });
 });
+
+/// Linux desktop transport (MPRIS): the same handler as the Android MediaSession, attached so the
+/// mini player publishes its metadata, plus the session-bus service `playerctl` talks to.
+final linuxMprisProvider = Provider<MprisService?>((ref) {
+  if (defaultTargetPlatform != TargetPlatform.linux) return null;
+  final startup = ref.read(audioStartupStateProvider);
+  if (startup.handler != null) return null;
+  final handler = BackgroundAudioHandler(ref.watch(globalAudioPlayerProvider));
+  // Attaching notifies listeners: never while this provider is still building.
+  Future.microtask(() => startup.attach(handler));
+  final service = MprisService(handler);
+  unawaited(service.start());
+  ref.onDispose(service.stop);
+  return service;
+});
