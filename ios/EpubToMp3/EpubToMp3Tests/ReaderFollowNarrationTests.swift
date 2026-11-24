@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import EpubToMp3
 
@@ -91,5 +92,67 @@ final class ReaderFollowNarrationTests: XCTestCase {
         player.nextChapter()
         player.previousChapter()
         XCTAssertEqual(jumps, 6, "Seek, skip (both forms) and chapter changes each resume following")
+    }
+}
+
+/// The follower is the seam every reader (text, PDF) uses: it must reveal, suspend and resume exactly as the rules say.
+@MainActor
+final class ReaderNarrationFollowerTests: XCTestCase {
+    private let jumps = PassthroughSubject<Void, Never>()
+    private var narrating = true
+    private var reveals = 0
+    private var follower: ReaderNarrationFollower!
+
+    override func setUp() {
+        narrating = true
+        reveals = 0
+        follower = ReaderNarrationFollower(jumps: jumps.eraseToAnyPublisher(), isNarrating: { [unowned self] in narrating },
+                                           follow: { [unowned self] in reveals += 1 })
+        follower.start(onJump: {})
+    }
+
+    func testRevealsWhenTheNarrationLeavesThePageAndNotWhilePairedOrPaused() {
+        follower.evaluate(paired: true)
+        XCTAssertEqual(reveals, 0)
+        narrating = false
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 0, "Paused narration never moves the reader")
+        narrating = true
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 1)
+    }
+
+    func testManualTurnSuspendsUntilPairedAgainOrAnExplicitJump() {
+        follower.userTurnedThePage()
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 0)
+        jumps.send()
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 1, "Seek, skip or chapter change resumes following")
+        follower.userTurnedThePage()
+        follower.evaluate(paired: true)
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 2, "Reaching the narrated page again resumes following")
+        follower.userTurnedThePage()
+        follower.userAskedToGoToReading()
+        follower.evaluate(paired: false)
+        XCTAssertEqual(reveals, 3, "Go to reading resumes following")
+    }
+
+    func testTheReadersOwnMoveIsNotAManualTurn() {
+        var inner: ReaderNarrationFollower!
+        inner = ReaderNarrationFollower(jumps: jumps.eraseToAnyPublisher(), isNarrating: { true },
+                                        follow: { inner.userTurnedThePage() })
+        inner.evaluate(paired: false)
+        XCTAssertFalse(inner.isSuspended, "Page changes caused by following must not suspend following")
+        inner.userTurnedThePage()
+        XCTAssertTrue(inner.isSuspended)
+    }
+
+    func testStoppingDropsTheJumpSubscription() {
+        follower.userTurnedThePage()
+        follower.stop()
+        jumps.send()
+        XCTAssertTrue(follower.isSuspended)
     }
 }
