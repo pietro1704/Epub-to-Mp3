@@ -267,7 +267,15 @@ class BookLanguageAnalysis {
     this.inconclusiveSamples = 0,
     this.detector,
     this.profile,
+    this.raw,
   });
+
+  /// The whole JSON Rust produced, kept as is: the narration plan takes the analysis and its
+  /// profile back verbatim (details this class does not model reach Rust intact).
+  final Map<String, dynamic>? raw;
+
+  /// [raw] when the analysis came from Rust, else what this class models.
+  Map<String, dynamic> get rawJson => raw ?? toJson();
 
   /// Whole-book profile; null for a Rust that predates it.
   final BookLanguageProfile? profile;
@@ -283,6 +291,7 @@ class BookLanguageAnalysis {
 
   factory BookLanguageAnalysis.fromJson(Map<String, dynamic> json) =>
       BookLanguageAnalysis(
+        raw: Map<String, dynamic>.unmodifiable(json),
         declared: json['declared'] as String?,
         confirmed: json['confirmed'] as String?,
         languages: [
@@ -300,15 +309,17 @@ class BookLanguageAnalysis {
             : null,
       );
 
-  Map<String, dynamic> toJson() => {
-    'declared': declared,
-    'confirmed': confirmed,
-    'languages': languages,
-    'samples_examined': samplesExamined,
-    'inconclusive_samples': inconclusiveSamples,
-    'detector': detector,
-    if (profile != null) 'profile': profile!.toJson(),
-  };
+  Map<String, dynamic> toJson() =>
+      raw ??
+      {
+        'declared': declared,
+        'confirmed': confirmed,
+        'languages': languages,
+        'samples_examined': samplesExamined,
+        'inconclusive_samples': inconclusiveSamples,
+        'detector': detector,
+        if (profile != null) 'profile': profile!.toJson(),
+      };
 
   factory BookLanguageAnalysis.parse(String json) =>
       BookLanguageAnalysis.fromJson(

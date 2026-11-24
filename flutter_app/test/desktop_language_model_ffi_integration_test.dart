@@ -2,6 +2,7 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:flutter_app/models/language_model_resolution.dart';
+import 'package:flutter_app/models/narration_plan.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/services/conversion/desktop_embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Runs against the real converter-ffi library; set TTS_TEST_FFI_LIBRARY to it
 /// (and TTS_TEST_EPUB to a book for the language analysis).
 void main() {
+  narrationPlanFfiTests();
   final libraryPath = Platform.environment['TTS_TEST_FFI_LIBRARY'];
   final epub = Platform.environment['TTS_TEST_EPUB'];
   final skip = libraryPath == null || !File(libraryPath).existsSync()
@@ -144,5 +146,34 @@ void main() {
 
     // A Portuguese primary is incompatible with an English book.
     expect(none.reasons, contains('primary:model_incompatible_with_language'));
+  }, skip: skip);
+}
+
+/// Runs against a converter-ffi library that exports the narration plan (R2).
+void narrationPlanFfiTests() {
+  final libraryPath = Platform.environment['TTS_TEST_FFI_LIBRARY'];
+  final skip = libraryPath == null || !File(libraryPath).existsSync()
+      ? 'Set TTS_TEST_FFI_LIBRARY to a converter-ffi library'
+      : null;
+  test('the real Rust narration plan decides the language and the main voice', () async {
+    final converter = DesktopEmbeddedConverter(
+      library: ffi.DynamicLibrary.open(libraryPath!),
+      libraryPath: libraryPath,
+    );
+    if (!converter.supportsNarrationPlan) {
+      markTestSkipped('this library predates the narration plan');
+      return;
+    }
+    final plan = await converter.bookNarrationPlan(
+      const NarrationPlanRequest(
+        userCorrection: 'pt-BR',
+        installedModelIds: ['pt_BR-faber-medium'],
+        platform: 'Linux',
+      ),
+    );
+    expect(plan.decision.language, 'pt-BR');
+    expect(plan.decision.source, NarrationDecisionSource.userCorrection);
+    expect(plan.main?.selection?.modelId, 'pt_BR-faber-medium');
+    expect(plan.mainMissing, isFalse);
   }, skip: skip);
 }

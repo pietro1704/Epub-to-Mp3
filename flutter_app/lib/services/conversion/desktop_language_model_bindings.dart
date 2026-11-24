@@ -28,6 +28,14 @@ final class DesktopLanguageModelBindings {
     _book = _library.lookupFunction<_StringArgNative, _StringArgDart>(
       'converter_book_language_json_v1',
     );
+    // A library that predates the narration plan simply lacks the symbol.
+    try {
+      _plan = _library.lookupFunction<_StringArgNative, _StringArgDart>(
+        'converter_book_narration_plan_json_v1',
+      );
+    } on ArgumentError {
+      _plan = null;
+    }
     _free = _library.lookupFunction<_FreeNative, _FreeDart>('converter_string_free');
     _lastError = _library.lookupFunction<_ErrorNative, _ErrorDart>('converter_last_error');
   }
@@ -36,6 +44,7 @@ final class DesktopLanguageModelBindings {
   late final _LanguagesDart _languages;
   late final _StringArgDart _resolve;
   late final _StringArgDart _book;
+  late final _StringArgDart? _plan;
   late final _FreeDart _free;
   late final _ErrorDart _lastError;
 
@@ -46,6 +55,18 @@ final class DesktopLanguageModelBindings {
   /// Pure and fast: safe on the UI isolate. Never downloads.
   String resolveJson(String requestJson) =>
       using((arena) => _read(_resolve(requestJson.toNativeUtf8(allocator: arena))));
+
+  /// Whether this library exports the narration plan.
+  bool get hasNarrationPlan => _plan != null;
+
+  /// Pure and fast: safe on the UI isolate. Never downloads.
+  String narrationPlanJson(String requestJson) {
+    final plan = _plan;
+    if (plan == null) {
+      throw const DesktopTtsModelAdapterError('converter-ffi has no narration plan');
+    }
+    return using((arena) => _read(plan(requestJson.toNativeUtf8(allocator: arena))));
+  }
 
   /// Blocking (parses the book): call it through [bookLanguageJsonInIsolate].
   String bookLanguageJson(String path) =>
