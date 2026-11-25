@@ -45,7 +45,7 @@ condition.
 ## CI-first evidence
 
 GitHub Actions is the default place to build and test; the Mac (8 GiB Intel) and
-Arch (4 cores/7 GiB) are too weak to be the bottleneck. After pushing a branch,
+Arch (2 cores/4 threads, 7 GiB) are too weak to be the bottleneck. After pushing a branch,
 get build, unit, iOS Simulator, Rust, Flutter and Windows evidence from CI:
 
 ```sh
@@ -78,12 +78,16 @@ parallelism that context switches and swap slow things down; no agent, terminal
 or device stays idle.
 
 - One heavy job per host at a time: the heavy lease on the Mac, and on the Arch
-  one `cargo`/`flutter`/`gradle` build by convention. Inside that job, use the
-  physical cores minus one: `CARGO_BUILD_JOBS=3` and `xcodebuild -jobs 3` on the
-  Mac (4 cores, 8 GiB); on the Arch (4 cores, 7 GiB) `CARGO_BUILD_JOBS=3`,
-  Gradle `--max-workers=2`, `flutter test --concurrency=3`. Drop to 2 when swap
-  passes 3 GiB or available memory falls below 1.5 GiB. Hyperthreads and a
-  second heavy job lose more to swap and context switches than they gain.
+  one `cargo`/`flutter`/`gradle` build by convention. Compiler jobs inside it:
+  - Mac (4 cores, 8 threads, 8 GiB): 3, passed as a flag (`cargo -j 3`,
+    `xcodebuild -jobs 3`), or 2 when swap passes 3 GiB or available memory falls
+    below 1.5 GiB. `CARGO_BUILD_JOBS=3` has no effect through
+    `scripts/native_job.rb`, which overrides it (see
+    [Native safety](#native-safety)).
+  - Arch (i5-5200U: 2 cores, 4 threads, 7 GiB): `CARGO_BUILD_JOBS=2`, Gradle
+    `--max-workers=2`, `flutter test --concurrency=2`.
+  Hyperthreads and a second heavy job lose more to swap and context switches
+  than they gain.
 - Priority: (1) a device step while Pietro holds the device; (2) work that blocks
   a PR; (3) the next card. Prepare device runs first (build-for-testing,
   install, prerequisites such as Developer Mode and UI automation), and ask
@@ -100,8 +104,9 @@ or device stays idle.
   soak, monkey) whenever no worker holds it, and the A8 joins when Pietro is
   not using it. Each device shows exactly one EpubToMp3 app; test builds leave no
   second launcher icon and are closed after each run.
-- The coordinator keeps each worker's queue at least two cards deep and gives an
-  idle worker its next card within minutes.
+- The coordinator keeps each worker's board queue at least two cards deep, so a
+  worker takes its next card without waiting. It does not poll for idle workers
+  ([token economy](mac-arch-collaboration.md#token-economy)).
 
 ### Cache policy
 
@@ -161,10 +166,10 @@ and never change an exit status.
 What remains is correctness, not host protection:
 
 - Every Mac compiler invocation still goes through `scripts/native_job.rb build`
-  (or the task wrapper that calls it) with one compiler job by default
-  (`CARGO_BUILD_JOBS` and `CMAKE_BUILD_PARALLEL_LEVEL` are set to 1 off GitHub-hosted
-  runners). The default is not enforced: an explicit `-j`/`--jobs` flag is not
-  refused.
+  (or the task wrapper that calls it). Off GitHub-hosted runners the wrapper sets
+  `CARGO_BUILD_JOBS` and `CMAKE_BUILD_PARALLEL_LEVEL` to 1, replacing the
+  caller's values. An explicit `-j`/`--jobs` flag is not refused; use it for the
+  job count in [Throughput and scheduling](#throughput-and-scheduling).
 - One host lease, `/tmp/epub2mp3.heavy-job.lock`, serializes jobs that write the
   same DerivedData, Cargo target, `.build` and ONNX Runtime trees for all
   worktrees and sessions: compiler, Simulator and heavy host-suite jobs. It stays
@@ -335,9 +340,9 @@ Worktrees and disk (Pietro, 2026-11-23, after the Mac fell to 3.8 GiB free):
   `~/Developer/epubtomp3-logs/worktree-backup-<date>/`, and keep the branch.
 - The coordinator alerts below 10 GiB free, and `warn_free_gib` warns at 15.
 
-Never open or leave a PR in draft. Open every PR ready, with squash auto-merge
-enabled; work that is not ready to merge stays local on its branch. A draft is
-never the way to mark a dependent or unfinished change.
+Never open or leave a PR in draft. Open every PR ready; work that is not ready to
+merge stays local on its branch. A draft is never the way to mark a dependent or
+unfinished change. Merging follows the automatic-merge rules below.
 
 For a dependent change, use GitHub's native Stacked PRs (preview) through the
 official `gh stack` extension (`gh extension install github/gh-stack`; update
@@ -394,9 +399,9 @@ runs after merge and publishers require the integrated, validated SHA. A pending
 optional check does not expand the pre-merge gate. All ready PRs targeting
 `master`, from any author including forks, have standing user authorization for
 automatic merge after successful exact-head CI and its required `PR gate`.
-Enable squash auto-merge on every ready PR targeting `master` when opening it
-or marking it ready, regardless of author or task. Keep it enabled while the
-required checks run; any user request to hold a particular PR takes precedence.
+Enable squash auto-merge on every such PR when opening it or marking it ready,
+and keep it enabled while the required checks run; any user request to hold a
+particular PR takes precedence.
 Branch protection on `master` does not require an up-to-date base: the owner
 turned the `strict` setting off on 2026-11-19, because every merge sent the next
 PR back through the 10-18 minute Apple job. A PR merges as soon as its own

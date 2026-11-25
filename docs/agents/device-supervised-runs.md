@@ -51,8 +51,6 @@ workflow alone cannot pass it:
 3. As soon as the log prints the test case start, `xcrun devicectl device process launch --device <id> com.pietrocode.epubtomp3`
    (the case waits 12 s for the app to be in the foreground). The phone must stay unlocked and untouched (~1 min).
 4. Close the app afterwards (`devicectl device process terminate --pid`).
-Prerequisites to check before asking the owner for the phone: Developer Mode on, UI automation authorized in Settings (without it
-the runner fails with `LocalAuthentication -1 "Falha de autenticação"`), iPhone Mirroring closed, phone unlocked.
 Lessons from the iterations: on iOS 26 `isHittable` on an icon that is on another page RECORDS a failure ("Activation point
 invalid"): decide by frame; Edit Home Screen's former "+" is a button labelled Editar/Edit; a cold device build can exceed the
 workflow's 30 min build limit on this Mac (the next one is incremental).
