@@ -33,7 +33,7 @@ void main() {
         'invalid_selection', 'synthesis_timeout', 'edge_failed', 'rate_limited', 'input_unreadable',
         'unsupported_input', 'invalid_audio', 'synthesis_failed', 'platform_speech_failed',
         'audio_output', 'storage', 'io', 'job_state', 'text_coverage', 'conversion_control',
-        'book_language_uncertain', 'edge_consent_required',
+        'book_language_uncertain', 'edge_consent_required', 'pdf_ocr_required',
       ];
       for (final language in ['en', 'pt', 'es']) {
         final t = await _l10n(language);
