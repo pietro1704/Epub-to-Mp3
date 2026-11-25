@@ -143,14 +143,8 @@ final class MacReaderNarrationFollowing {
     }
 
     static func visibleCharacterRange(in textView: NSTextView, clip: NSClipView) -> NSRange? {
-        guard let manager = textView.layoutManager, let container = textView.textContainer,
-              textView.textStorage?.length ?? 0 > 0, clip.bounds.height > 0 else { return nil }
-        var rect = clip.documentVisibleRect
-        rect.origin.x -= textView.textContainerOrigin.x
-        rect.origin.y -= textView.textContainerOrigin.y
-        let glyphs = manager.glyphRange(forBoundingRect: rect, in: container)
-        guard glyphs.length > 0 else { return nil }
-        return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        guard textView.textStorage?.length ?? 0 > 0, clip.bounds.height > 0 else { return nil }
+        return MacReaderTextLayout.characterRange(in: clip.documentVisibleRect, of: textView)
     }
 
     // MARK: Following
@@ -175,14 +169,13 @@ final class MacReaderNarrationFollowing {
               let index = chapters.firstIndex(where: { $0.zeroBasedEpubIndex == location.chapterIndex }) else { return }
         if document.selectedChapter != index { showChapterIndex(index) }
         guard let text = scrollView.documentView as? NSTextView, let manager = text.layoutManager,
-              let container = text.textContainer, text.string.utf16.count > 0 else { return }
+              text.string.utf16.count > 0 else { return }
         let offset = min(location.characterOffset(chapterText: chapters[index].text, renderedText: text.string),
                          text.string.utf16.count - 1)
-        manager.ensureLayout(for: container)
-        let glyph = manager.glyphIndexForCharacter(at: offset)
-        let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        manager.textContainers.forEach { manager.ensureLayout(for: $0) }
+        guard let line = MacReaderTextLayout.lineRect(forCharacterAt: offset, in: text) else { return }
         let clip = scrollView.contentView
-        let lineY = line.minY + text.textContainerOrigin.y
+        let lineY = line.minY
         let target = Self.scrollOffset(forLineAt: lineY, viewportHeight: clip.bounds.height,
                                        documentHeight: text.frame.height,
                                        paginated: settings.readerLayout == .paginated)

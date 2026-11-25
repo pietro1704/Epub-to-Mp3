@@ -233,6 +233,7 @@
   "goToNarratedPage": "Ir a la lectura",
   "readerAppearance": "Apariencia del texto",
   "readerPlayFromHere": "Reproducir desde aquí",
+  "errorPdfOcrRequired": "Este PDF tiene una página que solo contiene una imagen, sin texto seleccionable (a menudo la portada). No se puede narrar hasta que ese texto se reconozca (OCR).",
   "errorNoReadableText": "No se pudo extraer texto legible de este libro.",
   "errorEngineUnavailable": "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.",
   "errorModelMissing": "El modelo de narración seleccionado no está instalado. Instálalo en Ajustes.",

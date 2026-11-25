@@ -26,13 +26,7 @@ enum LocalFulltextCache {
     private static let rebuildableCacheBudgetBytes: Int64 = 256 * 1_024 * 1_024
 
     private static var directory: URL? {
-        guard let base = try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ) else { return nil }
-        let dir = base
+        let dir = ApplicationSupportRoot.url()
             .appendingPathComponent("EpubToMp3", isDirectory: true)
             .appendingPathComponent("ReaderFulltext-v2", isDirectory: true)
         try? FileManager.default.createDirectory(

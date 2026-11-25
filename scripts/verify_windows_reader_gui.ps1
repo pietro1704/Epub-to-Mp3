@@ -589,9 +589,11 @@ try {
   $chapterOne = (Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter' { param($item) $item.head -match 'a neblina cobria a colina' }).head
   Save-ReaderFrame 'chapter-1'
 
-  # The Add a book sheet can stay open over the reader after the import; dismiss it first.
-  $stale = Find-AppText '^Cancel$'
-  if ($null -ne $stale -and $null -ne (Find-AppText '^Add a book$')) {
+  # The Add a book sheet can stay open over the reader after the import; dismiss it first. Ask the
+  # app's own trace only: the native accessibility tree keeps the closed sheet's nodes, and clicking
+  # their stale Cancel position lands on the reader page, where it hides the reader chrome.
+  $stale = Find-TraceNode '^Cancel$'
+  if ($null -ne $stale -and $null -ne (Find-TraceNode '^Add a book$')) {
     Click-FlutterElement $stale
     Start-Sleep -Milliseconds 800
   }

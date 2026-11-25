@@ -29,6 +29,7 @@ class AndroidEmbeddedConverter
     implements
         EmbeddedConverter,
         StreamingChapterConverter,
+        PositionedChapterConverter,
         CancellableEmbeddedConverter {
   AndroidEmbeddedConverter({
     MethodChannel? channel,
@@ -74,6 +75,39 @@ class AndroidEmbeddedConverter
     required String outputPath,
     required int chapterIndex,
     String? optionsJson,
+    required Future<void> Function(GrowingChapterAudioSource) onFirstAudio,
+  }) => _streamFrom(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    chapterIndex: chapterIndex,
+    optionsJson: optionsJson,
+    onFirstAudio: onFirstAudio,
+  );
+
+  /// Rust starts synthesis at [textOffset] (Unicode scalars) inside the chapter.
+  @override
+  Future<ConvertedChapterAudio> convertPositionedChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+    required int textOffset,
+    String? optionsJson,
+    Future<void> Function(GrowingChapterAudioSource)? onFirstAudio,
+  }) => _streamFrom(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    chapterIndex: chapterIndex,
+    optionsJson: optionsJson,
+    textOffset: textOffset,
+    onFirstAudio: onFirstAudio ?? (_) async {},
+  );
+
+  Future<ConvertedChapterAudio> _streamFrom({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+    String? optionsJson,
+    int? textOffset,
     required Future<void> Function(GrowingChapterAudioSource) onFirstAudio,
   }) async {
     final source = GrowingChapterAudioSource(outputPath);
@@ -140,6 +174,7 @@ class AndroidEmbeddedConverter
         'chapterStart': chapterIndex,
         'chapterEnd': chapterIndex,
         'streaming': true,
+        'textOffset': ?textOffset,
       });
       await events;
       checkActive();

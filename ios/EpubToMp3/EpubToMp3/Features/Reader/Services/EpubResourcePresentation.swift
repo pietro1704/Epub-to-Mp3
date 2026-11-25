@@ -75,13 +75,13 @@ enum EpubResourcePresentation {
         var counter = 0
 
         while let match = html.range(
-            of: #"<img\b[^>]*\bsrc\s*=\s*"data:image/[^;"]+;base64,[^"]*"[^>]*>"#,
+            of: #"<img\b[^>]*\bsrc\s*=\s*(?:"data:image/[^;"]+;base64,[^"]*"|'data:image/[^;']+;base64,[^']*')[^>]*>"#,
             options: .regularExpression,
             range: searchStart..<html.endIndex
         ) {
             result += html[searchStart..<match.lowerBound]
             let tag = String(html[match])
-            if let base64Range = tag.range(of: #"base64,[^"]*"#, options: .regularExpression) {
+            if let base64Range = tag.range(of: #"base64,[^"']*"#, options: .regularExpression) {
                 let base64 = tag[base64Range].dropFirst("base64,".count)
                 if let bytes = Data(base64Encoded: String(base64)),
                    let image = downsampledInlineImage(from: bytes) {
