@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 
@@ -52,6 +55,7 @@ class ReaderHtmlChapterContent extends StatelessWidget {
     required this.fg,
     required this.bodyStyle,
     required this.headingStyle,
+    this.maxImageHeight,
   });
 
   final String html;
@@ -60,6 +64,9 @@ class ReaderHtmlChapterContent extends StatelessWidget {
   final MirrorAppSettings settings;
   final Color bg, fg;
   final TextStyle bodyStyle, headingStyle;
+
+  /// Usable page height in paginated layout: taller images scale down to it.
+  final double? maxImageHeight;
 
   /// Shared rich content for scrolling and measured pagination. Explicit
   /// reader choices override source CSS; otherwise its typography survives.
@@ -94,6 +101,15 @@ class ReaderHtmlChapterContent extends StatelessWidget {
     return Html(
       data: bookCss == null ? html : '<style>$bookCss</style>$html',
       onLinkTap: (url, _, _) => onLinkTap?.call(url),
+      extensions: [
+        if (maxImageHeight case final height?)
+          // Inline images take only the line width from the text layout, so the cap
+          // goes on the image itself.
+          TagExtension(
+            tagsToExtend: {'img'},
+            builder: (context) => _pageFittedImage(context, height),
+          ),
+      ],
       style: {
         ...sourceStyles,
         'body': (sourceStyles['body'] ?? Style()).merge(bodyStyleHtml),
@@ -175,4 +191,28 @@ class ReaderSpanChapterContent extends StatelessWidget {
       ],
     );
   }
+}
+
+Widget _pageFittedImage(ExtensionContext context, double maxHeight) {
+  final attributes = context.attributes;
+  final alt = Text(attributes['alt'] ?? '');
+  final src = attributes['src'] ?? '';
+  final data = src.indexOf('base64,');
+  if (!src.startsWith('data:') || data < 0) return alt;
+  final Uint8List bytes;
+  try {
+    bytes = base64Decode(src.substring(data + 'base64,'.length).trim());
+  } on FormatException {
+    return alt;
+  }
+  return ConstrainedBox(
+    constraints: BoxConstraints(maxHeight: maxHeight),
+    child: Image.memory(
+      bytes,
+      width: double.tryParse(attributes['width'] ?? ''),
+      height: double.tryParse(attributes['height'] ?? ''),
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => alt,
+    ),
+  );
 }
