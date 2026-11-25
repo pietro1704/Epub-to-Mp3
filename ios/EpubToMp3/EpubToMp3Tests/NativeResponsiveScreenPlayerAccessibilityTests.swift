@@ -42,21 +42,19 @@ extension NativeResponsiveScreenTests {
             controller.view.frame = host.view.bounds
             host.view.layoutIfNeeded()
             controller.view.layoutIfNeeded()
-            let scroll = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIScrollView }.first)
-            XCTAssertGreaterThan(scroll.bounds.height, 100)
+            // docs/expanded-player-layout.md (#984): no scroll surface; every control fits the viewport.
+            XCTAssertTrue(descendants(controller.view).compactMap { $0 as? UIScrollView }.isEmpty,
+                          "The expanded player has no scroll surface: \(size)")
             let author = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UILabel }
                 .first { $0.accessibilityIdentifier == "fullPlayer.bookAuthor" })
             XCTAssertEqual(author.text, displayedBook.author)
             XCTAssertFalse(author.isHidden)
-            XCTAssertGreaterThan(author.font.pointSize, 30, "Font must scale in \(size): \(author.traitCollection.preferredContentSizeCategory)")
-            XCTAssertGreaterThanOrEqual(author.bounds.height,
-                author.sizeThatFits(CGSize(width: author.bounds.width, height: .greatestFiniteMagnitude)).height - 1)
+            XCTAssertGreaterThan(author.font.pointSize, 17, "Font must scale in \(size): \(author.traitCollection.preferredContentSizeCategory)")
+            XCTAssertLessThanOrEqual(author.font.pointSize, 24, "The author keeps its 24-point maximum")
             for identifier in ["fullPlayer.bookTitle", "fullPlayer.progress", "fullPlayer.playbackRateButton"] {
-                let control = try XCTUnwrap(descendants(scroll).first { $0.accessibilityIdentifier == identifier },
-                                            "Metadata and controls must share the scroll surface")
-                scroll.scrollRectToVisible(control.convert(control.bounds, to: scroll), animated: false)
-                XCTAssertTrue(scroll.bounds.insetBy(dx: -1, dy: -1).contains(control.convert(control.bounds, to: scroll)),
-                              "Player control must be reachable: \(identifier), \(size)")
+                let control = try XCTUnwrap(descendants(controller.view).first { $0.accessibilityIdentifier == identifier })
+                XCTAssertTrue(controller.view.bounds.insetBy(dx: -1, dy: -1).contains(control.convert(control.bounds, to: controller.view)),
+                              "Player control must be reachable without scrolling: \(identifier), \(size)")
             }
         }
     }
@@ -72,11 +70,12 @@ extension NativeResponsiveScreenTests {
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(x: 0, y: 0, width: 320, height: 568)
         controller.view.layoutIfNeeded()
-        for identifier in ["fullPlayer.bookTitle", "fullPlayer.bookAuthor"] {
+        // Long metadata: two title lines and one author line, tail-truncated (docs/expanded-player-layout.md).
+        for (identifier, lines) in [("fullPlayer.bookTitle", 2), ("fullPlayer.bookAuthor", 1)] {
             let label = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UILabel }
                 .first { $0.accessibilityIdentifier == identifier })
             XCTAssertTrue(label.adjustsFontForContentSizeCategory)
-            XCTAssertEqual(label.numberOfLines, 0)
+            XCTAssertEqual(label.numberOfLines, lines, identifier)
         }
     }
 #endif
