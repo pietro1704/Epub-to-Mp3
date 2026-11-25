@@ -48,6 +48,7 @@ enum ReaderModelSwitch {
             try ConverterFFIAdapter().bookLanguage(at: url)
         }).value else { return nil }
         cachedAnalyses[book.id] = analysis
+        BookLanguageSummaries().record(analysis.resolvedLanguage(userCorrection: nil), bookID: book.id)
         cachedProfileLanguages[book.id] = analysis.profile?.languages.map(\.language) ?? []
         return analysis
     }
