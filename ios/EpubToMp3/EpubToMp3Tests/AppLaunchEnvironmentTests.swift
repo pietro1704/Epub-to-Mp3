@@ -63,4 +63,24 @@ final class AppLaunchEnvironmentTests: XCTestCase {
         XCTAssertTrue(directory.standardizedFileURL.path.hasPrefix(
             FileManager.default.temporaryDirectory.standardizedFileURL.path))
     }
+    /// MAC-TESTS-OTHER-STORES-ISOLATION: the reader caches, fonts, Rust
+    /// conversion outputs and audiobook folders also resolved to the real
+    /// Application Support while unit tests ran inside the app host.
+    func testDefaultStoreRootsStayOutOfTheRealApplicationSupportUnderXCTest() throws {
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: false)
+            .resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        var roots: [(String, URL?)] = [
+            ("ReaderFulltext", LocalFulltextCache.storageURL(bookId: "isolation-probe")),
+            ("ReaderFonts", EpubFontManager.persistentDirectory(bookID: "isolationprobe")),
+            ("RustConversions", RustConversionOutputStore.defaultRoot),
+        ]
+        #if os(macOS)
+        roots.append(("Audiobooks", AudiobookDownloadStorage.audiobooksRootLocation()))
+        #endif
+        for (name, root) in roots {
+            let path = try XCTUnwrap(root, name).resolvingSymlinksInPath().standardizedFileURL.path
+            XCTAssertFalse(path.hasPrefix(support), "\(name) must not resolve into \(support) under XCTest: \(path)")
+        }
+    }
 }
