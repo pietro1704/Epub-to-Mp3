@@ -427,8 +427,10 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       },
       androidApi: androidApi,
     );
-    if (mounted && missing.isNotEmpty) {
-      showMissingProfileModelsNotice(context, missing);
+    // Once per book and language: the notice is not repeated at every playback start.
+    final unseen = await BookLanguageNotices(ref.read(sharedPrefsProvider)).unseen(widget.bookId, missing);
+    if (mounted && unseen.isNotEmpty) {
+      showMissingProfileModelsNotice(context, unseen);
     }
   }
 

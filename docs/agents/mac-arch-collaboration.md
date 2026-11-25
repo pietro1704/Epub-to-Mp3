@@ -68,7 +68,7 @@ Pietro set these roles on 2026-11-22. He talks only to `epub-coord`.
 
 | Herdr name | Where | Role | Model and effort |
 | --- | --- | --- | --- |
-| `epub-coord` | Mac, left pane of the epub tab | Plans, prioritizes the board, writes task cards, dispatches, reviews results and PRs, merges and reports. Runs no native build, Simulator or device job and holds no lease unless Pietro asks. Sole channel to Arch. | Opus, high |
+| `epub-coord` | Mac, left pane of the epub tab | Plans, prioritizes the board, writes task cards, dispatches, reviews results and PRs, merges and reports. Runs no native build, Simulator or device job and holds no lease unless Pietro asks. Sole channel to Arch. | Sonnet, high |
 | `epub-apple` | Mac, right pane | Sole owner of the Apple window, the build lease, Swift/iOS/macOS code, SE1 and the 16e. | Sonnet, high (medium for routine) |
 | `epub-android` | Arch pane, outside ai-jail (ai-memory only, so it can reach the host adb server) | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
 
@@ -81,20 +81,51 @@ card for `epub-android` to the board at the same time. Between Apple cards,
 `epub-android` keeps Android/tablet and Linux/Windows matching the current
 iOS/macOS behavior and UI, each with its own platform guidelines. Send executors only work: Mac via
 `herdr agent prompt epub-apple ...`, Arch via the [Arch channel limits](#arch-channel-limits).
-Use Fable high only for a large audit, an architecture decision or a bug that
-failed twice (switch with `/model`, then switch back). Search and reading
-subagents use low effort.
+Use Fable or Opus only for a large audit, an architecture decision or a bug that
+failed twice, and only in a fresh session (see [Token economy](#token-economy));
+never switch the model of a session that already carries context. Subagents
+default to Sonnet (`CLAUDE_CODE_SUBAGENT_MODEL`); search and reading subagents
+use low effort; never fan out more than two research subagents at once.
 
 Relaunch commands:
 
 ```sh
-# epub-coord (Mac)
-cd ios/EpubToMp3 && ai-memory run --yolo claude --model opus --effort high
-# epub-apple (Mac)
-cd ios/EpubToMp3 && ai-memory run --yolo claude --model sonnet --effort high
+# epub-coord (Mac), from an up-to-date master checkout, own workstream
+ai-memory run --yolo --workstream epub-coord --or-new claude --model sonnet --effort high
+# epub-apple (Mac), own workstream
+ai-memory run --yolo --workstream epub-apple --or-new claude --model sonnet --effort high
 # epub-android (Arch): ai-memory run --no-jail, same workstream
 ~/Developer/epubtomp3-overnight-20261121/resume-claude-arch-nojail.sh
 ```
+
+### Token economy
+
+Measured on 2026-11-21..24 (audit notes in `~/Developer/epubtomp3-logs/research_notes/`):
+cache reads are over 80% of cost, and each call re-reads the whole context. The
+workers ran up to ~970k tokens before auto-compaction (Arch: 1.29 billion cached
+tokens in 49 h), the coordinator sat at 250-660k, and every wake after an hour,
+model switch or usage-limit stop re-wrote the whole context.
+
+- Context: `autoCompactWindow` is 200000 in the user settings of both hosts.
+  At each card boundary, write the checkpoint (`checkpoint` skill), start an
+  ai-memory handoff, `/clear` and resume from the handoff; do not carry one
+  card's context into the next.
+- Model: decide it at session start. To change it, handoff, `/clear`, then
+  `/model` in the empty session (or relaunch with `ai-memory run --yolo`).
+- Long waits: before waiting more than an hour (Pietro away, overnight CI),
+  checkpoint and `/clear` instead of idling with a large context.
+- No polling coordinator: workers own their CI, reruns and auto-merge, continue
+  to the next board item on their own and message `epub-coord` only for a lease,
+  a blocker or a decision. No routine status lines to the coordinator (they were
+  a third of its turns). The coordinator runs no restart-on-alert watchdog;
+  it wakes on Pietro or a worker message.
+- Waits: block on the event (`gh run watch ID --exit-status`,
+  `herdr agent wait`, `herdr pane wait-output`) instead of sleep loops; never a
+  `pgrep -f` watcher, which can match its own shell and never exit.
+- Replies: short. The closing reply of each turn was the largest single cost
+  item of the coordinator.
+- Start load: run the coordinator from a checkout that tracks `master`, so it
+  loads current instructions.
 
 ### Native window handback receipt
 

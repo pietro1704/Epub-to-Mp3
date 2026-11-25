@@ -2,14 +2,60 @@
 
 # Loaded by test_ci_runtime_scope.rb; preserve the existing suite selectors and fixture.
 class CiRuntimeScopeTest
+  def test_windows_reader_chooses_local_import_before_waiting_for_the_native_picker
+    script_lines = File.readlines(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    journey = [
+      /Click-FlutterElement \$addBook/,
+      /\$importFile = Wait-ForReaderUi .*Find-AppText '\^Import an EPUB or PDF file\$'/,
+      /Click-FlutterElement \$importFile/,
+      /\$dialog = Wait-ForReaderUi 'the native file picker'/
+    ]
+    positions = journey.map { |step| script_lines.index { |line| step.match?(line) } }
+    journey.zip(positions).each { |step, position| refute_nil position, "Missing journey step #{step.inspect}" }
+    assert positions.each_cons(2).all? { |before, after| before < after }, 'Wait for the native picker after choosing local import'
+  end
+
+  def test_windows_reader_content_is_verified_from_the_app_trace_not_the_accessibility_tree
+    script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    assert_includes script, '$env:EPUB2MP3_UI_TRACE = $tracePath'
+    assert_operator script.index('$env:EPUB2MP3_UI_TRACE'), :<, script.index('Start-Process -FilePath $executable')
+    trace_wait = script[/function Wait-ForTraceEvent.*?\n\}/m]
+    refute_match(/\$Match\b/i, trace_wait, 'a parameter named Match is shadowed by the $match variable of Wait-ForReaderUi')
+    assert_match(/Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter'/, script)
+    assert_match(/Wait-ForTraceEvent 'the second chapter passage' 'reader.chapter'/, script)
+    refute_match(/Find-AppText 'a neblina cobria a colina'/, script)
+    refute_match(/Find-AppText 'um mapa antigo, dobrado'/, script)
+  end
+
+  def test_windows_journey_finds_and_places_controls_from_the_app_semantics_trace_before_the_native_tree
+    script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    assert_match(/function Find-TraceNode/, script)
+    find_app_text = script[/function Find-AppText.*?\n\}/m]
+    refute_nil find_app_text
+    assert_operator find_app_text.index('Find-TraceNode'), :<, find_app_text.index('ReadFlutterAccessibility'),
+                    'the trace is asked first; the native accessibility tree is only the fallback'
+    assert_includes script, '"event":"ui.semantics"'
+    assert_includes script, '$snapshot.dpr', 'logical pixels are scaled by the device pixel ratio'
+  end
+
   def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
     workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
-    steps = workflow.fetch('jobs').fetch('windows-package-faber').fetch('steps')
+    job = workflow.fetch('jobs').fetch('windows-package-faber')
+    assert_equal 'windows-2025', job.fetch('runs-on')
+    steps = job.fetch('steps')
     conversion = steps.find { |step| step['name'] == 'Convert exactly two chapters through the packaged Windows DLL' }
     package = steps.find { |step| step['name'] == 'Retain the verified Windows package' }
     logs = steps.find { |step| step.dig('with', 'name') == 'dart-rust-faber-windows' }
-    [conversion, package, logs].each { |step| refute_nil step }
-    assert_operator steps.index(conversion), :<, steps.index(package)
+    gui = steps.find { |step| step['name'] == 'Exercise the packaged Windows reader on the native desktop' }
+    [conversion, gui, package, logs].each { |step| refute_nil step }
+    assert_operator steps.index(conversion), :<, steps.index(gui)
+    assert_operator steps.index(gui), :<, steps.index(package)
+    refute gui.key?('continue-on-error')
+    run = gui.fetch('run')
+    assert_includes run, '-STA -File scripts/verify_windows_reader_gui.ps1'
+    assert_includes run, "-Package 'flutter_app/build/windows/x64/runner/Release'"
+    assert_includes run, "-Fixture 'tests/fixtures/epubs/cli_faber_public_chapters.epub'"
+    assert_includes run, "-Evidence '.reports/windows-faber/reader-gui'"
     assert_equal 'success()', package.fetch('if')
     assert_pinned_action 'actions/upload-artifact', package.fetch('uses')
     assert_equal 'flutter-windows-x64-${{ github.sha }}', package.dig('with', 'name')
