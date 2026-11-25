@@ -51,4 +51,16 @@ final class AppLaunchEnvironmentTests: XCTestCase {
             classLookup: { _ in nil }
         ))
     }
+
+    /// MAC-TESTS-WRITE-REAL-LIBRARY: a LibraryStore built without an explicit
+    /// import directory copied test fixtures into the listener's library.
+    func testDefaultImportedBooksDirectoryStaysOutOfTheRealLibraryUnderXCTest() throws {
+        let directory = try LibraryImportFiles.importedBooksDirectory(fileManager: .default, baseDirectory: nil)
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: false)
+        XCTAssertFalse(directory.standardizedFileURL.path.hasPrefix(support.standardizedFileURL.path),
+                       "Tests must never write into \(support.path)")
+        XCTAssertTrue(directory.standardizedFileURL.path.hasPrefix(
+            FileManager.default.temporaryDirectory.standardizedFileURL.path))
+    }
 }

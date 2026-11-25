@@ -99,12 +99,19 @@ final class PlaybackBindingStoreTests: XCTestCase {
             }
         }
 
+        // MAC-TESTS-WRITE-REAL-LIBRARY: the listener's own playing book must
+        // survive this test; only the isolated suite may change.
+        let listenerBookID = UserDefaults.standard.object(forKey: AudioPlayer.currentBookIDDefaultsKey) as? String
         PlaybackBindingStore.setCurrentlyPlaying(
             bookID: "book-123",
             chapterIndex: 2,
-            chapterName: "Chapter 3"
+            chapterName: "Chapter 3",
+            defaults: defaults
         )
 
+        XCTAssertEqual(UserDefaults.standard.object(forKey: AudioPlayer.currentBookIDDefaultsKey) as? String,
+                       listenerBookID)
+        XCTAssertEqual(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey), "book-123")
         XCTAssertEqual(groupDefaults.string(forKey: "currentlyPlayingBookId"), "book-123")
         XCTAssertEqual(groupDefaults.bool(forKey: "widget.nowPlayingIsPlaying"), false)
     }
