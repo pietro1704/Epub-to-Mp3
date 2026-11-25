@@ -68,6 +68,9 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
 
         let autoScroll = try XCTUnwrap(control(in: controller.view, identifier: "settings.reader.autoScroll") as? NSSwitch)
         XCTAssertEqual(autoScroll.state, .on)
+        let trailing = autoScroll.convert(autoScroll.bounds, to: controller.view).maxX
+        XCTAssertGreaterThan(trailing, controller.view.bounds.width * 0.75,
+                             "Row controls sit at the trailing edge, as on Linux")
         autoScroll.performClick(nil)
         XCTAssertFalse(settings.readerAutoScroll)
         let tracking = try XCTUnwrap(control(in: controller.view, identifier: "settings.reader.audioTracking") as? NSSwitch)

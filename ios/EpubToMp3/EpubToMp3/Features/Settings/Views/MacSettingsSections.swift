@@ -86,7 +86,8 @@ enum MacSettingsSections {
             detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             texts.addArrangedSubview(detail)
         }
-        texts.setHuggingPriority(.defaultLow, for: .horizontal)
+        // The text block absorbs the spare width so the control sits at the trailing edge.
+        texts.setHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         var views: [NSView] = []
         if let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
             let icon = NSImageView(image: image)
@@ -102,6 +103,7 @@ enum MacSettingsSections {
         }
         let row = NSStackView(views: views)
         row.orientation = .horizontal
+        row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 12
         row.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
