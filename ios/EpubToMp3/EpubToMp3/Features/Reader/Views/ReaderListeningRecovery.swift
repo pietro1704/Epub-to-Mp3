@@ -1,5 +1,4 @@
-#if os(iOS)
-import UIKit
+import Foundation
 
 /// Keeps a language or model recovery bound to the listening request that failed.
 @MainActor
@@ -17,11 +16,11 @@ final class ReaderListeningRecovery {
         retry = nil
     }
 
-    func report(_ error: Error, bookID: String?, from reader: UIViewController,
-                library: @escaping () -> LibraryStore?, currentBookID: @escaping () -> String?) {
+    func report(_ error: Error, bookID: String?, isVisible: @escaping () -> Bool,
+                currentBookID: @escaping () -> String?, present: (Error) -> Void) {
         let failedGeneration = generation
-        let isCurrent = { [weak self, weak reader] in
-            self?.generation == failedGeneration && reader?.viewIfLoaded?.window != nil && currentBookID() == bookID
+        let isCurrent = { [weak self] in
+            self?.generation == failedGeneration && isVisible() && currentBookID() == bookID
         }
         if BookLanguageUncertain.decode(error) != nil, let bookID {
             Task { [weak self] in
@@ -36,8 +35,7 @@ final class ReaderListeningRecovery {
                 }
             }
         } else {
-            ReaderListeningAlerts.present(error, from: reader, library: library)
+            if isCurrent() { present(error) }
         }
     }
 }
-#endif

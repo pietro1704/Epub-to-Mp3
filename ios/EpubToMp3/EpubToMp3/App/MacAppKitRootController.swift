@@ -99,46 +99,17 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
-        player.$snapshot
-            .sink { [weak self] snapshot in
-                guard let self, let snapshot, let jobID = self.playbackSession.localPlaybackGeneration,
-                      snapshot.jobId != jobID else { return }
-                self.playbackSession.cancel(stopPlayer: false)
-            }
-            .store(in: &cancellables)
-        player.$pendingNavigation
-            .compactMap { $0 }
-            .removeDuplicates()
-            .sink { [weak self] navigation in
-                guard let self, self.playbackSession.localPlaybackGeneration == navigation.jobID,
-                      let control = self.playbackSession.localPlaybackControl else { return }
-                StreamingSeekPriority.apply(navigation, to: control)
-            }
-            .store(in: &cancellables)
-        player.$activeStreamingChapterIndex
-            .compactMap { $0 }
-            .removeDuplicates()
-            .sink { [weak self] chapterIndex in
-                guard let self, self.playbackSession.localPlaybackGeneration != nil,
-                      let control = self.playbackSession.localPlaybackControl else { return }
-                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
-                _ = control.prioritize(chapterIndex: chapterIndex)
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
-            .sink { [weak self] notification in
-                let bookID = notification.userInfo?["bookID"] as? String
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let playingBook = self.playbackSession.localPlaybackBookID
-                        ?? self.player.location.playingBookID
-                    guard bookID == nil || playingBook == bookID else { return }
-                    self.playbackSession.cancel()
-                    self.player.stop()
-                    self.player.clearConversionState()
-                }
-            }
-            .store(in: &cancellables)
+        playbackSession.observePlayback()
+        player.restartReaderListening = { [weak self] chapter, ratio in
+            guard let self, let bookID = self.player.location.readingBookID,
+                  let book = self.library.books.first(where: { $0.id == bookID }),
+                  self.player.isPlaybackForReaderBook(bookID) || self.player.snapshot?.jobId == book.lastJobId,
+                  self.playbackSession.localPlaybackBookID == bookID
+                    || self.player.snapshot?.chapterProgress?.contains(where: { ($0.textOffset ?? 0) > 0 }) == true
+            else { return false }
+            self.playbackSession.start(owner: self, chapterOverride: chapter, pageRatioOverride: .some(ratio))
+            return true
+        }
         PlaybackRelaunchRestoration.restore(
             settings: settings, library: library,
             player: player, owner: self,
