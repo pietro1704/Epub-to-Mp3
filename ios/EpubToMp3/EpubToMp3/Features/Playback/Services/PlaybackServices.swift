@@ -57,10 +57,8 @@ final class PlaybackServices {
             #if os(iOS)
             self?.transport.handleInterruption(typeRaw: type, optionRaw: options)
             #endif
-        }, routeChange: { [weak self] reason in
-            #if os(iOS)
-            self?.transport.handleRouteChange(reasonRaw: reason)
-            #endif
+        }, routeChange: { [weak authority] reason in
+            authority?.handlePlaybackRouteChange(reasonRaw: reason)
         }, mediaServicesReset: { [weak self] in
             #if os(iOS)
             self?.transport.handleMediaServicesReset()
@@ -92,9 +90,8 @@ final class PlaybackServices {
             state: { [weak authority] in
                 guard let authority else { return .empty }
                 return .init(snapshot: authority.snapshot, isPlaying: authority.isPlaying, isSeeking: authority.isSeeking,
-                             segmentMode: authority.usesSegmentQueue, rate: authority.rate, coverArtData: authority.coverArtData,
-                             isAwaitingSynthesis: authority.isConverting)
-            }, playing: { [weak authority] in authority?.playbackPlayingChanged($0) },
+                             segmentMode: authority.usesSegmentQueue, isAwaitingSynthesis: authority.isConverting)
+            }, transportSample: { [weak authority] in authority?.captureTransportSample() }, playing: { [weak authority] in authority?.playbackPlayingChanged($0) },
             paused: { [weak authority] in authority?.playbackPauseOwnershipChanged($0) },
             streamingChapter: { [weak authority] in authority?.playbackStreamingChapterChanged($0) },
             structuralChange: { [weak authority] in authority?.objectWillChange.send() },

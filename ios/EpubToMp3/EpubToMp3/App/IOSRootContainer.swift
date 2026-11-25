@@ -290,7 +290,6 @@ final class IOSRootContainerController: UIViewController {
         guard fullPlayerController == nil, isViewLoaded else { return }
         let controller = FullPlayerScreenController(
             player: player,
-            playbackClock: player.playbackClock,
             library: library,
             playerPresentation: playerPresentation,
             settings: settings,
@@ -466,7 +465,7 @@ final class IOSRootContainerController: UIViewController {
         library.objectWillChange
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)
-        player.objectWillChange
+        player.transportContentUpdates
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)
         // `UserDefaults.didChangeNotification` is posted synchronously on

@@ -36,9 +36,9 @@ final class PlaybackClock: ObservableObject {
         sleepTimerRemaining: TimeInterval? = nil
     ) {
         let next = Snapshot(
-            positionSeconds: positionSeconds ?? snapshot.positionSeconds,
-            durationSeconds: durationSeconds ?? snapshot.durationSeconds,
-            sleepTimerRemaining: sleepTimerRemaining ?? snapshot.sleepTimerRemaining
+            positionSeconds: positionSeconds.flatMap { $0.isFinite ? $0 : nil } ?? snapshot.positionSeconds,
+            durationSeconds: durationSeconds.flatMap { $0.isFinite ? $0 : nil } ?? snapshot.durationSeconds,
+            sleepTimerRemaining: sleepTimerRemaining.flatMap { $0.isFinite ? $0 : nil } ?? snapshot.sleepTimerRemaining
         )
         guard next != snapshot else { return }
         snapshot = next

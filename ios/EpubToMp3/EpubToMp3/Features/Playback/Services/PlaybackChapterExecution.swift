@@ -95,7 +95,7 @@ final class PlaybackChapterExecution {
         // and queued. Keep the live segment queue intact; the caller
         // (`startFromBeginning` / `startFromReaderPage`) will issue the
         // appropriate `seek` + `resume` after this returns.
-        if isSegmentMode, player != nil, snapshot.playableChapters.isEmpty {
+        if isSegmentMode, player != nil, self.snapshot?.jobId == snapshot.jobId, snapshot.playableChapters.isEmpty {
             actions.snapshotChanged(snapshot)
             actions.publish()
             return

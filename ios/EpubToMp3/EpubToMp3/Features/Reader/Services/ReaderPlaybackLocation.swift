@@ -11,20 +11,22 @@ struct ReaderPlaybackLocation {
     let spoken: SpeechFallbackPlayer.SpokenWord?
 
     init?(player: AudioPlayer) {
+        let transport = player.captureTransportSample()
+        let state = transport.content
         let audio = player.playbackClock.audioOutput.position
-        let spoken = player.isUsingSpeechFallback ? player.speechOutput.spokenWord : nil
-        let queueChapter = player.currentPlaybackChapter
-        let base = player.snapshot?.chapterIndexBase == 1 ? 1 : 0
-        let reportedIndex = player.activeStreamingChapterIndex ?? audio?.chapterIndex
+        let spoken = state.source == .speech ? player.speechOutput.spokenWord : nil
+        let queueChapter = state.chapter
+        let base = state.job?.chapterIndexBase == 1 ? 1 : 0
+        let reportedIndex = state.streamingChapterIndex ?? audio?.chapterIndex
         // Segment playback reports a reader index; a whole-file queue reports a snapshot index.
-        let reportedBase = player.usesSegmentQueue ? 0 : base
+        let reportedBase = state.usesSegmentQueue ? 0 : base
         guard let index = spoken?.chapterIndex ?? reportedIndex.map({ $0 - reportedBase })
                 ?? queueChapter.map({ $0.index - base }),
               index >= 0 else { return nil }
         chapterIndex = index
-        seconds = audio?.seconds ?? player.positionSeconds
-        duration = audio?.duration ?? player.playbackClock.durationSeconds
-        textOffset = player.usesSegmentQueue ? 0 : max(0, queueChapter?.textOffset ?? 0)
+        seconds = audio?.seconds ?? transport.clock.positionSeconds
+        duration = audio?.duration ?? transport.clock.durationSeconds
+        textOffset = state.usesSegmentQueue ? 0 : max(0, queueChapter?.textOffset ?? 0)
         self.audio = audio
         self.spoken = spoken
     }

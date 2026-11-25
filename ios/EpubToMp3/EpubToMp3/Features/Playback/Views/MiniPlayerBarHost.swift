@@ -227,7 +227,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         self.onTap = onTap
         self.onPlayRequested = onPlayRequested
         bindIfNeeded(player: player, library: library)
-        rebuildRateMenu(player: player)
+        rebuildRateMenu(player: player, selected: player.transportState.content.rate)
         render()
     }
 
@@ -243,7 +243,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
 
     private func bindIfNeeded(player: AudioPlayer, library: LibraryStore) {
         guard cancellables.isEmpty else { return }
-        player.objectWillChange
+        player.transportContentUpdates
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
@@ -268,9 +268,10 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
 
     private func render() {
         guard let player, let library else { return }
+        let state = player.transportState.content
         let currentBookID = Self.activeBookID(defaults: player.location.defaults)
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        titleLabel.text = player.effectiveChapterTitle
+        titleLabel.text = state.chapterTitle
         chapterLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")
         openButton.accessibilityValue = [titleLabel.text, chapterLabel.text]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -279,21 +280,21 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
 
         updateCover(for: book)
 
-        let isLoading = player.isLoading
+        let isLoading = state.isLoading
         if isLoading {
             spinner.startAnimating()
-            playPauseButton.isHidden = !player.isSeeking
+            playPauseButton.isHidden = !state.isSeeking
         } else {
             spinner.stopAnimating()
             playPauseButton.isHidden = false
         }
 
-        let playPauseName = player.isPlaying ? "pause.fill" : "play.fill"
+        let playPauseName = state.isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: playPauseName), for: .normal)
-        playPauseButton.accessibilityLabel = player.isPlaying
+        playPauseButton.accessibilityLabel = state.isPlaying
             ? L10n.string("player.pause")
             : L10n.string("player.play")
-        rebuildRateMenu(player: player)
+        rebuildRateMenu(player: player, selected: state.rate)
         accessibilityIdentifier = "miniPlayer.bar"
     }
 
@@ -347,19 +348,18 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         render()
     }
 
-    private func rebuildRateMenu(player: AudioPlayer) {
-        guard renderedRatePlayer !== player || renderedRate != player.rate || rateButton.menu == nil else { return }
+    private func rebuildRateMenu(player: AudioPlayer, selected: PlaybackRate) {
+        guard renderedRatePlayer !== player || renderedRate != selected || rateButton.menu == nil else { return }
         renderedRatePlayer = player
-        renderedRate = player.rate
-        rateButton.setTitle(player.rate.shortLabel, for: .normal)
+        renderedRate = selected
+        rateButton.setTitle(selected.shortLabel, for: .normal)
         rateButton.showsMenuAsPrimaryAction = true
-        rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: player.rate).map { rate in
+        rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: selected).map { rate in
             UIAction(
                 title: rate.shortLabel,
-                state: rate == player.rate ? .on : .off
-            ) { [weak self, weak player] _ in
+                state: rate == selected ? .on : .off
+            ) { [weak player] _ in
                 player?.setRate(rate)
-                if let player { self?.rebuildRateMenu(player: player) }
             }
         })
     }

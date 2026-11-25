@@ -21,7 +21,7 @@ extension NativeResponsiveScreenTests {
             defer { player.stop() }
             UserDefaults.standard.set(displayedBook.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
             UserDefaults.standard.set(displayedBook.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
-            let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
+            let controller = FullPlayerScreenController(player: player,
                 library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
                 settings: AppSettings(defaults: defaults), onStartListening: {})
             let host = UIViewController()
@@ -64,7 +64,7 @@ extension NativeResponsiveScreenTests {
     func testExpandedPlayerMetadataFollowsAccessibilityTextSize() throws {
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
-        let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
+        let controller = FullPlayerScreenController(player: player,
             library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {})
         controller.loadViewIfNeeded()
@@ -89,7 +89,7 @@ extension NativeResponsiveScreenTests {
         """.utf8))
         player.play(snapshot: snapshot, startingAt: 0, restoreAutoplay: false)
         let controller = PlayerScreenController(snapshot: snapshot, backendBaseURL: nil,
-                                                 player: player, playbackClock: PlaybackClock())
+                                                 player: player)
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(x: 0, y: 0, width: 320, height: 568)
         controller.view.layoutIfNeeded()

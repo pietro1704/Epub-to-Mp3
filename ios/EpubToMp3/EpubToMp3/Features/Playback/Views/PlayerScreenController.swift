@@ -8,7 +8,6 @@ final class PlayerScreenController: UIViewController {
     private var snapshot: JobSnapshot
     private var backendBaseURL: URL?
     private let player: AudioPlayer
-    private let playbackClock: PlaybackClock
 
     private let artworkView = UIImageView()
     private let titleLabel = UILabel()
@@ -24,11 +23,10 @@ final class PlayerScreenController: UIViewController {
     private let volumeView = MPVolumeView(frame: .zero)
     private var cancellables: Set<AnyCancellable> = []
 
-    init(snapshot: JobSnapshot, backendBaseURL: URL?, player: AudioPlayer, playbackClock: PlaybackClock) {
+    init(snapshot: JobSnapshot, backendBaseURL: URL?, player: AudioPlayer) {
         self.snapshot = snapshot
         self.backendBaseURL = backendBaseURL
         self.player = player
-        self.playbackClock = playbackClock
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("reader.nowPlaying")
     }
@@ -169,57 +167,58 @@ final class PlayerScreenController: UIViewController {
     }
 
     private func bindState() {
-        player.objectWillChange
-            .receive(on: DispatchQueue.main)
+        player.transportContentUpdates
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
 
-        playbackClock.$snapshot
-            .sink { [weak self] snapshot in self?.renderPlaybackProgress(snapshot) }
+        player.transportUpdates
+            .sink { [weak self] state in self?.renderPlaybackProgress(state) }
             .store(in: &cancellables)
     }
 
     private func render() {
+        let transport = player.transportState
+        let state = transport.content
         let activeSnapshot: JobSnapshot
-        if let playerSnapshot = player.snapshot, playerSnapshot.jobId == snapshot.jobId {
+        if let playerSnapshot = state.job, playerSnapshot.jobId == snapshot.jobId {
             activeSnapshot = playerSnapshot
         } else {
             activeSnapshot = snapshot
         }
 
         titleLabel.text = activeSnapshot.bookTitle ?? L10n.string("player.audiobookFallback")
-        chapterLabel.text = player.snapshot == nil ? "—" : player.effectiveChapterTitle
-        renderPlaybackProgress()
+        chapterLabel.text = state.job == nil ? "—" : state.chapterTitle
+        renderPlaybackProgress(transport)
         playPauseButton.setImage(
-            UIImage(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill"),
+            UIImage(systemName: state.isPlaying ? "pause.circle.fill" : "play.circle.fill"),
             for: .normal
         )
-        playPauseButton.accessibilityLabel = L10n.string(player.isPlaying ? "player.pause" : "player.play")
-        updateRateMenu()
+        playPauseButton.accessibilityLabel = L10n.string(state.isPlaying ? "player.pause" : "player.play")
+        updateRateMenu(state.rate)
     }
 
-    private func renderPlaybackProgress(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
-        let snapshot = clockSnapshot ?? playbackClock.snapshot
+    private func renderPlaybackProgress(_ transport: PlaybackTransportState) {
+        let snapshot = transport.clock
         slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
         slider.value = Float(snapshot.positionSeconds)
         elapsedLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
             seconds: snapshot.positionSeconds,
-            rate: player.rate
+            rate: transport.content.rate
         ))
         durationLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
             seconds: snapshot.durationSeconds,
-            rate: player.rate
+            rate: transport.content.rate
         ))
     }
 
-    private func updateRateMenu() {
-        rateButton.accessibilityLabel = L10n.string("player.playbackSpeed", player.rate.shortLabel)
-        guard renderedRate != player.rate || rateButton.menu == nil else { return }
-        renderedRate = player.rate
-        rateButton.setTitle(player.rate.shortLabel, for: .normal)
+    private func updateRateMenu(_ selected: PlaybackRate) {
+        rateButton.accessibilityLabel = L10n.string("player.playbackSpeed", selected.shortLabel)
+        guard renderedRate != selected || rateButton.menu == nil else { return }
+        renderedRate = selected
+        rateButton.setTitle(selected.shortLabel, for: .normal)
         rateButton.showsMenuAsPrimaryAction = true
         rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
-            UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
+            UIAction(title: rate.shortLabel, state: rate == selected ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()
             }

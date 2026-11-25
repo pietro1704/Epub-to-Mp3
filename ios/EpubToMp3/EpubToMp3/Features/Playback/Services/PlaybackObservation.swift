@@ -14,15 +14,13 @@ final class PlaybackObservation {
         let isPlaying: Bool
         let isSeeking: Bool
         let segmentMode: Bool
-        let rate: PlaybackRate
-        let coverArtData: Data?
         /// True while on-device synthesis may still deliver more audio.
         var isAwaitingSynthesis = false
-        static let empty = State(snapshot: nil, isPlaying: false, isSeeking: false,
-                                 segmentMode: false, rate: .x100, coverArtData: nil)
+        static let empty = State(snapshot: nil, isPlaying: false, isSeeking: false, segmentMode: false)
     }
     struct Actions {
         let state: () -> State
+        let transportSample: () -> PlaybackTransportState.Sample?
         let playing: (Bool) -> Void
         let paused: (Bool) -> Void
         let streamingChapter: (Int?) -> Void
@@ -66,8 +64,6 @@ final class PlaybackObservation {
     private var isPlaying: Bool { actions.state().isPlaying }
     private var isSeeking: Bool { actions.state().isSeeking }
     private var isSegmentMode: Bool { actions.state().segmentMode }
-    private var rate: PlaybackRate { actions.state().rate }
-    private var coverArtData: Data? { actions.state().coverArtData }
     private var currentChapterIndex: Int { queueSession.currentChapterIndex }
     private var player: AVQueuePlayer? { queueSession.player }
     private var positionSeconds: TimeInterval {
@@ -77,11 +73,6 @@ final class PlaybackObservation {
     private var durationSeconds: TimeInterval {
         get { playbackClock.durationSeconds }
         set { playbackClock.update(durationSeconds: newValue) }
-    }
-    private var playbackPositionSeconds: TimeInterval { PlaybackChapterQueue.rateAdjustedDuration(seconds: positionSeconds, rate: rate) }
-    private var playbackDurationSeconds: TimeInterval { PlaybackChapterQueue.rateAdjustedDuration(seconds: durationSeconds, rate: rate) }
-    private var nowPlayingState: NowPlayingPublication.State {
-        .init(snapshot: snapshot, effectiveChapterTitle: effectiveChapterTitle, positionSeconds: positionSeconds, durationSeconds: durationSeconds, isPlaying: isPlaying, rate: rate, coverArtData: coverArtData, currentChapterIndex: currentChapterIndex, playbackPositionSeconds: playbackPositionSeconds, playbackDurationSeconds: playbackDurationSeconds)
     }
     var playbackChapterURLs: [URL?]? {
         guard let snapshot else { return nil }
@@ -157,6 +148,7 @@ final class PlaybackObservation {
     }
 
     func observePlaybackTime(_ time: CMTime, from player: AVQueuePlayer) {
+        guard player === self.player else { return }
         let rawTime = time.seconds.isFinite ? time.seconds : 0
         self.requestRetentionForAudibleChapter()
         self.recordAudibleAudioIfNeeded(renderedSeconds: rawTime)
@@ -209,9 +201,15 @@ final class PlaybackObservation {
     /// directly: `MPNowPlayingInfoCenter.default().nowPlayingInfo`
     /// does not round-trip reads in a headless xctest host (macOS or
     /// iOS simulator), so asserting through the singleton is flaky.
-    func makeNowPlayingInfo() -> [String: Any] { nowPlayingPublication.makeInfo(nowPlayingState) }
+    func makeNowPlayingInfo() -> [String: Any] {
+        guard let state = actions.transportSample() else { return [:] }
+        return nowPlayingPublication.makeInfo(state)
+    }
 
-    func updateNowPlayingInfo() { nowPlayingPublication.publish(nowPlayingState) }
+    func updateNowPlayingInfo() {
+        guard let state = actions.transportSample() else { return }
+        nowPlayingPublication.publish(state)
+    }
 
     func updateReaderChapterTitle(_ title: String, for index: Int) {
         guard !title.isEmpty else { return }

@@ -56,7 +56,7 @@ final class ReaderPDFPresentation {
                 self?.audioObservedAt = ProcessInfo.processInfo.systemUptime
                 self?.paintAudio()
             }.store(in: &observers)
-            player.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
+            player.transportContentUpdates.sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
             player.speechOutput.$spokenWord.sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
             Timer.publish(every: 0.1, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
             player.playbackClock.audioOutput.$position

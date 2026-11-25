@@ -8,7 +8,6 @@ import UIKit
 @MainActor
 final class FullPlayerScreenController: UIViewController {
     private let player: AudioPlayer
-    private let playbackClock: PlaybackClock
     private var library: LibraryStore
     private let playerPresentation: PlayerPresentation
     private let settings: AppSettings
@@ -35,14 +34,12 @@ final class FullPlayerScreenController: UIViewController {
 
     init(
         player: AudioPlayer,
-        playbackClock: PlaybackClock,
         library: LibraryStore,
         playerPresentation: PlayerPresentation,
         settings: AppSettings,
         onStartListening: @escaping () -> Void
     ) {
         self.player = player
-        self.playbackClock = playbackClock
         self.library = library
         self.playerPresentation = playerPresentation
         self.settings = settings
@@ -90,7 +87,7 @@ final class FullPlayerScreenController: UIViewController {
 
     func refresh(library: LibraryStore) {
         self.library = library
-        render()
+        render(player.captureTransportSample())
     }
 
     func setPresented(_ visible: Bool, animated: Bool) {
@@ -98,7 +95,7 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private func bind() {
-        [player.objectWillChange, library.objectWillChange, playerPresentation.objectWillChange]
+        [library.objectWillChange, playerPresentation.objectWillChange]
             .forEach { publisher in
                 publisher
                     .receive(on: DispatchQueue.main)
@@ -111,8 +108,12 @@ final class FullPlayerScreenController: UIViewController {
             .sink { [weak self] _ in self?.renderGoToReading() }
             .store(in: &cancellables)
 
-        playbackClock.$snapshot
-            .sink { [weak self] snapshot in self?.renderPlaybackPosition(snapshot) }
+        player.transportContentUpdates
+            .sink { [weak self] _ in self?.render() }
+            .store(in: &cancellables)
+
+        player.transportUpdates
+            .sink { [weak self] state in self?.renderPlaybackPosition(state.sample) }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
@@ -122,19 +123,21 @@ final class FullPlayerScreenController: UIViewController {
 
     }
 
-    private func render() {
+    private func render(_ sample: PlaybackTransportState.Sample? = nil) {
+        let transport = sample ?? player.transportState.sample
+        let state = transport.content
         let currentBook = currentBookID.flatMap { id in
             library.books.first(where: { $0.id == id })
         }
-        content.coverButton.isEnabled = currentBook != nil && (player.snapshot != nil || player.isUsingSpeechFallback)
+        content.coverButton.isEnabled = currentBook != nil && (state.job != nil || (state.source == .speech))
 
-        content.titleLabel.text = currentBook?.resolvedTitle ?? (player.snapshot?.bookTitle ?? L10n.string("player.audiobookFallback"))
+        content.titleLabel.text = currentBook?.resolvedTitle ?? (state.job?.bookTitle ?? L10n.string("player.audiobookFallback"))
         content.authorLabel.text = currentBook?.author
         content.authorLabel.isHidden = (content.authorLabel.text?.isEmpty ?? true)
-        content.chapterLabel.text = player.snapshot == nil
+        content.chapterLabel.text = state.job == nil
             ? L10n.string("player.chapter", (player.location.playingChapter ?? 0) + 1)
-            : player.effectiveChapterTitle
-        if let voice = player.snapshot?.activeVoiceDisplayName {
+            : state.chapterTitle
+        if let voice = state.job?.activeVoiceDisplayName {
             content.chapterLabel.text = (content.chapterLabel.text ?? "") + "\n" + voice
         }
 
@@ -147,10 +150,10 @@ final class FullPlayerScreenController: UIViewController {
         }
 
         content.layoutView.setNeedsLayout()
-        renderPlaybackPosition()
+        renderPlaybackPosition(transport)
         renderSkipButtons()
-        renderPlayPauseButton()
-        renderRateMenu()
+        renderPlayPauseButton(state)
+        renderRateMenu(state.rate)
         renderGoToReading()
         renderSleepMenu()
     }
@@ -169,30 +172,31 @@ final class FullPlayerScreenController: UIViewController {
         content.skipForwardButton.accessibilityLabel = L10n.string("player.skipForward.seconds", forward)
     }
 
-    private func renderPlaybackPosition(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
-        let snapshot = clockSnapshot ?? playbackClock.snapshot
+    private func renderPlaybackPosition(_ transport: PlaybackTransportState.Sample) {
+        let state = transport.content
+        let snapshot = transport.clock
         content.slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
         content.slider.isEnabled = snapshot.durationSeconds > 0
-        let position = player.isSeeking ? player.positionSeconds : snapshot.positionSeconds
-        if !isScrubbing && !player.isSeeking {
+        let position = snapshot.positionSeconds
+        if !isScrubbing && !state.isSeeking {
             content.slider.value = Float(position)
         }
-        content.elapsedLabel.text = (player.isPositionApproximate ? "≈ " : "")
+        content.elapsedLabel.text = (state.isPositionApproximate ? "≈ " : "")
             + PlayerTransportPresentation.formatTime(position)
         let timeline = ChapterPlaybackTimeline(
-            estimate: player.isChapterDurationEstimated ? snapshot.durationSeconds : nil,
-            confirmed: player.isChapterDurationEstimated ? nil : snapshot.durationSeconds)
-        let rateAdjusted = timeline.remaining(position: position, rate: Double(player.rate.rawValue))
-        let prefix = player.isChapterDurationEstimated ? "≈ -" : "-"
+            estimate: state.isChapterDurationEstimated ? snapshot.durationSeconds : nil,
+            confirmed: state.isChapterDurationEstimated ? nil : snapshot.durationSeconds)
+        let rateAdjusted = timeline.remaining(position: position, rate: Double(state.rate.rawValue))
+        let prefix = state.isChapterDurationEstimated ? "≈ -" : "-"
         content.remainingLabel.text = snapshot.durationSeconds > 0
             ? prefix + PlayerTransportPresentation.formatTime(rateAdjusted) : "—"
-        content.remainingLabel.accessibilityLabel = player.isChapterDurationEstimated
+        content.remainingLabel.accessibilityLabel = state.isChapterDurationEstimated
             ? L10n.string("player.estimatedRemaining", PlayerTransportPresentation.formatTime(rateAdjusted))
             : nil
     }
 
-    private func renderPlayPauseButton() {
-        if player.isLoading {
+    private func renderPlayPauseButton(_ state: PlaybackTransportState.Content) {
+        if state.isLoading {
             content.playPauseButton.setImage(nil, for: .normal)
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
@@ -211,24 +215,24 @@ final class FullPlayerScreenController: UIViewController {
                 if $0 is UIActivityIndicatorView { $0.removeFromSuperview() }
             }
             content.playPauseButton.setImage(
-                UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill"),
+                UIImage(systemName: state.isPlaying ? "pause.fill" : "play.fill"),
                 for: .normal
             )
             content.playPauseButton.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
         }
-        content.playPauseButton.accessibilityLabel = player.isPlaying
+        content.playPauseButton.accessibilityLabel = state.isPlaying
             ? L10n.string("player.pause")
             : L10n.string("player.play")
     }
 
-    private func renderRateMenu() {
-        guard renderedRate != player.rate || content.rateButton.menu == nil else { return }
-        renderedRate = player.rate
+    private func renderRateMenu(_ selected: PlaybackRate) {
+        guard renderedRate != selected || content.rateButton.menu == nil else { return }
+        renderedRate = selected
         var config = content.rateButton.configuration ?? UIButton.Configuration.plain()
-        config.title = player.rate.shortLabel
+        config.title = selected.shortLabel
         content.rateButton.configuration = config
-        content.rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: player.rate).map { rate in
-            UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
+        content.rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: selected).map { rate in
+            UIAction(title: rate.shortLabel, state: rate == selected ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()
             }

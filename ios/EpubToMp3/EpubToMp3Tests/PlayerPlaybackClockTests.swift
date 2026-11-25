@@ -79,8 +79,7 @@ final class PlayerPlaybackClockTests: XCTestCase {
         let controller = PlayerScreenController(
             snapshot: snapshot,
             backendBaseURL: nil,
-            player: player,
-            playbackClock: player.playbackClock
+            player: player
         )
         controller.loadViewIfNeeded()
 
@@ -103,7 +102,6 @@ final class PlayerPlaybackClockTests: XCTestCase {
         let player = AudioPlayer()
         let controller = FullPlayerScreenController(
             player: player,
-            playbackClock: player.playbackClock,
             library: LibraryStore(),
             playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {}
@@ -134,12 +132,12 @@ final class PlayerPlaybackClockTests: XCTestCase {
         defer { suite.removePersistentDomain(forName: suiteName) }
         let library = LibraryStore()
         let full = FullPlayerScreenController(
-            player: player, playbackClock: player.playbackClock, library: library,
+            player: player, library: library,
             playerPresentation: PlayerPresentation(defaults: suite), settings: AppSettings(defaults: suite),
             onStartListening: {}
         )
         let compact = PlayerScreenController(
-            snapshot: snapshot, backendBaseURL: nil, player: player, playbackClock: player.playbackClock
+            snapshot: snapshot, backendBaseURL: nil, player: player
         )
         full.loadViewIfNeeded()
         compact.loadViewIfNeeded()
