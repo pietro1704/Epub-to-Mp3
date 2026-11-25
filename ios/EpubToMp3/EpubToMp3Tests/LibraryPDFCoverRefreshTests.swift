@@ -38,6 +38,35 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         try await fixture.store.flushPersistence()
     }
 
+    /// MAC-PDF-COVER-FLIPPED: a PDF imported before the upright renderer and
+    /// never reopened kept its mirrored legacy cover in the library grid.
+    func testShowingTheLibraryRefreshesLegacyPDFCoverWithoutOpeningTheBook() async throws {
+        let fixture = try PDFCoverFixture()
+        defer { fixture.cleanup() }
+        let controller = MacLibraryViewController(library: fixture.store,
+            bookmarkStore: BookmarkStore(defaults: fixture.defaults),
+            onOpenBook: { _ in XCTFail("The library must not open the book") },
+            onDownloadBook: { _ in }, onConvertBook: { _ in })
+        _ = controller.view
+        let deadline = Date().addingTimeInterval(10)
+        while fixture.store.books.first?.pdfCoverVersion == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let updated = try XCTUnwrap(fixture.store.books.first)
+        XCTAssertEqual(updated.pdfCoverVersion, PdfMetadataReader.coverVersion)
+        XCTAssertNotEqual(updated.coverPNG, fixture.book.coverPNG)
+        XCTAssertNotNil(updated.coverPNG.flatMap(NSImage.init(data:)))
+        XCTAssertEqual(updated.bookmark, fixture.book.bookmark)
+        XCTAssertNil(updated.lastOpenedAt, "Refreshing a cover is not opening the book")
+        XCTAssertEqual(try Data(contentsOf: fixture.source), fixture.sourceBytes)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("library").path),
+                       "A cover refresh must not copy the source into the app library")
+        try await fixture.store.flushPersistence()
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            XCTUnwrap(fixture.defaults.data(forKey: "library"))) as? [[String: Any]])
+        XCTAssertEqual(rows.first?["pdfCoverVersion"] as? Int, PdfMetadataReader.coverVersion)
+    }
+
     func testFailedPDFRenderKeepsOldCoverAndRetriesOnTheNextOpen() async throws {
         let fixture = try PDFCoverFixture(malformed: true)
         defer { fixture.cleanup() }
