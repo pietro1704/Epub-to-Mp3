@@ -39,7 +39,7 @@ final class AudioPlayerPendingPlayIntentTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         let audio = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).wav")
         try writeListeningFixtureAudio(at: audio)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop(); sharedDefaults.restore(); defaults.removePersistentDomain(forName: id); try? FileManager.default.removeItem(at: audio) }
         UserDefaults.standard.removeObject(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         UserDefaults.standard.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
@@ -114,7 +114,7 @@ private final class ProgressiveListeningFixture {
         let store = LibraryStore(defaults: prefs, defaultsKey: "library", importDirectory: directory.appendingPathComponent("imports"))
         let imported = try store.importBook(from: input)
         id = identifier; defaults = prefs; root = directory; source = input; library = store; book = imported
-        player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: prefs)))
+        player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: prefs)), location: ReaderLocation(defaults: prefs))
         presentation = PlayerPresentation(defaults: prefs)
         var continuation: AsyncStream<Void>.Continuation!
         stream = AsyncStream { continuation = $0 }; release = continuation
@@ -122,7 +122,7 @@ private final class ProgressiveListeningFixture {
         try writeListeningFixtureAudio(at: root.appendingPathComponent("ch2.wav"))
         defaults.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         defaults.set(1, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        UserDefaults.standard.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        defaults.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
     }
 
     func cleanup() {

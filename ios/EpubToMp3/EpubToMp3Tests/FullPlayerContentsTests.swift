@@ -9,11 +9,6 @@ final class FullPlayerContentsTests: XCTestCase {
         let bookID = "PlayerContents-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: bookID))
         defer { defaults.removePersistentDomain(forName: bookID) }
-        let playingKey = AudioPlayer.currentBookIDDefaultsKey
-        let previous = UserDefaults.standard.object(forKey: playingKey)
-        defer { UserDefaults.standard.set(previous, forKey: playingKey) }
-        UserDefaults.standard.set(bookID, forKey: playingKey)
-
         let book = BookEntity(id: bookID, title: "Player contents fixture", bookmark: Data([1]),
                               displayFilename: "contents.epub", addedAt: Date())
         let chapters: [EbookFulltext.Chapter] = (1...3).map { index in
@@ -38,6 +33,7 @@ final class FullPlayerContentsTests: XCTestCase {
         let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: UIScreen.main.bounds)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        player.location.bindPlayingBook(bookID, chapter: 0)
         defer {
             window.rootViewController?.dismiss(animated: false)
             window.isHidden = true

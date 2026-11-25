@@ -63,7 +63,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         if includeReadyThirdChapter {
             try FileManager.default.copyItem(at: audioURL, to: thirdURL)
         }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         standard.set(identifier, forKey: AudioPlayer.currentBookIDDefaultsKey)

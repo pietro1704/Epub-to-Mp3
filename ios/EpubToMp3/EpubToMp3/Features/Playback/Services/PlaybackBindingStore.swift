@@ -15,13 +15,7 @@ enum PlaybackBindingStore {
         chapterName: String? = nil,
         defaults: UserDefaults = .standard
     ) {
-        if let bookID, !bookID.isEmpty {
-            defaults.set(bookID, forKey: AudioPlayer.currentBookIDDefaultsKey)
-            defaults.set(max(0, chapterIndex), forKey: AudioPlayer.currentChapterIndexDefaultsKey)
-        } else {
-            defaults.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            defaults.removeObject(forKey: AudioPlayer.currentChapterIndexDefaultsKey)
-        }
+        ReaderLocation(defaults: defaults).bindPlayingBook(bookID, chapter: chapterIndex)
 
         WidgetDataSync.updateNowPlaying(
             bookId: bookID,

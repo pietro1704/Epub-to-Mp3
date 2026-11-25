@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class PlaybackServices {
     struct Configuration {
+        let location: ReaderLocation
         let resumeStore: ResumeStore
         let speech: SpeechFallbackPlayer?
         let clock: PlaybackClock
@@ -23,19 +24,21 @@ final class PlaybackServices {
     let readiness = PlaybackConversionReadiness()
     let reader = ReaderPlaybackSeek()
     let chapters = PlaybackChapterSession()
-    let navigation = ChapterNavigationDecision()
+    let navigation: ChapterNavigationDecision
     let segments = PlaybackSegmentSession()
     let journeys = PlaybackJourneyRecorder()
-    let publication = NowPlayingPublication()
+    let publication: NowPlayingPublication
     let bookProgress = PlaybackBookProgress()
     let sleep: SleepPlaybackTimer
 
     init(authority: AudioPlayer, configuration: Configuration) {
+        navigation = ChapterNavigationDecision(location: configuration.location)
+        publication = NowPlayingPublication(location: configuration.location)
         self.authority = authority
         clock = configuration.clock
         queue = PlaybackQueueSession(clock: configuration.clock)
         persistence = PlaybackSegmentPersistence(writer: configuration.writer ?? SegmentFileWriter())
-        resume = PlaybackResumeStore(store: configuration.resumeStore)
+        resume = PlaybackResumeStore(store: configuration.resumeStore, location: configuration.location)
         retention = PlaybackArtifactRetention(artifactStore: configuration.artifacts)
         speech = configuration.speech ?? SpeechFallbackPlayer()
         sleep = SleepPlaybackTimer(clock: configuration.clock)

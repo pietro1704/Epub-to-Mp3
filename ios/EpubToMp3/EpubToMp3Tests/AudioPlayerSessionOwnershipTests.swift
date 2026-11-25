@@ -54,10 +54,10 @@ final class AudioPlayerSessionOwnershipTests: XCTestCase {
         }
 
         var previous: AudioPlayer? = AudioPlayer(
-            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         weak var releasedPlayer = previous
         let current = AudioPlayer(
-            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             previous?.stop()
             current.stop()

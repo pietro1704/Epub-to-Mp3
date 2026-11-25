@@ -48,7 +48,7 @@ final class PlaybackReadinessPublicationTests: XCTestCase {
     @MainActor
     func testNewBookIdentityClearsPreviousReadinessWithoutGrantingAutoplay() throws {
         let fixture = try PlaybackPublicationFixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer { fixture.restore(afterStopping: player) }
         let first = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"first-book","state":"running","chaptersTotal":1,"chaptersCompleted":0}"#.utf8))
         let second = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"second-book","state":"running","chaptersTotal":1,"chaptersCompleted":0}"#.utf8))

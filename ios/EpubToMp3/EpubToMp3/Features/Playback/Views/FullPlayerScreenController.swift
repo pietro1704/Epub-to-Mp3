@@ -30,7 +30,7 @@ final class FullPlayerScreenController: UIViewController {
     private var contentsAvailability: AnyCancellable?
     private var isScrubbing = false
     private var currentBookID: String? {
-        UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        player.location.playingBookID
     }
 
     init(
@@ -132,7 +132,7 @@ final class FullPlayerScreenController: UIViewController {
         content.authorLabel.text = currentBook?.author
         content.authorLabel.isHidden = (content.authorLabel.text?.isEmpty ?? true)
         content.chapterLabel.text = player.snapshot == nil
-            ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
+            ? L10n.string("player.chapter", (player.location.playingChapter ?? 0) + 1)
             : player.effectiveChapterTitle
         if let voice = player.snapshot?.activeVoiceDisplayName {
             content.chapterLabel.text = (content.chapterLabel.text ?? "") + "\n" + voice

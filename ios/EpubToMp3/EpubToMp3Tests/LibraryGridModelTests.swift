@@ -217,17 +217,13 @@ final class LibraryGridModelTests: XCTestCase {
         let book = try library.importBook(from: source)
         let other = try library.importBook(from: otherSource)
         XCTAssertNotEqual(book.id, other.id)
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey,
-                    AudioPlayer.currentChapterIndexDefaultsKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
-                    AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey]
-        let previous = keys.map { standard.object(forKey: $0) }
         let widget = UserDefaults(suiteName: WidgetDataSync.appGroupID)
         func isNowPlayingKey(_ key: String) -> Bool {
             key == "currentlyPlayingBookId" || key.hasPrefix("widget.nowPlaying")
         }
         let widgetValues = widget?.dictionaryRepresentation().filter { isNowPlayingKey($0.key) } ?? [:]
-        let app = EpubToMp3App(library: library)
+        let app = EpubToMp3App(library: library, sessionDefaults: defaults)
+        let location = app.player.location
         let submitted = expectation(description: "Mac reader playback hands off its source-bound job")
         let replacementSubmitted = expectation(description: "Replacement reader playback hands off its job")
         let retiredResultReturned = expectation(description: "Retired conversion returns its result")
@@ -256,7 +252,6 @@ final class LibraryGridModelTests: XCTestCase {
             session.cancel()
             completion.continuation.finish()
             replacementCompletion.continuation.finish()
-            for (key, value) in zip(keys, previous) { standard.set(value, forKey: key) }
             if let widget {
                 for key in widget.dictionaryRepresentation().keys where isNowPlayingKey(key) {
                     widget.removeObject(forKey: key)
@@ -264,18 +259,18 @@ final class LibraryGridModelTests: XCTestCase {
                 for (key, value) in widgetValues { widget.set(value, forKey: key) }
             }
         }
-        ReaderSessionState.setCurrentlyReading(bookID: book.id)
-        standard.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        standard.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        XCTAssertNil(standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+        location.setReadingBook(book.id)
+        location.readerChapter = 0
+        XCTAssertNil(location.playingBookID)
         session.start(owner: self)
         await fulfillment(of: [submitted], timeout: 5)
+        XCTAssertEqual(location.playingBookID, book.id)
         XCTAssertNil(library.books.first { $0.id == book.id }?.lastPlayedAt)
 
         // The reader can move elsewhere between mount and confirmed output.
         let installed = try XCTUnwrap(app.player.snapshot)
         app.player.playbackClock.audioOutput.didMountQueue(for: installed.jobId)
-        standard.set(other.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        location.bindPlayingBook(other.id, chapter: 0)
         let item = NSObject()
         for seconds in [1.0, 2.0] {
             app.player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds, isOutputting: true,
@@ -287,7 +282,7 @@ final class LibraryGridModelTests: XCTestCase {
         XCTAssertNil(library.books.first { $0.id == other.id }?.lastPlayedAt)
         XCTAssertEqual(LibraryGridModel(books: library.books).arrangedBooks().first?.id, book.id)
 
-        ReaderSessionState.setCurrentlyReading(bookID: other.id)
+        location.setReadingBook(other.id)
         session.start(owner: self)
         await fulfillment(of: [replacementSubmitted], timeout: 5)
         let replacement = try XCTUnwrap(app.player.snapshot)

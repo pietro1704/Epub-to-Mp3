@@ -172,7 +172,7 @@ final class MacReaderViewController: NSViewController {
     func setBook(_ bookID: String?) {
         // READING-PREFERENCES: the book's own reading preferences apply while it is open.
         if let bookID { settings.enterBookScope(bookID) } else { settings.leaveBookScope() }
-        UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        player.location.setReadingBook(bookID)
         loadCurrentBook()
     }
 
@@ -190,7 +190,7 @@ final class MacReaderViewController: NSViewController {
 
     private func cancelActiveBookOpenJourney() { document.openJourney.cancelActiveBookOpenJourney() }
     private lazy var bookLoad: MacReaderBookLoad = MacReaderBookLoad(
-        document: document, library: library, settings: settings,
+        document: document, library: library, settings: settings, location: player.location,
         renderer: preparedRenderer, store: preparedChapterStore,
         readFulltext: preparedFulltextReader, writeFulltext: preparedFulltextWriter,
         textPresentation: textPresentation, observation: document.openJourney, stageObserver: openStageObserver,
@@ -274,7 +274,7 @@ final class MacReaderViewController: NSViewController {
     }
 
     private lazy var textPresentation: MacReaderTextPresentation = MacReaderTextPresentation(
-        document: document, composition: composition, settings: settings, renderer: preparedRenderer,
+        document: document, composition: composition, settings: settings, location: player.location, renderer: preparedRenderer,
         initialPositionScheduler: initialPositionScheduler, stageObserver: openStageObserver,
         repaintSavedHighlights: { [weak self] in self?.annotations.repaintSavedHighlights(chapterIndex: $0) },
         prepareChapterProjection: { [weak self] in self?.bookLoad.prepareChapterProjection(bookID: $0, ordinal: $1) },

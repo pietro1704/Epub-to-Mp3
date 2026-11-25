@@ -52,7 +52,7 @@ protocol ResumeStorage: AnyObject {
 /// MainActor-isolated Combine subscriber in `IOSRootContainerController`.
 /// A wrapper type keeps the conformance scoped to `ResumeStore`.
 final class UserDefaultsResumeStorage: ResumeStorage {
-    private let defaults: UserDefaults
+    fileprivate let defaults: UserDefaults
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -73,6 +73,8 @@ final class UserDefaultsResumeStorage: ResumeStorage {
 
 final class ResumeStore {
     private static let storageKey = "audioPlayer.resumeMarkers.v1"
+
+    var backingDefaults: UserDefaults? { (storage as? UserDefaultsResumeStorage)?.defaults }
 
     private let storage: ResumeStorage
     private var cache: [String: ResumeMarker]

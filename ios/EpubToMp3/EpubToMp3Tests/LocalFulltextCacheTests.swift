@@ -80,7 +80,7 @@ final class LocalFulltextCacheTests: XCTestCase {
                 _ = release.wait(timeout: .now() + 8)
             }
         }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             release.signal(); LocalFulltextCache.cancelPrewarming(); player.stop()
             for (key, value) in zip(keys, prior) { UserDefaults.standard.set(value, forKey: key) }

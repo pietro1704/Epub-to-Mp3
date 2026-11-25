@@ -39,14 +39,8 @@ enum ReaderPlaybackAnchor {
 
     @MainActor
     private static func publish(epubIndex: Int, offsetFraction: Double, defaults: UserDefaults) -> Int {
-        defaults.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        defaults.set(
-            min(max(offsetFraction.isFinite ? offsetFraction : 0, 0), 1),
-            forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
-        )
-        // AppKit has no sentence-level timing anchor. A stale UIKit sentence
-        // must never be used to seek a macOS page.
-        defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        let location = ReaderLocation(defaults: defaults)
+        location.setReaderAnchor(chapter: epubIndex, pageRatio: min(max(offsetFraction.isFinite ? offsetFraction : 0, 0), 1))
         return epubIndex
     }
 }
@@ -61,12 +55,16 @@ enum ReaderPlaybackPriorityChapter {
         chapters: [EbookFulltext.Chapter]? = nil,
         defaults: UserDefaults = .standard
     ) -> Int {
-        if defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
-           let liveIndex = defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int {
+        index(bookID: bookID, chapters: chapters, location: ReaderLocation(defaults: defaults), progressDefaults: defaults)
+    }
+
+    static func index(bookID: String, chapters: [EbookFulltext.Chapter]? = nil, location: ReaderLocation,
+                      progressDefaults: UserDefaults = .standard) -> Int {
+        if location.readingBookID == bookID, let liveIndex = location.readerChapter {
             return max(0, liveIndex)
         }
 
-        guard let readerPosition = ReaderProgressStore.read(bookId: bookID, defaults: defaults)?.chapterIndex else {
+        guard let readerPosition = ReaderProgressStore.read(bookId: bookID, defaults: progressDefaults)?.chapterIndex else {
             return 0
         }
         let resolvedChapters = chapters ?? LocalFulltextCache.read(bookId: bookID)?.chapters ?? []

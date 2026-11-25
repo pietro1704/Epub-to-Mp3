@@ -117,7 +117,7 @@ final class LibraryBookOpeningTests: XCTestCase {
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
         let policy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: fixture.defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: fixture.defaults)), location: .standard)
         defer {
             player.stop()
             for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }

@@ -53,7 +53,7 @@ final class ReaderContentsPresentation {
         }
         let current = composition.contentSurface.pdfPresentation?.currentAnchor?.chapterIndex
             ?? ReaderPlaybackAnchor.epubIndex(forReaderPosition: document.selectedChapter, in: fulltext?.chapters ?? [])
-        let playingIndex = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == document.book.id
+        let playingIndex = player.location.playingBookID == document.book.id
             ? player.playbackClock.audioOutput.position?.chapterIndex : nil
         (presentIn ?? present)(Self.makeSheet(book: document.book, rows: rows, library: library,
             settings: settings, snapshot: player.snapshot, playingIndex: playingIndex,

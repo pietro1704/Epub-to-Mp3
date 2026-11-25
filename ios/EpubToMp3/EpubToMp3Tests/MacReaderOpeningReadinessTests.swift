@@ -31,7 +31,7 @@ final class MacReaderOpeningReadinessTests: XCTestCase {
                     AudioPlayer.readerCurrentPageRatioDefaultsKey,
                     AudioPlayer.readerCurrentSentenceIdDefaultsKey]
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             player.stop()
             for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
@@ -107,7 +107,7 @@ final class MacReaderOpeningReadinessTests: XCTestCase {
                     AudioPlayer.readerCurrentPageRatioDefaultsKey,
                     AudioPlayer.readerCurrentSentenceIdDefaultsKey]
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             player.stop()
             for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }

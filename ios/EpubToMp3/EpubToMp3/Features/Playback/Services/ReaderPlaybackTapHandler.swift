@@ -7,16 +7,11 @@ import UIKit
 @MainActor
 enum ReaderPlaybackTapHandler {
     static func handle(player: AudioPlayer, presenting viewController: UIViewController) {
-        let defaults = UserDefaults.standard
-        guard let chapterIndex = defaults.object(
-            forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
-        ) as? Int else {
+        guard let chapterIndex = player.location.readerChapter else {
             player.togglePlayPause()
             return
         }
-        let pageRatio = defaults.object(
-            forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
-        ) as? Double
+        let pageRatio = player.location.pageRatio
         switch player.playTapDecision(
             readerChapterIndex: chapterIndex,
             readerPageRatio: pageRatio
@@ -28,7 +23,7 @@ enum ReaderPlaybackTapHandler {
         case .startFromReaderPage:
             player.startFromReaderPage(
                 chapterIndex,
-                sentenceId: defaults.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
+                sentenceId: player.location.sentenceID,
                 sentenceOffsetRatio: pageRatio
             )
         case .offerStartChoice:
@@ -66,9 +61,7 @@ enum ReaderPlaybackTapHandler {
         ) { _ in
             player.startFromReaderPage(
                 chapterIndex,
-                sentenceId: UserDefaults.standard.string(
-                    forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey
-                ),
+                sentenceId: player.location.sentenceID,
                 sentenceOffsetRatio: pageRatio
             )
         })

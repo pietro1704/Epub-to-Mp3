@@ -3,9 +3,9 @@ import Foundation
 @MainActor
 enum IOSReaderPlaybackPreparation {
     static func hydrateCachedChapterTitles(player: AudioPlayer, owner: AnyObject) {
-        let activeReaderBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let activeReaderBookID = player.location.readingBookID
         let bookID = activeReaderBookID
-            ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? player.location.playingBookID
         // The active reader hydrates this same catalog after its prepared
         // chapter is visible. Decoding it here would compete with that read.
         guard let bookID, bookID != activeReaderBookID else { return }
@@ -19,8 +19,8 @@ enum IOSReaderPlaybackPreparation {
     }
 
     static func syncPlayerCoverArtNow(player: AudioPlayer, library: LibraryStore) {
-        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let bookID = player.location.playingBookID
+            ?? player.location.readingBookID
         let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
         player.updateCoverArtData(cover)
     }
