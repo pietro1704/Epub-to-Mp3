@@ -83,4 +83,11 @@ final class AppLaunchEnvironmentTests: XCTestCase {
             XCTAssertFalse(path.hasPrefix(support), "\(name) must not resolve into \(support) under XCTest: \(path)")
         }
     }
+
+    func testSharedStoreRootIsTheRealApplicationSupportOutsideTests() throws {
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: false)
+        XCTAssertEqual(ApplicationSupportRoot.url(underXCTest: false).standardizedFileURL.path,
+                       support.standardizedFileURL.path)
+    }
 }

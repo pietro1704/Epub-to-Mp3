@@ -31,8 +31,7 @@ final class IOSRootPlaybackRestorationTests: XCTestCase {
         let currentBook = try library.importBook(from: currentSource)
         let oldJob = "\(id)-old"
         let currentJob = "\(id)-current"
-        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                 appropriateFor: nil, create: true)
+        let support = ApplicationSupportRoot.url()
         let conversions = support.appendingPathComponent("EpubToMp3/RustConversions")
         let previousKeyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).first(where: \.isKeyWindow)
