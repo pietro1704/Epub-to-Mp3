@@ -56,6 +56,7 @@ let production = [
     "Features/Offline/Services/LocalAudioPlaybackRestoration.swift",
     "Shared/Configuration/LegacyPreferenceCleanup.swift",
     "Shared/Configuration/SpeechPreferenceMigration.swift",
+    "Shared/Configuration/BookVoiceOverrides.swift",
     "Shared/Configuration/SpeechPreferences.swift",
     "Shared/Configuration/AppIsolation.swift",
     "Shared/Configuration/SettingsDefaultsSource.swift",
