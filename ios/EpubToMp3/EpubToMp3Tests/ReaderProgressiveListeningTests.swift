@@ -125,6 +125,24 @@ private final class ProgressiveListeningFixture {
         defaults.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
     }
 
+    func cacheNeutralFulltext() throws {
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: JSONSerialization.data(withJSONObject: [
+            "jobId": book.id, "chapters": (1...3).map {
+                ["index": $0, "name": "Chapter \($0 - 1)", "text": "Fixture text"]
+            }
+        ]))
+        LocalFulltextCache.save(payload, bookId: book.id)
+        ReaderProgressStore.save(bookId: book.id, chapterIndex: 1, offsetFraction: 0)
+    }
+
+    func evictNeutralFulltext() {
+        ReaderProgressStore.evict(bookId: book.id)
+        LocalFulltextCache.evictInMemoryPayload(bookId: book.id)
+        if let url = LocalFulltextCache.storageURL(bookId: book.id) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     func cleanup() {
         release.finish(); player.stop()
         sharedDefaults.restore()
@@ -156,7 +174,7 @@ private final class ProgressiveListeningFixture {
 
 @MainActor
 final class ReaderProgressiveListeningTests: XCTestCase {
-    func testMiniPlayerPreservesPageUntilCompleteChapterArrives() async throws {
+    func testMiniPlayerPageStartStreamsBeforeTheChapterCompletes() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.defaults.set(0.5, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         f.controller.startListeningFromMiniPlayer()
@@ -164,35 +182,34 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let chunk = try XCTUnwrap(f.deliverChunk)
         let data = try Data(contentsOf: f.root.appendingPathComponent("ch1.wav"))
         let accepted = await Task.detached { chunk(1, 0, data) }.value
-        XCTAssertTrue(accepted, "Rust must keep building the canonical complete chapter")
-        XCTAssertNil(f.player.services.queue.player?.currentItem, "A chapter ratio must never seek inside its first segment")
-        try f.emit(1, jobID: "foreign-job")
-        try f.emit(2)
-        XCTAssertNil(f.player.services.queue.player?.currentItem)
-        try f.emit(1)
-        try await f.wait { !f.player.isSeeking && (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) >= 7.4 }
-        XCTAssertEqual(f.player.positionSeconds, 7.5, accuracy: 0.5)
+        XCTAssertTrue(accepted)
+        // Rust synthesizes from the page, so its first segment plays at once.
+        let item = try XCTUnwrap(f.player.services.queue.player?.currentItem)
+        XCTAssertNil(f.player.pendingNavigation, "A page start must not wait for the complete chapter")
         XCTAssertTrue(f.player.isPlaying)
+        XCTAssertFalse(f.finished)
+        try f.emit(1, jobID: "foreign-job")
+        XCTAssertTrue(f.player.services.queue.player?.currentItem === item)
         XCTAssertFalse(f.presentation.showingFullPlayer)
         f.player.pause()
+        try f.emit(1)
         try await f.complete()
         XCTAssertFalse(f.player.isPlaying)
     }
 
-    func testMiniPlayerPageStartKeepsPauseWhileWaitingForChapter() async throws {
+    func testMiniPlayerPageStartKeepsPauseWhenTheStreamArrives() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.defaults.set(0.4, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         f.controller.startListeningFromMiniPlayer()
         try await f.wait { f.calls == 1 }
         f.player.pause()
-        f.player.nextChapter()
-        f.player.previousChapter()
-        XCTAssertEqual(f.player.pendingNavigation?.chapterIndex, 1,
-                       "Navigation before the first playable chapter must retain the page request")
+        let chunk = try XCTUnwrap(f.deliverChunk)
+        let data = try Data(contentsOf: f.root.appendingPathComponent("ch1.wav"))
+        let accepted = await Task.detached { chunk(1, 0, data) }.value
+        XCTAssertTrue(accepted)
+        XCTAssertNotNil(f.player.services.queue.player?.currentItem)
+        XCTAssertFalse(f.player.isPlaying, "Late audio must not undo Pause")
         try f.emit(1)
-        try await f.wait { !f.player.isSeeking && (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) >= 5.9 }
-        XCTAssertFalse(f.player.isPlaying, "A late chapter must not undo Pause")
-        XCTAssertEqual(f.player.positionSeconds, 6, accuracy: 0.1)
         try await f.complete()
         XCTAssertFalse(f.player.isPlaying)
     }
@@ -291,6 +308,8 @@ final class ReaderProgressiveListeningTests: XCTestCase {
 
     func testExplicitAudioRemovalCancelsOnlyMatchingListeningJob() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
+        try f.cacheNeutralFulltext()
+        defer { f.evictNeutralFulltext() }
         f.controller.loadViewIfNeeded()
         try await f.wait { !f.controller.isLoadingBookContent }
         f.controller.startListeningFromMiniPlayer()
@@ -311,20 +330,8 @@ final class ReaderProgressiveListeningTests: XCTestCase {
 
     func testNextBeforeSecondChapterDeliveryPreservesPauseAndUpdatesPlaybackWindow() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
-        let payload = try JSONDecoder().decode(EbookFulltext.self, from: JSONSerialization.data(withJSONObject: [
-            "jobId": f.book.id, "chapters": (1...3).map {
-                ["index": $0, "name": "Chapter \($0 - 1)", "text": "Fixture text"]
-            }
-        ]))
-        LocalFulltextCache.save(payload, bookId: f.book.id)
-        ReaderProgressStore.save(bookId: f.book.id, chapterIndex: 1, offsetFraction: 0)
-        defer {
-            ReaderProgressStore.evict(bookId: f.book.id)
-            LocalFulltextCache.evictInMemoryPayload(bookId: f.book.id)
-            if let url = LocalFulltextCache.storageURL(bookId: f.book.id) {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
+        try f.cacheNeutralFulltext()
+        defer { f.evictNeutralFulltext() }
         f.controller.loadViewIfNeeded()
         try await f.wait { !f.controller.isLoadingBookContent }
         f.controller.startListeningFromMiniPlayer()
@@ -361,7 +368,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
             bookTitle: "Previous book", bookAuthor: "Author", chapterIndex: 0,
             chaptersTotal: 1, chaptersCompleted: 0, chapterTitle: "Previous",
             filename: "ch1.wav", audioPath: f.root.appendingPathComponent("ch1.wav"), textChars: 100)
-        f.player.setSnapshot(event.snapshot(chapters: []))
+        f.player.setSnapshot(event.snapshot(chapters: [event.playableChapter]))
         f.player.playbackClock.update(positionSeconds: 4)
         f.controller.startListeningFromMiniPlayer()
         try await f.wait { f.calls == 1 }
@@ -386,8 +393,12 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         try await f.wait { f.calls == 1 }
         XCTAssertEqual(f.requestedStart, 1)
         XCTAssertEqual(f.requestedEnd, -1, "The control window schedules only the active chapter and one ahead")
-        f.controller.startListeningFromMiniPlayer()
+        var routedToTransport = false
+        InAppPlaybackRequest.perform(state: f.player.inAppPlaybackRequestState,
+            controlPlayback: { routedToTransport = true },
+            startListening: { f.controller.startListeningFromMiniPlayer() })
         try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertTrue(routedToTransport)
         XCTAssertEqual(f.calls, 1, "Repeated Play must not queue another conversion")
         try f.emit(1, jobID: "foreign-job")
         try f.emit(2)
