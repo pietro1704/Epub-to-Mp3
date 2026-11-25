@@ -42,6 +42,17 @@ final class ReaderHighlightContrastTests: XCTestCase {
         }
     }
 
+#if os(iOS)
+    func testTheReaderTextViewDimsTheHighlightAgainstItsOwnColors() throws {
+        let textView = ReaderTextViewFactory.make()
+        textView.backgroundColor = .black
+        textView.attributedText = NSAttributedString(string: "spoken", attributes: [.foregroundColor: UIColor.white])
+        let manager = try XCTUnwrap(textView.layoutManager as? ReaderPlaybackLayoutManager)
+
+        XCTAssertLessThan(manager.contrastSafeAlpha(0.65, at: 0), 0.65, "White on a 65% yellow tint over black fails AA")
+    }
+#endif
+
     func testTheFloorKeepsAVisibleHighlightEvenWhenNoStrengthPasses() {
         // Mid-grey text on mid-grey background can never reach 4.5:1: the highlight stays at the floor, not zero.
         let grey: WCAGContrast.RGB = (0.5, 0.5, 0.5)

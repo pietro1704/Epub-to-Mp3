@@ -204,9 +204,12 @@ final class ReaderPlaybackLayoutManager: NSLayoutManager {
         draw(activeWordRange, alpha: 0.65, visible: glyphsToShow, origin: origin)
     }
 
+    /// The view that shows this layout. UIKit's TextKit 1 has no public way back from the layout manager to it.
+    weak var hostTextView: UITextView?
+
     /// CONTRAST-AUDIT: the text under the highlight keeps WCAG AA in the reader's own theme colours.
-    private func contrastSafeAlpha(_ preferred: CGFloat, at location: Int) -> CGFloat {
-        guard let textView = firstTextView else { return preferred }
+    func contrastSafeAlpha(_ preferred: CGFloat, at location: Int) -> CGFloat {
+        guard let textView = hostTextView else { return preferred }
         let traits = textView.traitCollection
         let text = (textStorage?.attribute(.foregroundColor, at: location, effectiveRange: nil) as? UIColor)
             ?? textView.textColor ?? .label
