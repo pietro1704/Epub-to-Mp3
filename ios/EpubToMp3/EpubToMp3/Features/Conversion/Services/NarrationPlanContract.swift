@@ -13,7 +13,24 @@ struct NarrationPlanInputs: Sendable, Equatable {
     /// The request body. `bookLanguageJSON` is the untouched answer of `converter_book_language_json_v1`: its
     /// `profile` and analysis are forwarded as Rust wrote them, so no field is lost in a Swift round trip.
     func requestBody(bookLanguageJSON: Data) throws -> Data {
-        throw EmbeddedConverterError.artifactUnavailable
+        let encoder = JSONEncoder()
+        var body = try Self.object(encoder.encode(voices))
+        body["book_language"] = nil
+        body["user_correction"] = userCorrection
+        if let bookVoice { body["book_voice"] = try Self.object(encoder.encode(bookVoice)) }
+        var analysis = try Self.object(bookLanguageJSON)
+        body["declared"] = analysis["declared"]
+        body["profile"] = analysis.removeValue(forKey: "profile")
+        analysis["schema_version"] = nil
+        body["analysis"] = analysis
+        return try JSONSerialization.data(withJSONObject: body)
+    }
+
+    private static func object(_ data: Data) throws -> [String: Any] {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw EmbeddedConverterError.artifactInvalid("Narration plan input is not a JSON object")
+        }
+        return object
     }
 }
 
