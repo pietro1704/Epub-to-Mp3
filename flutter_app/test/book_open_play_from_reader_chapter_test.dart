@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -30,6 +31,7 @@ class _Cache extends LocalFulltextCache {
 /// Like the Android converter: it cannot start inside a chapter (not a PositionedChapterConverter).
 class _ChapterRecordingConverter extends UnavailableEmbeddedConverter {
   final converted = <int>[];
+  final firstConversion = Completer<void>();
   @override
   Future<EbookFulltext> parse({required String inputPath, String jobId = ''}) async =>
       EbookFulltext.fromJson({
@@ -48,6 +50,7 @@ class _ChapterRecordingConverter extends UnavailableEmbeddedConverter {
     String? optionsJson,
   }) async {
     converted.add(chapterIndex);
+    if (!firstConversion.isCompleted) firstConversion.complete();
     final directory = Directory(outputPath);
     await directory.create(recursive: true);
     final audio = File('${directory.path}/chapter.mp3');
@@ -109,9 +112,16 @@ void main() {
         await t.runAsync(() async {
           pending = listen();
         });
-        for (var i = 0; i < 200 && converter.converted.isEmpty; i++) {
+        // The path to the first chapter does real disk I/O (manifest write with fsync, job
+        // directories) that only completes inside runAsync. Wait for the conversion itself,
+        // pumping the fake clock in between, instead of a fixed number of 5 ms windows whose
+        // real-time budget a loaded disk can exhaust; the test timeout bounds a hang.
+        while (!converter.firstConversion.isCompleted) {
           await t.pump();
-          await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+          await t.runAsync(() => Future.any([
+                converter.firstConversion.future,
+                Future<void>.delayed(const Duration(milliseconds: 20)),
+              ]));
         }
         expect(converter.converted, isNotEmpty);
         expect(converter.converted.first, 2, reason: 'the first synthesized chapter is the one the reader shows');
@@ -126,5 +136,6 @@ void main() {
         await t.runAsync(() async => directory.delete(recursive: true));
       }
     },
+    timeout: const Timeout(Duration(minutes: 1)),
   );
 }
