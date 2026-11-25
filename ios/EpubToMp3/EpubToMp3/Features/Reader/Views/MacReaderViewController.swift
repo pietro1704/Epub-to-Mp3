@@ -111,6 +111,8 @@ final class MacReaderViewController: NSViewController {
 
     override func loadView() {
         let surface = MacReaderSurfaceView()
+        // A zero-sized root collapses a hosting window to the header's fitting size, leaving no room for text.
+        surface.frame = NSRect(origin: .zero, size: EpubToMp3WindowConfiguration.macOSDefaultSize)
         surface.onToggleChrome = { [weak self] in self?.toggleChrome() }
         surface.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
