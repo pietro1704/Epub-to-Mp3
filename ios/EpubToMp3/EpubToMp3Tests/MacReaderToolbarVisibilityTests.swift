@@ -63,6 +63,18 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
                                "\(button.title.isEmpty ? String(describing: button.image) : button.title) must stay visible")
             }
         }
+        attachCapture(of: controller.view, name: "mac-reader-toolbar-after-page-click")
+    }
+
+    /// Evidence for review: the reader after the page clicks, header still shown.
+    private func attachCapture(of view: NSView, name: String) {
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
