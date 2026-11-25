@@ -177,11 +177,11 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
 
       expect(await footnotesListed(t), isFalse, reason: 'opening chapter has no notes');
-      await openChapter(t, 'Annotated Chapter');
+      await openChapter(t, 'Annotated chapter');
       expect(await footnotesListed(t), isTrue);
-      await openChapter(t, 'Plain Ending');
+      await openChapter(t, 'Plain ending');
       expect(await footnotesListed(t), isFalse);
-      await openChapter(t, 'Annotated Chapter');
+      await openChapter(t, 'Annotated chapter');
       expect(await footnotesListed(t), isTrue, reason: 'returns with the chapter');
 
       await openMenu(t);
