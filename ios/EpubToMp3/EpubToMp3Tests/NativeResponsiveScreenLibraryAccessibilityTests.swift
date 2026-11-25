@@ -17,7 +17,8 @@ extension NativeResponsiveScreenTests {
         UserDefaults.standard.removeObject(forKey: sortKey)
 
         let opened = BookEntity(id: "opened", title: "A", bookmark: Data([1]),
-            displayFilename: "a.epub", addedAt: Date(), lastOpenedAt: Date())
+            displayFilename: "a.epub", addedAt: Date(), lastOpenedAt: Date(timeIntervalSince1970: 1))
+        // "Recently read or played": listening to "Z" is the latest interaction.
         var played = BookEntity(id: "played", title: "Z", bookmark: Data([2]),
             displayFilename: "z.epub", addedAt: .distantPast)
         played.lastPlayedAt = Date(timeIntervalSince1970: 42)

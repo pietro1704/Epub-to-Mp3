@@ -598,6 +598,8 @@
 "models.engine.systemDetail" = "Luciana quando disponível";
 "models.engine.noPiperVoice" = "Nenhum modelo Piper baixado";
 "models.automatic" = "Automático: o melhor modelo baixado é usado neste idioma.";
+"models.root.header" = "Voz de cada idioma";
+"models.root.noVoice" = "Nenhuma voz instalada";
 "models.page.automatic" = "Automática";
 "models.page.piper" = "Piper · Neste dispositivo";
 "models.page.edge" = "Edge · Online";

@@ -10,6 +10,8 @@ import Combine
 final class MacModelsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private enum Item {
         case header(String, footer: String?)
+        /// A root row: the voice for one language.
+        case language(ModelsByLanguageModel.RootItem)
         /// The language page's first row: no voice chosen for the language.
         case automatic(language: String, isChosen: Bool)
         case model(ModelsByLanguageViewState.Row, language: String)
@@ -30,6 +32,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let lowQualityButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let bookLanguages: () -> [String]
     private var items: [Item] = []
     private var observations: Set<AnyCancellable> = []
     private var shownFailures: Set<String> = []
@@ -41,7 +44,9 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private var coveredByPush = false
 
     init(settings: AppSettings, source: ModelsByLanguageSource = SpeechModelsSource(),
-         termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil) {
+         termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil,
+         bookLanguages: @escaping () -> [String] = { BookLanguageSummaries().languages(corrections: .init()) }) {
+        self.bookLanguages = bookLanguages
         self.model = ModelsByLanguageModel(source: source, settings: settings, terms: termsAcceptance)
         self.model.priorityLanguage = focusLanguage
         self.focusLanguage = focusLanguage
@@ -54,6 +59,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     /// catalog) of the screen it is pushed from.
     init(sharing model: ModelsByLanguageModel, onlyLanguage: String) {
         self.model = model
+        self.bookLanguages = { [] }
         self.focusLanguage = nil
         self.onlyLanguage = onlyLanguage
         super.init(nibName: nil, bundle: nil)
@@ -162,36 +168,16 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         }
     }
 
-    private func languageTitle(_ tag: String) -> String {
-        let name = Locale.current.localizedString(forLanguageCode: tag) ?? tag
-        return name.prefix(1).uppercased() + name.dropFirst()
-    }
-
     private func refresh() {
         statusLabel.stringValue = model.isLoading ? L10n.string("models.loading")
             : (model.loadFailure != nil ? L10n.string("models.loadFailed") : "")
         statusLabel.isHidden = statusLabel.stringValue.isEmpty
-        let sections: [ModelsByLanguageViewState.Section]
-        if let onlyLanguage {
-            sections = model.state.section(for: onlyLanguage).map { [$0] } ?? []
-        } else {
-            sections = model.state.relevantSections(priority: focusLanguage, systemPreferred: Locale.preferredLanguages)
-        }
         languagesButton.isEnabled = !model.catalogLanguages.isEmpty
-        items = sections.flatMap { section -> [Item] in
-            if onlyLanguage != nil { return languagePageItems(section) }
-            var result: [Item] = []
-            let name = languageTitle(section.language)
-            let automatic = section.chosen == nil ? L10n.string("models.automatic") : nil
-            if !section.local.isEmpty {
-                result.append(.header(L10n.string("models.section.local", name), footer: automatic))
-                result += section.local.map { .model($0, language: section.language) }
-            }
-            if !section.online.isEmpty {
-                result.append(.header(L10n.string("models.section.online", name), footer: nil))
-                result += section.online.map { .model($0, language: section.language) }
-            }
-            return result
+        if let onlyLanguage {
+            items = model.state.section(for: onlyLanguage).map(languagePageItems) ?? []
+        } else {
+            items = [.header(L10n.string("models.root.header"), footer: nil)]
+                + model.rootItems(bookLanguages: bookLanguages(), priority: focusLanguage).map(Item.language)
         }
         refreshNarration()
         table.reloadData()
@@ -308,11 +294,41 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             stack.spacing = 2
             stack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 4, right: 12)
             return stack
+        case let .language(item):
+            return languageView(item)
         case let .automatic(language, isChosen):
             return automaticView(language: language, isChosen: isChosen)
         case let .model(row, language):
             return rowView(row, language: language)
         }
+    }
+
+    private func languageView(_ item: ModelsByLanguageModel.RootItem) -> NSView {
+        let title = NSTextField(labelWithString: item.title)
+        title.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let detail = NSTextField(wrappingLabelWithString: item.detail)
+        detail.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        detail.textColor = .readableSecondaryLabel
+        let texts = NSStackView(views: [title, detail])
+        texts.orientation = .vertical
+        texts.alignment = .leading
+        texts.spacing = 2
+        var views: [NSView] = []
+        if item.needsVoice, let warning = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil) {
+            views.append(NSImageView(image: warning))
+        }
+        views += [texts, NSView()]
+        if let chevron = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) {
+            views.append(NSImageView(image: chevron))
+        }
+        let stack = NSStackView(views: views)
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        stack.setAccessibilityElement(true)
+        stack.setAccessibilityRole(.button)
+        stack.setAccessibilityIdentifier("models.language.\(item.language)")
+        stack.setAccessibilityLabel("\(item.title), \(item.detail)")
+        return stack
     }
 
     private func automaticView(language: String, isChosen: Bool) -> NSView {
@@ -396,6 +412,9 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     func activateRow(at index: Int) {
         guard items.indices.contains(index) else { return }
         if case let .automatic(language, _) = items[index] { return model.clearChoice(in: language) }
+        if case let .language(item) = items[index] {
+            return push(MacModelsViewController(sharing: model, onlyLanguage: item.language))
+        }
         guard case let .model(row, language) = items[index] else { return }
         switch row.availability {
         case .ready:
@@ -506,8 +525,12 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         list.onSelect = { [weak list, model] tag in
             list?.pushDetail(MacModelsViewController(sharing: model, onlyLanguage: tag))
         }
+        push(list)
+    }
+
+    private func push(_ detail: NSViewController) {
         coveredByPush = true
-        pushDetail(list, onPop: { [weak self] in
+        pushDetail(detail, onPop: { [weak self] in
             self?.coveredByPush = false
             self?.refresh()
         })
