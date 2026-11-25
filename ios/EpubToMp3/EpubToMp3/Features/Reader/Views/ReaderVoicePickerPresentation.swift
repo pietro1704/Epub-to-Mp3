@@ -68,6 +68,10 @@ enum ReaderVoicePickerPresentation {
             action.isEnabled = choice.available
             alert.addAction(action)
         }
+        if let useDefault = picker.useDefault {
+            let title = ReaderModelSwitch.Content.useDefaultTitle(language: content?.language)
+            alert.addAction(UIAlertAction(title: title, style: .default) { _ in Task { await useDefault() } })
+        }
         alert.addAction(UIAlertAction(title: L10n.string("models.missing.open"), style: .default) { [weak alert] _ in
             alert?.dismiss(animated: true, completion: downloads)
         })
@@ -157,6 +161,12 @@ private final class ReaderVoicePickerPresentation: NSObject {
             menu.addItem(note)
         }
         menu.addItem(.separator())
+        if picker.useDefault != nil {
+            let reset = NSMenuItem(title: ReaderModelSwitch.Content.useDefaultTitle(language: content?.language),
+                                   action: #selector(useDefaultVoice), keyEquivalent: "")
+            reset.target = self
+            menu.addItem(reset)
+        }
         let item = NSMenuItem(title: L10n.string("models.missing.open"), action: #selector(showDownloads), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
@@ -166,6 +176,11 @@ private final class ReaderVoicePickerPresentation: NSObject {
         guard choices.indices.contains(item.tag), choices[item.tag].available else { return }
         if let content { content.choose(choices[item.tag].selection, picker: picker, settings: settings) }
         else { picker.choose(choices[item.tag].selection) }
+    }
+
+    @objc private func useDefaultVoice() {
+        guard let useDefault = picker.useDefault else { return }
+        Task { await useDefault() }
     }
 
     @objc private func showDownloads() { downloads() }

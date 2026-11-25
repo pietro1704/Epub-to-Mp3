@@ -330,7 +330,7 @@ final class ReaderVoiceChangeTests: XCTestCase {
         XCTAssertEqual(content.choices.first?.available, false, "The active voice is shown but cannot be re-picked")
     }
 
-    func testChoosingInTheSwitchKeepsTheLanguageChoiceAndSwitchesImmediately() throws {
+    func testChoosingInTheSwitchLeavesTheLanguageChoiceAndSwitchesImmediately() throws {
         let suite = "reader-switch-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -341,7 +341,7 @@ final class ReaderVoiceChangeTests: XCTestCase {
         let content = ReaderModelSwitch.content(language: "pt", rows: [row("pt_BR-cadu-medium", "Cadu", .ready)], picker: picker)
         content.choose(cadu, picker: picker, settings: settings)
         XCTAssertEqual(changes, [cadu], "The live switch restarts at once through the existing picker")
-        XCTAssertEqual(settings.languageModelChoices["pt"], cadu, "The language's persisted choice follows the switch")
+        XCTAssertNil(settings.languageModelChoices["pt"], "A reader pick belongs to the book, not to the language")
         content.choose(.systemDefault, picker: picker, settings: settings)
         XCTAssertEqual(changes, [cadu], "Choosing the active voice changes nothing")
     }

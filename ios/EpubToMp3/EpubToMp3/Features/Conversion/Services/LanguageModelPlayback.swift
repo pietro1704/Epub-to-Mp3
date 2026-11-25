@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Rules (SETTINGS-MODELS-BY-LANGUAGE / PLAYBACK-USES-LANGUAGE-MODEL):
 /// - an explicit per-job selection is authoritative and skips the resolver;
-/// - otherwise the resolver always runs: the language's stored choice, else the saved primary when
+/// - otherwise the resolver always runs: the voice picked for this book, else the language's stored choice, else the saved primary when
 ///   it can read the book's language (pt with Faber = exactly today's result), else the best
 ///   installed local model of the language, else the system voice (if allowed), else a missing model;
 /// - an unconfirmed language keeps the current confirmation flow;
@@ -56,8 +56,12 @@ enum LanguageModelPlayback {
         for book: BookEntity, settings: AppSettings, hasExplicitSelection: Bool, dependencies: Dependencies
     ) async -> Outcome {
         guard !hasExplicitSelection else { return .useSettings }
-        guard let language = await resolvedLanguage(of: book, dependencies) else { return .useSettings }
+        let bookVoice = settings.bookVoices.voice(bookID: book.id)
+        // Without a language or a resolver answer, the book's own voice still applies.
+        let unresolved = bookVoice.map { use($0, settings: settings) } ?? .useSettings
+        guard let language = await resolvedLanguage(of: book, dependencies) else { return unresolved }
         var request = LanguageModelResolutionRequest(bookLanguage: language, platform: LanguageModelResolutionRequest.currentPlatform)
+        request.bookVoice = bookVoice
         request.perLanguageChoices = settings.languageModelChoices
         request.primary = settings.primaryTtsSelection
         request.allowOnlineFallback = settings.allowOnlineAudioFallback
@@ -65,23 +69,29 @@ enum LanguageModelPlayback {
         request.installedModelIDs = await dependencies.installedModelIDs()
         request.systemVoices = dependencies.systemVoiceLanguages()
         // A resolver failure falls back to today's behavior rather than blocking playback.
-        guard let resolution = try? dependencies.resolve(request) else { return .useSettings }
+        guard let resolution = try? dependencies.resolve(request) else { return unresolved }
         switch resolution.status {
         case .missingModel:
             return .missing(language: language)
         case .selected, .systemFallback:
             guard let selection = resolution.selection else { return .useSettings }
-            let current = settings.ttsPreferences
-            guard selection != current.primary else { return .useSettings }
-            var preferences = current
-            preferences.primary = selection
-            // The reserve must still differ from the primary and respect the online consent.
-            if let secondary = preferences.secondary,
-               !secondary.canBeSecondary(to: selection, allowOnlineFallback: preferences.allowOnlineFallback) {
-                preferences.secondary = nil
-            }
-            return .use(preferences)
+            return use(selection, settings: settings)
         }
+    }
+
+    /// The saved preferences with `selection` as the primary.
+    private static func use(_ selection: TtsSelection, settings: AppSettings) -> Outcome {
+        let current = settings.ttsPreferences
+        // An online voice never comes back without the consent.
+        guard selection != current.primary, !selection.isEdge || current.allowOnlineFallback else { return .useSettings }
+        var preferences = current
+        preferences.primary = selection
+        // The reserve must still differ from the primary and respect the online consent.
+        if let secondary = preferences.secondary,
+           !secondary.canBeSecondary(to: selection, allowOnlineFallback: preferences.allowOnlineFallback) {
+            preferences.secondary = nil
+        }
+        return .use(preferences)
     }
 
     /// The language the model is resolved for: the user's correction, else the analysis' primary language
