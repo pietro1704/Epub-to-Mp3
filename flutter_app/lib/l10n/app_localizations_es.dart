@@ -54,6 +54,39 @@ class AppLocalizationsEs extends AppLocalizations {
   String get readerLayoutPaginated => 'Paginado';
 
   @override
+  String get readerThemeAuto => 'Automático';
+
+  @override
+  String get readerThemeLight => 'Claro';
+
+  @override
+  String get readerThemeSepia => 'Sepia';
+
+  @override
+  String get readerThemeParchment => 'Pergamino';
+
+  @override
+  String get readerThemePaper => 'Papel';
+
+  @override
+  String get readerThemeDark => 'Oscuro';
+
+  @override
+  String get readerThemeBlack => 'Negro';
+
+  @override
+  String get readerThemeCustom => 'Personalizado';
+
+  @override
+  String get readerFontSerif => 'Serif';
+
+  @override
+  String get readerFontSans => 'Sans';
+
+  @override
+  String get readerFontMono => 'Mono';
+
+  @override
   String get fontSizeLabel => 'Tamaño de fuente';
 
   @override

@@ -115,7 +115,7 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           Text(t.fontLabel, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           SegmentedButton<ReaderFontFamily>(
-            segments: [for (final f in ReaderFontFamily.values) ButtonSegment(value: f, label: Text(f.displayName))],
+            segments: [for (final f in ReaderFontFamily.values) ButtonSegment(value: f, label: Text(_fontName(t, f)))],
             selected: {settings.readerFontFamily},
             onSelectionChanged: (s) => _edit(
               forBook: (o) => o.copyWith(fontFamily: s.first),
@@ -265,7 +265,7 @@ class _ThemeSwatch extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(theme.displayName, style: const TextStyle(fontSize: 11)),
+          Text(_themeName(AppLocalizations.of(context)!, theme), style: const TextStyle(fontSize: 11)),
         ],
       ),
     ),
@@ -305,3 +305,20 @@ class _SliderRow extends StatelessWidget {
     ),
   );
 }
+
+String _themeName(AppLocalizations t, ReaderTheme theme) => switch (theme) {
+  ReaderTheme.auto => t.readerThemeAuto,
+  ReaderTheme.light => t.readerThemeLight,
+  ReaderTheme.sepia => t.readerThemeSepia,
+  ReaderTheme.parchment => t.readerThemeParchment,
+  ReaderTheme.paper => t.readerThemePaper,
+  ReaderTheme.dark => t.readerThemeDark,
+  ReaderTheme.black => t.readerThemeBlack,
+  ReaderTheme.custom => t.readerThemeCustom,
+};
+
+String _fontName(AppLocalizations t, ReaderFontFamily font) => switch (font) {
+  ReaderFontFamily.serif => t.readerFontSerif,
+  ReaderFontFamily.sans => t.readerFontSans,
+  ReaderFontFamily.mono => t.readerFontMono,
+};

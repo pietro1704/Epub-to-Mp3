@@ -17,7 +17,7 @@ Future<(ProviderContainer, SharedPreferences)> _container({Map<String, Object> s
   return (container, prefs);
 }
 
-Future<void> _pump(WidgetTester tester, ProviderContainer container, {String? bookId}) async {
+Future<void> _pump(WidgetTester tester, ProviderContainer container, {String? bookId, Locale? locale}) async {
   tester.view.physicalSize = const Size(800, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -25,6 +25,7 @@ Future<void> _pump(WidgetTester tester, ProviderContainer container, {String? bo
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: ReadingPreferencesScreen(bookId: bookId),
@@ -76,6 +77,21 @@ void main() {
   });
 
   group('the single reading preferences screen', () {
+    testWidgets('theme and font names use the Apple wording of the app language', (tester) async {
+      final (container, _) = await _container();
+      await _pump(tester, container, locale: const Locale('pt'));
+      for (final name in ['Claro', 'Sépia', 'Pergaminho', 'Papel', 'Escuro', 'Serifada', 'Sem serifa']) {
+        expect(find.text(name), findsOneWidget, reason: name);
+      }
+      for (final name in ['Light', 'Parchment', 'Paper', 'Dark', 'Serif', 'Sans']) {
+        expect(find.text(name), findsNothing, reason: name);
+      }
+      await _pump(tester, container, locale: const Locale('es'));
+      for (final name in ['Claro', 'Pergamino', 'Papel', 'Oscuro']) {
+        expect(find.text(name), findsOneWidget, reason: name);
+      }
+    });
+
     testWidgets('opened from Settings it edits the default for all books', (tester) async {
       final (container, prefs) = await _container();
       await _pump(tester, container);

@@ -54,6 +54,39 @@ class AppLocalizationsPt extends AppLocalizations {
   String get readerLayoutPaginated => 'Paginado';
 
   @override
+  String get readerThemeAuto => 'Automático';
+
+  @override
+  String get readerThemeLight => 'Claro';
+
+  @override
+  String get readerThemeSepia => 'Sépia';
+
+  @override
+  String get readerThemeParchment => 'Pergaminho';
+
+  @override
+  String get readerThemePaper => 'Papel';
+
+  @override
+  String get readerThemeDark => 'Escuro';
+
+  @override
+  String get readerThemeBlack => 'Preto';
+
+  @override
+  String get readerThemeCustom => 'Personalizado';
+
+  @override
+  String get readerFontSerif => 'Serifada';
+
+  @override
+  String get readerFontSans => 'Sem serifa';
+
+  @override
+  String get readerFontMono => 'Mono';
+
+  @override
   String get fontSizeLabel => 'Tamanho da fonte';
 
   @override
