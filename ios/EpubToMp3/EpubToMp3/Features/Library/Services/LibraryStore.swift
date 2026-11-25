@@ -353,6 +353,33 @@ final class LibraryStore: ObservableObject {
         return url
     }
 
+    #if os(macOS)
+    /// Re-renders PDF covers stored before the upright renderer. Opening a book
+    /// refreshes its cover too, but a book that is never reopened would keep its
+    /// mirrored legacy cover in the grid. Rendering runs on the import worker;
+    /// metadata edits, removals and re-imports made meanwhile stay authoritative.
+    @MainActor
+    func refreshLegacyPdfCovers() async {
+        let stale = books.filter {
+            $0.fileType == .pdf && ($0.pdfCoverVersion ?? 0) < PdfMetadataReader.coverVersion
+        }
+        for snapshot in stale {
+            guard !Task.isCancelled else { return }
+            let removalGeneration = removalGenerations[snapshot.id, default: 0]
+            guard let cover = try? await LibraryImportExecutor.perform({
+                LibraryBookOpening.refreshedLegacyCover(for: snapshot)
+            }), let index = books.firstIndex(where: { $0.id == snapshot.id }),
+                  removalGenerations[snapshot.id, default: 0] == removalGeneration,
+                  books[index].bookmark == snapshot.bookmark,
+                  books[index].coverPNG == snapshot.coverPNG,
+                  books[index].pdfCoverVersion == snapshot.pdfCoverVersion else { continue }
+            books[index].coverPNG = cover
+            books[index].pdfCoverVersion = PdfMetadataReader.coverVersion
+            persist()
+        }
+    }
+    #endif
+
     /// Reader opening prepares bookmark resolution and legacy file migration on
     /// the serial I/O worker. Publish only after cancellation and entry identity
     /// checks; metadata edits made while waiting remain authoritative.
