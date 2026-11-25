@@ -649,7 +649,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get openReaderAtPlayback => 'Abrir en el lector';
 
   @override
-  String get goToNarratedPage => 'Ir a la página narrada';
+  String get goToNarratedPage => 'Ir a la lectura';
 
   @override
   String get readerAppearance => 'Apariencia del texto';

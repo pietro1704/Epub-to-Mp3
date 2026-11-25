@@ -235,7 +235,7 @@
   "readerNarrationModel": "Narration model",
   "readerFootnotes": "Footnotes",
   "openReaderAtPlayback": "Open in reader",
-  "goToNarratedPage": "Go to narrated page",
+  "goToNarratedPage": "Go to reading",
   "readerAppearance": "Text appearance",
   "readerPlayFromHere": "Play from here",
   "errorNoReadableText": "No readable text could be extracted from this book.",

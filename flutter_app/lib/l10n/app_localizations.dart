@@ -1261,7 +1261,7 @@ abstract class AppLocalizations {
   /// No description provided for @goToNarratedPage.
   ///
   /// In en, this message translates to:
-  /// **'Go to narrated page'**
+  /// **'Go to reading'**
   String get goToNarratedPage;
 
   /// No description provided for @readerAppearance.
