@@ -17,8 +17,13 @@ final class MacReaderColumnsTests: XCTestCase {
         XCTAssertEqual(columns.count, 2, "origins: \(columns)")
     }
 
+    func testScrollingPageShowsTwoSideBySideColumns() async throws {
+        let columns = try await visibleColumnOrigins(columns: 2, layout: .scrolling)
+        XCTAssertEqual(columns.count, 2, "origins: \(columns)")
+    }
+
     /// Left edges of the text lines drawn on the first page of a wide window.
-    private func visibleColumnOrigins(columns: Int) async throws -> [Int] {
+    private func visibleColumnOrigins(columns: Int, layout: ReaderLayout = .paginated) async throws -> [Int] {
         let identifier = "reader-columns-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
         let standard = UserDefaults.standard
@@ -45,7 +50,7 @@ final class MacReaderColumnsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let settings = AppSettings(defaults: defaults)
-        settings.readerLayout = .paginated
+        settings.readerLayout = layout
         settings.readerColumns = columns
         let ready = expectation(description: "reader ready")
         let controller = MacReaderViewController(
@@ -87,7 +92,7 @@ final class MacReaderColumnsTests: XCTestCase {
             shot.cacheDisplay(in: shot.bounds, to: bitmap)
             if let png = bitmap.representation(using: .png, properties: [:]) {
                 let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-                attachment.name = "mac-reader-columns-\(columns)"
+                attachment.name = "mac-reader-columns-\(columns)-\(layout.rawValue)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
