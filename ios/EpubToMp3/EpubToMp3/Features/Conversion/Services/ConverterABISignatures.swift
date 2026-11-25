@@ -79,4 +79,5 @@ typealias ConverterModelInstallOperationCancel = @convention(c) (UnsafeRawPointe
 typealias ConverterModelInstallOperationFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
 typealias ConverterTtsCatalogLanguagesV1 = @convention(c) (UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsResolveLanguageModelV1 = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+typealias ConverterBookNarrationPlanV1 = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 typealias ConverterBookLanguageV1 = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?

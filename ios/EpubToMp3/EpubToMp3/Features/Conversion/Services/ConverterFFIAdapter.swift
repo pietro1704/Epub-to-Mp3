@@ -111,6 +111,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             catalogLanguagesJSON: symbol("converter_tts_catalog_languages_json_v1", as: ConverterTtsCatalogLanguagesV1.self),
             resolveJSON: symbol("converter_tts_resolve_language_model_json_v1", as: ConverterTtsResolveLanguageModelV1.self),
             bookLanguageJSON: symbol("converter_book_language_json_v1", as: ConverterBookLanguageV1.self),
+            narrationPlanJSON: symbol("converter_book_narration_plan_json_v1", as: ConverterBookNarrationPlanV1.self),
             freeString: free, lastError: error)
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
@@ -308,6 +309,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     }
     /// Blocking: call off the main actor.
     func bookLanguage(at url: URL) throws -> BookLanguageAnalysis { try languageModels.bookLanguage(at: url) }
+    func narrationPlan(bookLanguageJSON: Data, inputs: NarrationPlanInputs) throws -> NarrationPlan {
+        try languageModels.narrationPlan(bookLanguageJSON: bookLanguageJSON, inputs: inputs)
+    }
     func speechModelSnapshot(target: SpeechModelLibraryTarget, probeRuntime: Bool = false) throws -> SpeechModelSnapshot {
         try modelCatalog.speechModelSnapshot(target: target, probeRuntime: probeRuntime)
     }
