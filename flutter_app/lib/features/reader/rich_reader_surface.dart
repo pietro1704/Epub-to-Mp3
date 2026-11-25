@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kLongPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
@@ -84,6 +85,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   final NarrationPairing _pairing = NarrationPairing();
   bool? _publishedPairing;
   bool _forceFollow = false;
+  (Offset, Duration)? _tapDown;
 
   /// The chapter text made selectable, with "Play from here" on a selection.
   Widget? _selectableDocument() {
@@ -415,22 +417,39 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
             children: [
               SizedBox(
                 height: _height,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
+                // A raw pointer tap: the SelectionArea below wins the tap gesture
+                // arena, so a GestureDetector tap never fired on touch (A8 2026-11-25).
+                child: Listener(
+                  onPointerDown: (event) => _tapDown = event.buttons == kPrimaryButton
+                      ? (event.localPosition, event.timeStamp)
+                      : null,
+                  onPointerCancel: (_) => _tapDown = null,
+                  onPointerUp: (event) {
+                    final down = _tapDown;
+                    _tapDown = null;
+                    if (down == null ||
+                        (event.localPosition - down.$1).distance > kTouchSlop ||
+                        event.timeStamp - down.$2 >= kLongPressTimeout) {
+                      return;
+                    }
                     if (!_paginated) {
                       widget.onCenterTap?.call();
                       return;
                     }
-                    if (details.localPosition.dx < constraints.maxWidth * .2) {
+                    final x = event.localPosition.dx / constraints.maxWidth;
+                    // The edge overlays below turn the page themselves.
+                    if (x < .18 || x > .82) return;
+                    if (event.localPosition.dx < constraints.maxWidth * .2) {
                       _turn(false);
-                    } else if (details.localPosition.dx >
+                    } else if (event.localPosition.dx >
                         constraints.maxWidth * .8) {
                       _turn(true);
                     } else {
                       widget.onCenterTap?.call();
                     }
                   },
+                  child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onHorizontalDragEnd: _paginated
                       ? (details) {
                           final velocity = details.primaryVelocity ?? 0;
@@ -535,6 +554,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                           ),
                         ),
                     ],
+                  ),
                   ),
                 ),
               ),

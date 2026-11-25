@@ -379,4 +379,43 @@ void main() {
     expect(next, 1);
     expect(tester.takeException(), isNull);
   });
+
+  // A8 run 2026-11-25: with "Play from here" on (SelectionArea), a touch tap on the
+  // middle of a paginated page never brought the reader chrome back.
+  for (final layout in ['paginated', 'scrolling']) {
+    testWidgets('a touch tap on selectable text toggles the chrome ($layout)', (tester) async {
+      SharedPreferences.setMockInitialValues({'readerLayout': layout});
+      final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+      final text = List.generate(8, (i) => 'Paragraph $i of plain text.').join('\n');
+      final html = List.generate(8, (i) => '<p>Paragraph $i of plain text.</p>').join();
+      var taps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: RichReaderSurface(
+                chapter: FulltextChapter(index: 0, text: text, html: html),
+                settings: settings,
+                background: Colors.white,
+                foreground: Colors.black,
+                bodyStyle: const TextStyle(fontSize: 20),
+                headingStyle: const TextStyle(fontSize: 24),
+                onPlayFromHere: (_) {},
+                onCenterTap: () => taps++,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final word = tester.getRect(find.textContaining('Paragraph 1', findRichText: true));
+      await tester.tapAt(Offset(300, word.center.dy));
+      await tester.pumpAndSettle();
+      expect(taps, 1);
+    });
+  }
 }
