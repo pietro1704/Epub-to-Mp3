@@ -5,6 +5,8 @@ struct ReaderVoicePicker {
     let selection: TtsSelection
     var resolvedTitle: String? = nil
     let onChange: @MainActor (TtsSelection) -> Void
+    /// Present while the book has its own voice: goes back to the language's voice.
+    var useDefault: (@MainActor () async -> Void)? = nil
 
     func marks(_ choice: TtsSelection) -> Bool {
         if SpeechModelLibraryViewState.sameChoice(selection, choice) { return true }
@@ -21,7 +23,7 @@ struct ReaderVoicePicker {
     }
 
     /// The general catalog, listed when the book's language is unknown. An online voice appears only with the
-    /// online consent: choosing it here saves it as the primary voice.
+    /// online consent.
     func choices(from catalog: SpeechModelLibraryViewState, allowOnlineFallback: Bool = false) -> [Choice] {
         var choices = catalog.primaryNarrationChoices.filter { allowOnlineFallback || !$0.selection.isEdge }.map {
             Choice(selection: $0.selection, title: $0.title, selected: marks($0.selection), available: true)

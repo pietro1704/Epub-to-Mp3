@@ -85,6 +85,8 @@ final class SpeechPreferences: ObservableObject {
         }
     }
 
+    var bookVoices: BookVoiceOverrides { BookVoiceOverrides(defaults: defaults) }
+
     /// The stored key for a language: its lowercase base tag.
     static func languageKey(_ language: String) -> String {
         language.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map { String($0).lowercased() } ?? language.lowercased()

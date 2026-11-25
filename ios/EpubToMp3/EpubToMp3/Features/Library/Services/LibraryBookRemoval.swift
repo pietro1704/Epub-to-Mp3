@@ -12,7 +12,7 @@ import Foundation
 ///    download.
 /// 2. Bookmarks and highlights, the prepared reader text, extracted fonts,
 ///    prepared reader chapters and rendered chapter archives, the book's
-///    pronunciations and language corrections, and the legacy job's reader text.
+///    pronunciations, language corrections and own voice, and the legacy job's reader text.
 /// 3. The library entity, which also evicts the saved reading position.
 ///
 /// `FulltextStore.evict(jobId:)` resolves its path through `fulltextURL(for:)`,
@@ -35,6 +35,7 @@ struct LibraryBookRemoval {
     var pronunciations = BookPronunciationStore()
     var languageCorrections = BookLanguageCorrections()
     var languageSummaries = BookLanguageSummaries()
+    var bookVoices = BookVoiceOverrides()
 
     /// `legacyJobID` is the entity's `lastJobId` as the caller read it.
     func remove(bookID: String, legacyJobID: String?) async throws {
@@ -56,6 +57,7 @@ struct LibraryBookRemoval {
         pronunciations.remove(bookID: bookID)
         try? languageCorrections.remove(bookID: bookID)
         languageSummaries.remove(bookID: bookID)
+        bookVoices.set(nil, bookID: bookID)
         if let legacyJobID { FulltextStore.evict(jobId: legacyJobID) }
         library.remove(id: bookID)
     }

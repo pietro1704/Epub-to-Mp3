@@ -12,11 +12,16 @@ enum ReaderModelSwitch {
         /// No ready model exists for the language: the menu offers the Models screen.
         let hasNoModel: Bool
 
-        /// Choosing keeps the language's persisted choice in step with the live switch.
+        /// The title of the row that drops the book's own voice.
+        static func useDefaultTitle(language: String?) -> String {
+            guard let language else { return L10n.string("models.bookVoice.useDefault") }
+            return L10n.string("models.bookVoice.useLanguageDefault",
+                               Locale.current.localizedString(forLanguageCode: language) ?? language)
+        }
+
+        /// The pick belongs to this book (the picker saves it); the language's voice stays as it is.
         @MainActor
-        func choose(_ choice: TtsSelection, picker: ReaderVoicePicker, settings: AppSettings) {
-            guard !picker.marks(choice) else { return }
-            if let language { settings.selectLanguageModel(choice, for: language) }
+        func choose(_ choice: TtsSelection, picker: ReaderVoicePicker, settings _: AppSettings) {
             picker.choose(choice)
         }
     }

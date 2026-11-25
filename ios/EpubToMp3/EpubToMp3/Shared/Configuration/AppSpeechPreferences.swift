@@ -18,6 +18,7 @@ extension AppSettings {
         speechPreferences.selectLanguageModel(selection, for: language)
     }
     func clearLanguageModel(for language: String) { speechPreferences.clearLanguageModel(for: language) }
+    var bookVoices: BookVoiceOverrides { speechPreferences.bookVoices }
     func selectPrimaryNarration(_ selection: TtsSelection) { speechPreferences.selectPrimaryNarration(selection) }
     func selectSecondaryNarration(_ selection: TtsSelection?) { speechPreferences.selectSecondaryNarration(selection) }
 

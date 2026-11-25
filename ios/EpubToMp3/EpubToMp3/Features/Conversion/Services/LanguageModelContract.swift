@@ -7,6 +7,8 @@ struct LanguageModelResolutionRequest: Encodable, Sendable, Equatable {
     var schemaVersion = 1
     var bookLanguage: String
     var perLanguageChoices: [String: TtsSelection] = [:]
+    /// The listener's own voice for this book; Rust prefers it when it can read the book.
+    var bookVoice: TtsSelection?
     var primary: TtsSelection?
     var allowOnlineFallback = false
     var allowAutomaticSystemVoiceFallback = true
@@ -20,6 +22,7 @@ struct LanguageModelResolutionRequest: Encodable, Sendable, Equatable {
         case primary, platform
         case schemaVersion = "schema_version"
         case bookLanguage = "book_language"
+        case bookVoice = "book_voice"
         case perLanguageChoices = "per_language_choices"
         case allowOnlineFallback = "allow_online_fallback"
         case allowAutomaticSystemVoiceFallback = "allow_automatic_system_voice_fallback"

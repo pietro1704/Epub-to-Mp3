@@ -613,6 +613,8 @@
 "models.removed" = "Model removed";
 "models.missing.title" = "No model for this language";
 "models.missing.message" = "No downloaded model can read this book’s language (%@). Download one on the Models screen.";
+"models.bookVoice.useLanguageDefault" = "Use the default %@ voice";
+"models.bookVoice.useDefault" = "Use the default voice";
 "models.missing.open" = "Open Models";
 "models.systemVoice" = "System voice";
 
