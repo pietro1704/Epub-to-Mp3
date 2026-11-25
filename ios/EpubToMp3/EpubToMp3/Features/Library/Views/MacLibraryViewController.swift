@@ -363,7 +363,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     @objc private func chooseBookLanguage(_ sender: NSMenuItem) {
         guard let bookID = sender.representedObject as? String else { return }
         Task { [weak self] in
-            await BookLanguagePicker.edit(bookID: bookID, isCurrent: { [weak self] in
+            guard let library = self?.library, let book = library.books.first(where: { $0.id == bookID }) else { return }
+            await BookLanguagePicker.edit(bookID: bookID,
+                analysis: { await ReaderModelSwitch.analysis(of: book, library: library) }, isCurrent: { [weak self] in
                 self?.library.books.contains(where: { $0.id == bookID }) == true
             })
         }

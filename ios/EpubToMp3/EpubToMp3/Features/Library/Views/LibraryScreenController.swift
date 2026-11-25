@@ -124,7 +124,9 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         }
         gridController.onChooseLanguage = { [weak self] book in
             Task { [weak self] in
-                await BookLanguagePicker.edit(bookID: book.id, isCurrent: { [weak self] in
+                guard let library = self?.library else { return }
+                await BookLanguagePicker.edit(bookID: book.id,
+                    analysis: { await ReaderModelSwitch.analysis(of: book, library: library) }, isCurrent: { [weak self] in
                     self?.library.books.contains(where: { $0.id == book.id }) == true
                 })
             }

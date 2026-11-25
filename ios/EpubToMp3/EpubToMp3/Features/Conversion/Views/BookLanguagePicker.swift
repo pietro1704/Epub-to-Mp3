@@ -17,7 +17,11 @@ enum BookLanguagePicker {
     }
     static func title(_ tag: String) -> String { Locale.current.localizedString(forIdentifier: tag) ?? tag }
 
-    static func choose(allowsAutomatic: Bool, selectedLanguage: String? = nil, isCurrent: @escaping () -> Bool) async -> String? {
+    static func choose(allowsAutomatic: Bool, selectedLanguage: String? = nil, detected: String? = nil,
+                       orderedTags: [String]? = nil, isCurrent: @escaping () -> Bool) async -> String? {
+        let tags = orderedTags ?? self.tags
+        let help = L10n.string(allowsAutomatic ? "language.correctionHelp" : "language.inconclusive")
+        let explanation = [detected, help].compactMap { $0 }.joined(separator: "\n\n")
         guard !Task.isCancelled, isCurrent() else { return nil }
         #if os(iOS)
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -26,7 +30,8 @@ enum BookLanguagePicker {
         while let presented = presenter?.presentedViewController { presenter = presented }
         guard let presenter else { return nil }
         let result = await withCheckedContinuation { continuation in
-            let chooser = BookLanguageListController(allowsAutomatic: allowsAutomatic, selectedLanguage: selectedLanguage) { continuation.resume(returning: $0) }
+            let chooser = BookLanguageListController(allowsAutomatic: allowsAutomatic, selectedLanguage: selectedLanguage,
+                tags: tags, detected: detected, help: help) { continuation.resume(returning: $0) }
             let navigation = UINavigationController(rootViewController: chooser)
             presenter.present(navigation, animated: true)
             navigation.presentationController?.delegate = chooser
@@ -34,7 +39,7 @@ enum BookLanguagePicker {
         #elseif os(macOS)
         let alert = NSAlert()
         alert.messageText = L10n.string("language.chooseTitle")
-        alert.informativeText = L10n.string(allowsAutomatic ? "language.correctionHelp" : "language.inconclusive")
+        alert.informativeText = explanation
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 28))
         let choices: [String?] = (!allowsAutomatic && selectedLanguage == nil ? [nil] : [])
             + ((allowsAutomatic ? [""] : []) + tags).map(Optional.some)
@@ -62,7 +67,9 @@ enum BookLanguagePicker {
         return result
     }
 
+    /// `analysis` is given for a whole-book choice: the sheet then says what was detected.
     static func edit(bookID: String, passage: PassageLanguageCorrection? = nil,
+                     analysis: (() async -> BookLanguageAnalysis?)? = nil,
                      isCurrent: @escaping () -> Bool) async {
         do {
             let store = BookLanguageCorrections()
@@ -70,7 +77,10 @@ enum BookLanguagePicker {
             let selected = passage.flatMap { scope in
                 decision.passages.last { $0.chapterIndex == scope.chapterIndex && $0.start <= scope.start && $0.end >= scope.end }?.language
             } ?? decision.bookLanguage
-            guard let language = await choose(allowsAutomatic: true, selectedLanguage: selected, isCurrent: isCurrent) else { return }
+            let detected = await analysis?().flatMap { BookLanguageSheetSummary(analysis: $0) }?.text
+            let catalog = (try? await SpeechModelLibraryClient.shared.catalogLanguages()) ?? []
+            guard let language = await choose(allowsAutomatic: true, selectedLanguage: selected, detected: detected,
+                orderedTags: BookLanguageSheetSummary.ordered(tags, catalog: catalog), isCurrent: isCurrent) else { return }
             try store.set(language, bookID: bookID, passage: passage)
         } catch { _ = AppErrorReporter.message(error, context: "Save book language correction") }
     }
@@ -95,7 +105,14 @@ private final class BookLanguageListController: UITableViewController, UISearchR
     private let selectedLanguage: String?
     private var completion: ((String?) -> Void)?
     private var choices: [String] = []
-    init(allowsAutomatic: Bool, selectedLanguage: String?, completion: @escaping (String?) -> Void) {
+    private let tags: [String]
+    private let detected: String?
+    private let help: String
+    init(allowsAutomatic: Bool, selectedLanguage: String?, tags: [String], detected: String?, help: String,
+         completion: @escaping (String?) -> Void) {
+        self.tags = tags
+        self.detected = detected
+        self.help = help
         self.allowsAutomatic = allowsAutomatic
         self.selectedLanguage = selectedLanguage
         self.completion = completion
@@ -112,12 +129,13 @@ private final class BookLanguageListController: UITableViewController, UISearchR
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
         navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
-        choices = (allowsAutomatic ? [""] : []) + BookLanguagePicker.tags
+        choices = (allowsAutomatic ? [""] : []) + tags
         tableView.accessibilityIdentifier = "language.choices"
     }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        L10n.string(allowsAutomatic ? "language.correctionHelp" : "language.inconclusive")
+        help
     }
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { detected }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { choices.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Language") ?? UITableViewCell(style: .default, reuseIdentifier: "Language")
@@ -131,7 +149,7 @@ private final class BookLanguageListController: UITableViewController, UISearchR
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) { finish(choices[indexPath.row]) }
     func updateSearchResults(for searchController: UISearchController) {
         let query = searchController.searchBar.text ?? ""
-        choices = ((allowsAutomatic ? [""] : []) + BookLanguagePicker.tags).filter {
+        choices = ((allowsAutomatic ? [""] : []) + tags).filter {
             query.isEmpty || BookLanguagePicker.title($0).localizedCaseInsensitiveContains(query) || $0.localizedCaseInsensitiveContains(query)
         }
         tableView.reloadData()

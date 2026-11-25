@@ -485,6 +485,9 @@
 "language.passage" = "Passage language";
 "language.downloadTitle" = "Voice for %@";
 "language.downloadMessage" = "Download %@ for the passages in this language. Both languages will be narrated; your primary voice will be kept.";
+"language.detected" = "Detected: %@.";
+"language.quoted" = "Also quoted: %@.";
+"language.conflict" = "The file says %1$@; the text is %2$@.";
 "language.choosePrompt" = "Choose a language";
 "language.correctionHelp" = "This choice applies to this book or passage. Choose Automatic detection to remove your correction.";
 
