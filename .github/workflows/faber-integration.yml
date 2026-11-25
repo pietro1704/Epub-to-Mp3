@@ -228,6 +228,7 @@ jobs:
             flutter_app/build/app/reports/tests
             flutter_app/build/app/test-results
             .reports/tts-preferences/android-inference.log
+            .reports/tts-preferences/android-diagnostics.log
           if-no-files-found: warn
           retention-days: 14
 

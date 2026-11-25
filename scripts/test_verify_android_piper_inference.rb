@@ -30,7 +30,12 @@ class AndroidInferenceRunnerTest < Minitest::Test
         'ro.dalvik.vm.isa.arm64' => 'x86_64',
         'ro.product.cpu.abi' => 'x86_64'
       }
-      puts properties.fetch(ARGV.last)
+      case ARGV.join(' ')
+      when 'devices -l' then puts 'List of devices attached'
+      when '-s emulator-5554 get-state' then puts ENV.fetch('TEST_ANDROID_STATE', 'device')
+      when /logcat/ then puts 'FAKE_LOGCAT_LINE'
+      else puts properties.fetch(ARGV.last)
+      end
     RUBY
     File.write(File.join(@bin, 'mise'), <<~RUBY)
       #!#{RbConfig.ruby}
@@ -70,6 +75,30 @@ class AndroidInferenceRunnerTest < Minitest::Test
   def test_flutter_failure_propagates_through_tee_even_with_a_success_marker
     _output, _error, status = invoke('TEST_ANDROID_EXIT' => '23')
     assert_equal 23, status.exitstatus
+  end
+
+  def diagnostics
+    File.join(@root, '.reports/tts-preferences/android-diagnostics.log')
+  end
+
+  def test_flutter_failure_records_device_diagnostics
+    output, _error, status = invoke('TEST_ANDROID_EXIT' => '23')
+    assert_equal 23, status.exitstatus
+    assert_includes output, 'ANDROID_DIAGNOSTICS: adbState=device'
+    assert_includes File.read(diagnostics), 'FAKE_LOGCAT_LINE'
+  end
+
+  def test_offline_device_diagnostics_never_wait_on_logcat
+    output, _error, status = invoke('TEST_ANDROID_EXIT' => '23', 'TEST_ANDROID_STATE' => 'offline')
+    assert_equal 23, status.exitstatus
+    assert_includes output, 'ANDROID_DIAGNOSTICS: adbState=offline'
+    refute File.readlines(@adb_calls).any? { |line| line.include?('logcat') }
+  end
+
+  def test_success_records_no_diagnostics
+    _output, error, status = invoke
+    assert status.success?, error
+    refute File.exist?(diagnostics)
   end
 
   def test_missing_success_marker_cannot_report_success
