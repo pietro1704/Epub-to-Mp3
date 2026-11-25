@@ -30,6 +30,17 @@ Color readerLinkColor(Color background) {
   return dark ? Colors.white : Colors.black;
 }
 
+/// Drops `height: N%` declarations from book CSS. Against an auto-height parent a
+/// percentage height computes to auto, but flutter_html lays it out as zero, which
+/// hid e.g. a book's full-page map (`.style20 { height: 95% }`).
+String withoutPercentHeights(String css) => css.replaceAll(
+  RegExp(
+    r'(?<![\w-])height\s*:\s*[\d.]+%\s*(!important)?\s*;?',
+    caseSensitive: false,
+  ),
+  '',
+);
+
 class ReaderHtmlChapterContent extends StatelessWidget {
   const ReaderHtmlChapterContent({
     super.key,
@@ -76,11 +87,12 @@ class ReaderHtmlChapterContent extends StatelessWidget {
           ? headingStyle.fontFamily
           : null,
     );
-    final sourceStyles = css == null
+    final bookCss = css == null ? null : withoutPercentHeights(css!);
+    final sourceStyles = bookCss == null
         ? <String, Style>{}
-        : Style.fromCss(css!, null);
+        : Style.fromCss(bookCss, null);
     return Html(
-      data: css == null ? html : '<style>$css</style>$html',
+      data: bookCss == null ? html : '<style>$bookCss</style>$html',
       onLinkTap: (url, _, _) => onLinkTap?.call(url),
       style: {
         ...sourceStyles,
