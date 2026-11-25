@@ -61,7 +61,6 @@ final class ReaderBookLoadSessionTests: XCTestCase {
         weak var fixture: Fixture?
         func record(_ event: ReaderBookLoadSession.Event) {
             switch event {
-            case .cancelJourney: fixture?.events.append("cancelJourney")
             case .showLoading: fixture?.events.append("showLoading")
             case .hideLoading: fixture?.events.append("hideLoading")
             case .loadFixture: XCTFail("Unit tests must exercise the real loading session")
@@ -88,8 +87,24 @@ final class ReaderBookLoadSessionTests: XCTestCase {
         defer { fixture.cleanup() }
         fixture.session.loadBook()
         await fixture.session.waitForCompletion()
-        XCTAssertEqual(fixture.events, ["cancelJourney", "showLoading", "showPDF", "hideLoading"])
+        XCTAssertEqual(fixture.events, ["showLoading", "showPDF", "hideLoading"])
         XCTAssertEqual(fixture.urls, [url])
+    }
+
+    func testPDFIgnoresTextPayloadWithTheSameBookIdentity() async throws {
+        let url = URL(fileURLWithPath: "/unused/original.pdf")
+        let fixture = try Fixture(readFulltext: { bookID in
+            EbookFulltext(jobId: bookID, bookTitle: "Original", bookAuthor: nil,
+                chapters: [.init(index: 1, name: "Colliding cache", text: "This is EPUB text, not PDF content.",
+                    html: nil, css: nil, charCount: nil, segments: nil)])
+        }, openBook: { _ in url })
+        defer { fixture.cleanup() }
+        fixture.session.loadBook()
+        await fixture.session.waitForCompletion()
+
+        XCTAssertEqual(fixture.events, ["showLoading", "showPDF", "hideLoading"])
+        XCTAssertEqual(fixture.urls, [url])
+        XCTAssertNil(fixture.document.fulltext)
     }
 
     func testCurrentFailureIsTerminalWithoutPresentingPDF() async throws {
@@ -97,7 +112,7 @@ final class ReaderBookLoadSessionTests: XCTestCase {
         defer { fixture.cleanup() }
         fixture.session.loadBook()
         await fixture.session.waitForCompletion()
-        XCTAssertEqual(fixture.events, ["cancelJourney", "showLoading", "failure"])
+        XCTAssertEqual(fixture.events, ["showLoading", "failure"])
         XCTAssertTrue(fixture.urls.isEmpty)
     }
 
@@ -149,7 +164,7 @@ final class ReaderBookLoadSessionTests: XCTestCase {
                     css: nil, charCount: nil, segments: nil)])
             await pending.release(payload)
             await fixture.session.waitForCompletion()
-            XCTAssertEqual(fixture.events, ["cancelJourney", "showLoading"])
+            XCTAssertEqual(fixture.events, ["showLoading"])
             XCTAssertNil(fixture.document.fulltext)
             XCTAssertTrue(fixture.urls.isEmpty)
         }
@@ -179,7 +194,7 @@ final class ReaderBookLoadSessionTests: XCTestCase {
         if fails { continuation.resume(throwing: OpenFailure()) }
         else { continuation.resume(returning: URL(fileURLWithPath: "/unused/original.pdf")) }
         await fixture.session.waitForCompletion()
-        XCTAssertEqual(fixture.events, ["cancelJourney", "showLoading"])
+        XCTAssertEqual(fixture.events, ["showLoading"])
         XCTAssertTrue(fixture.urls.isEmpty)
     }
 }
