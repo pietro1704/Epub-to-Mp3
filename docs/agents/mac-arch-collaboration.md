@@ -162,11 +162,12 @@ report.
 
 ## CI-first builds
 
-Neither machine is the build farm. Both push the branch and run
+Neither machine is the build farm. Build, unit, Simulator, Rust, Flutter and
+Windows evidence comes from the exact-head `PR gate`;
 `scripts/ci_branch_evidence.sh <branch> [scope] [filter]` (bash and `gh` only)
-for build, unit, Simulator, Rust, Flutter and Windows evidence; Arch keeps local
-Linux/Android device and visible-app checks. Hand back the run URL, not a local
-build log. See [execution policy](execution-policy.md).
+covers red-first proofs and what the gate does not run. Arch keeps local
+Linux/Android device and visible-app checks. Hand back the PR or run URL, not a
+local build log. See [execution policy](execution-policy.md).
 
 ## Ownership
 
