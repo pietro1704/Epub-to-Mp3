@@ -14,17 +14,17 @@ final class BookVoiceOverrideTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.selectPrimaryNarration(faber)
         let book = BookEntity(id: suite, title: "Book", bookmark: Data([1]), displayFilename: "book.epub", addedAt: Date())
-        var restarted: [TtsSelection?] = []
+        var restarted: [String?] = []
         let request = ReaderVoicePickerRequest(settings: settings, library: LibraryStore(defaults: defaults),
             player: AudioPlayer(),
             currentContext: { .init(book: book, startingPosition: .init(chapter: 0, pageRatio: 0, seek: nil, autoplay: true)) },
-            restart: { _, options in restarted.append(options.ttsPreferences?.primary) })
+            restart: { _, options in restarted.append(options.ttsPreferences?.primary.modelID) })
         let picker = try XCTUnwrap(request.picker())
         let content = ReaderModelSwitch.content(language: "pt", rows: [], picker: picker)
 
         content.choose(cadu, picker: picker, settings: settings)
 
-        XCTAssertEqual(restarted, [cadu], "Playback restarts at once with the picked voice")
+        XCTAssertEqual(restarted, [cadu.modelID], "Playback restarts at once with the picked voice")
         XCTAssertEqual(settings.primaryTtsSelection, faber, "The global primary is not rewritten")
         XCTAssertNil(settings.languageModelChoices["pt"], "The language's voice is not rewritten")
         XCTAssertEqual(try XCTUnwrap(request.picker()).selection, cadu, "The book keeps the picked voice")
@@ -62,11 +62,11 @@ final class BookVoiceOverrideTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.selectPrimaryNarration(faber)
         let book = BookEntity(id: suite, title: "Book", bookmark: Data([1]), displayFilename: "book.epub", addedAt: Date())
-        var restarted: [TtsSelection?] = []
+        var restarted: [String?] = []
         var request = ReaderVoicePickerRequest(settings: settings, library: LibraryStore(defaults: defaults),
             player: AudioPlayer(),
             currentContext: { .init(book: book, startingPosition: .init(chapter: 0, pageRatio: 0, seek: nil, autoplay: true)) },
-            restart: { _, options in restarted.append(options.ttsPreferences?.primary) })
+            restart: { _, options in restarted.append(options.ttsPreferences?.primary.modelID) })
         request.dependencies = .init(bookLanguage: { _ in nil }, resolve: { _ in throw EmbeddedConverterError.artifactUnavailable },
                                      installedModelIDs: { [] }, systemVoiceLanguages: { [] })
         XCTAssertNil(try XCTUnwrap(request.picker()).useDefault, "Nothing to go back from")
@@ -76,6 +76,6 @@ final class BookVoiceOverrideTests: XCTestCase {
         await useDefault()
 
         XCTAssertNil(settings.bookVoices.voice(bookID: suite))
-        XCTAssertEqual(restarted, [faber])
+        XCTAssertEqual(restarted, [faber.modelID])
     }
 }
