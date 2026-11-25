@@ -1,7 +1,7 @@
 # Focused macOS validation
 
 Build, unit and iOS Simulator test evidence comes from CI
-(`scripts/ci_branch_evidence.sh`, see [execution policy](execution-policy.md));
+(the PR gate, see [execution policy](execution-policy.md));
 this page covers only the visible-app and local-receipt checks that must run on
 this Mac. Run them from the agent's one warm worktree (`git switch` between
 cards) so DerivedData and `.build` stay incremental.

@@ -66,8 +66,12 @@ Arch. The branch must be based on a `master` that has the `scope` input.
   on the 16e, macOS or Arch device as fits (visible-app checks, device runs,
   quick single-file iteration). Do not run local `xcodebuild`/`cargo`/`flutter`
   builds to collect pre-PR test evidence; that is CI's job.
-- Open the PR only after a green branch-evidence run on the exact head being
-  published; cite the run URL in the PR body. A new push needs a new run.
+- The exact-head `PR gate` is the build/test evidence (Pietro, 2026-11-25): do
+  not repeat the same jobs in a branch run before opening the PR. Dispatch a
+  branch-evidence run only to prove a regression test red before its fix
+  (narrowest `scope` and `filter`; cite the run URL in the PR body), or for
+  evidence the gate does not produce, such as an iOS Simulator test class
+  outside the default list or visual evidence required before opening.
 - Branch-evidence runs use their own concurrency group and never cancel PR-gate
   runs. A pushed branch still ends in a PR or is deleted; drafts stay forbidden.
 
@@ -100,6 +104,9 @@ or device stays idle.
 - Other projects' background jobs on these hosts (for example course
   transcription) run only while the heavy lease is free, at background
   priority, with at most two threads, and pause under memory pressure.
+- Usage caps win over every never-idle rule (Pietro, 2026-11-25): when the
+  usage guard or tier says pause, `RED` or `STOP`, an idle agent or device is
+  correct.
 - Devices never idle: the tablet runs the device-farm loop (regression, playback
   soak, monkey) whenever no worker holds it, and the A8 joins when Pietro is
   not using it. Each device shows exactly one EpubToMp3 app; test builds leave no
@@ -388,8 +395,8 @@ PR ready. The updated head must pass its own required CI before merging. A hold
 or explicit acceptance requirement still applies to the change it covers.
 
 Finish the authorized local checks and any requested real-app journey before
-commit; build/test evidence comes from a green branch-evidence run on the pushed
-head (see CI-first evidence), cited in the PR body. Commit/push and PR creation are authorized by default for verified
+commit; build/test evidence comes from the exact-head `PR gate`, plus the branch
+runs that CI-first evidence still requires. Commit/push and PR creation are authorized by default for verified
 scoped changes; incomplete work stays local. When the owned branch is behind
 `origin/master`, preserve edits, fetch, rebase, resolve conflicts and rerun affected
 checks. Publish a rebased branch with an explicit expected-tip `--force-with-lease`
@@ -423,8 +430,9 @@ Release, website/Hugging Face publication and issue closure retain their own
 authorization boundaries.
 The merge workflow merges any ready PR whose gate passed, even with auto-merge
 off; to hold work, keep it on a pushed branch without a PR. iOS-only UIKit
-code runs on a CI iOS Simulator (`ios-simulator` job); get that evidence from
-`scripts/ci_branch_evidence.sh <branch> apple`, not a local iOS build. After a rebase, earlier test results carry
+code runs on a CI iOS Simulator (`ios-simulator` job), not in a local iOS build.
+The PR gate runs the default class list; run other classes with
+`scripts/ci_branch_evidence.sh <branch> apple <TestClass>`. After a rebase, earlier test results carry
 over without a rerun only when `git patch-id --stable` or the tested subtree
 bytes are unchanged; record that identity with the evidence.
 
@@ -434,7 +442,10 @@ and merges run. Inspect relevant PR
 state and CI in one bounded pass in response to a new message from Pietro, then
 defer further status queries until his next message.
 A push, PR creation, elapsed time, local task completion or CI notification does
-not authorize another query. Keep protected automatic merge active and report
+not authorize another query. The one standing exception is a coordinated
+multi-pane round (Pietro, 2026-11-25): the coordinator watches PRs and post-merge
+validation through an event-only watcher, without status-polling turns, and sends
+conflicts, failures and a red `master` to their owner. Keep protected automatic merge active and report
 pending/unobserved results precisely. When a user-triggered inspection confirms
 an authorized merge, verify its SHA and ancestry, fast-forward local `master`,
 and delete only branches confirmed integrated, preserving concurrent work and
