@@ -81,7 +81,16 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.contentViewController = controller
+        // Assigning the controller shrinks the window to the view's fitting
+        // size; give it a real library window size before capturing.
+        window.setContentSize(NSSize(width: 900, height: 620))
+        window.isReleasedWhenClosed = false
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        window.layoutIfNeeded()
         attachSnapshot(of: window, named: "mac-library-legacy-mirrored-cover")
+        XCTAssertEqual(fixture.store.books.first?.coverPNG, fixture.book.coverPNG,
+                       "The first capture must show the stored legacy cover")
         let deadline = Date().addingTimeInterval(10)
         while fixture.store.books.first?.pdfCoverVersion == nil, Date() < deadline {
             try await Task.sleep(nanoseconds: 50_000_000)
@@ -111,6 +120,7 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
 
     private func attachSnapshot(of window: NSWindow, named name: String) {
         guard let content = window.contentView else { return XCTFail("The library window needs content") }
+        XCTAssertGreaterThanOrEqual(content.bounds.width, 900, "The capture must show the library, not a collapsed window")
         content.layoutSubtreeIfNeeded()
         content.displayIfNeeded()
         guard let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds) else {
