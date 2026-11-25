@@ -61,7 +61,6 @@
 "settings.fontStep" = "%d de %d";
 "settings.audioEngine" = "Motor de audio";
 "settings.audioEngineChoice" = "Motor de voz";
-"settings.audioEngineChoiceDescription" = "Edge usa voz en línea. Piper usa el modelo local instalado.";
 "settings.modelInstall" = "Instalar %@";
 "settings.modelInstalled" = "%@ instalado";
 "settings.modelQuality.low" = "Baja";
@@ -93,7 +92,6 @@
 "settings.modelSize.installed" = "Tamaño instalado %@";
 "settings.modelPerformance.unmeasured" = "Velocidad no medida en este dispositivo";
 "settings.modelLanguage.exact" = "Idioma %@";
-"settings.modelLanguage.study" = "Idioma del catálogo de voces";
 "settings.modelLanguage.routingOnly" = "Evidencia exacta de idioma no disponible";
 "settings.modelLanguage.runtimeValidated" = "validado en runtime";
 "settings.modelLanguage.artifactDeclared" = "declarado por el artefacto";
@@ -426,8 +424,6 @@
 "conversion.systemVoiceFallback" = "Se usa temporalmente una voz instalada en el dispositivo. Se volverá a intentar la voz principal automáticamente.";
 "conversion.profileMissingVoices" = "Este libro también tiene pasajes en %@. No hay voz instalada para ellos, así que la voz principal los leerá. Puedes instalar una en Modelos.";
 
-"settings.secondaryVoice" = "Voz secundaria";
-"settings.noSecondary" = "Ninguna";
 "settings.onlineFallback" = "Permitir respaldo en línea";
 "settings.onlineFallbackDescription" = "Permite enviar segmentos fallidos a una voz en línea.";
 "convert.usePreferences" = "Usar preferencias";
@@ -457,8 +453,6 @@
 
 "settings.models.show" = "Mostrar modelos";
 "settings.models.hide" = "Ocultar modelos";
-"settings.models.expanded" = "Expandido";
-"settings.models.collapsed" = "Contraído";
 
 "settings.downloadListFailed" = "No se pudieron cargar los libros descargados";
 

@@ -316,22 +316,12 @@ final class SpeechModelLibraryClientTests: XCTestCase {
             speechModels: client
         )
         controller.loadViewIfNeeded()
-        let primary = controller.tableView(controller.tableView,
-            cellForRowAt: IndexPath(row: 0, section: 0))
-        let collapsedCount = controller.tableView(controller.tableView, numberOfRowsInSection: 0)
-        let selection = settings.ttsPreferences
         let summary = controller.tableView(controller.tableView,
-            cellForRowAt: IndexPath(row: 2, section: 0))
+            cellForRowAt: IndexPath(row: 0, section: 0))
         XCTAssertEqual(summary.accessibilityIdentifier, "settings.speechModels.disclosure")
-        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 0))
-        let model = controller.tableView(controller.tableView,
-            cellForRowAt: IndexPath(row: 3, section: 0))
-        XCTAssertEqual((primary.contentConfiguration as? UIListContentConfiguration)?.secondaryText, expected)
-        XCTAssertEqual((model.contentConfiguration as? UIListContentConfiguration)?.text, expected)
-        XCTAssertFalse(expected.contains("pt_BR-faber-medium"))
-        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 0))
-        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 0), collapsedCount)
-        XCTAssertEqual(settings.ttsPreferences, selection)
+        let text = (summary.contentConfiguration as? UIListContentConfiguration)?.secondaryText ?? ""
+        XCTAssertEqual(text.components(separatedBy: "\n").first, expected)
+        XCTAssertFalse(text.contains("pt_BR-faber-medium"))
         #endif
     }
     #endif

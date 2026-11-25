@@ -1,76 +1,42 @@
 #if os(iOS)
 import UIKit
 
-/// The voice-model destination lists its runtime rows first and then one section
-/// per language. Settings itself keeps a single summary row and no model rows.
+/// Settings keeps a single Models row; models themselves live in the Models screen.
 extension SettingsScreenController {
     func reloadSpeechModels() {
         modelLibrary.reload()
     }
 
-    /// Presents a catalogue the caller already resolved, replacing the pending reload.
-    func show(_ snapshot: SpeechModelSnapshot) {
-        modelLibrary.show(snapshot)
-    }
-
-    func settingsSection(at index: Int) -> SettingsSection? {
-        voiceModelsOnly ? (index == 0 ? .runtime : nil) : SettingsSection(rawValue: index)
-    }
-
-    var modelLanguageSections: [SpeechModelLanguageSection] {
-        voiceModelsOnly ? SpeechModelLanguageSection.sections(state: speechModelState) : []
-    }
-
-    /// An empty catalogue still shows one explanatory row after the runtime rows.
-    var modelSectionCount: Int { max(modelLanguageSections.count, 1) }
-
-    func modelRowCount(inSection section: Int) -> Int {
-        let groups = modelLanguageSections
-        if groups.isEmpty { return section == 1 ? 1 : 0 }
-        return groups.indices.contains(section - 1) ? groups[section - 1].entries.count : 0
-    }
-
-    func modelEntry(at path: IndexPath) -> SpeechModelSnapshot.Entry? {
-        let groups = modelLanguageSections
-        let group = path.section - 1
-        guard groups.indices.contains(group), groups[group].entries.indices.contains(path.row) else { return nil }
-        return groups[group].entries[path.row]
-    }
-
-    func modelCell(at path: IndexPath, entry: SpeechModelSnapshot.Entry,
-                   existingCell: UITableViewCell? = nil) -> UITableViewCell {
-        RuntimeSettingsRows.cell(for: path, tableView: tableView, settings: settings,
-            speechModels: speechModelState, installEvents: speechModelInstallEvents,
-            termsAcceptance: termsAcceptance, controller: self,
-            rowOverride: .model(entry), existingCell: existingCell)
-    }
-
-    /// The summary is the only runtime row in Settings and follows the primary
-    /// voice row in the destination.
     var modelSummaryPath: IndexPath {
-        let destinationRow = SpeechModelSettingsDisclosure().rows(modelCount: 0).firstIndex(of: .summary) ?? 0
-        return IndexPath(row: voiceModelsOnly ? destinationRow : 0, section: SettingsSection.runtime.rawValue)
+        IndexPath(row: 0, section: SettingsSection.runtime.rawValue)
+    }
+
+    func modelsCell(at path: IndexPath, existingCell: UITableViewCell? = nil) -> UITableViewCell {
+        let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: path)
+        var content = cell.defaultContentConfiguration()
+        content.text = L10n.string("models.title")
+        content.secondaryText = SpeechModelSettingsSummary.text(state: speechModelState,
+            primary: settings.ttsPreferences.primary, events: speechModelInstallEvents)
+        content.secondaryTextProperties.numberOfLines = 0
+        content.image = UIImage(systemName: "waveform")
+        cell.contentConfiguration = content
+        cell.accessibilityIdentifier = "settings.speechModels.disclosure"
+        cell.accessoryType = .disclosureIndicator
+        cell.selectionStyle = .default
+        return cell
     }
 
     func applyInstallEvent(_ event: SpeechModelInstallEvent) {
         guard modelLibrary.apply(event) else { return }
-        refreshInstallProgress(modelID: event.modelID)
+        refreshInstallProgress()
     }
 
-    func refreshInstallProgress(modelID: String) {
-        // Configure the live cells directly: reloading a self-sizing section makes
+    func refreshInstallProgress() {
+        // Configure the live cell directly: reloading a self-sizing section makes
         // UIKit replace rows and recompute estimated heights for every byte event.
         UIView.performWithoutAnimation {
-            for path in tableView.indexPathsForVisibleRows ?? [] {
-                guard let cell = tableView.cellForRow(at: path) else { continue }
-                if let entry = modelEntry(at: path), entry.identity.modelID == modelID {
-                    _ = modelCell(at: path, entry: entry, existingCell: cell)
-                } else if path == modelSummaryPath {
-                    _ = RuntimeSettingsRows.cell(for: path, tableView: tableView, settings: settings,
-                        speechModels: speechModelState, installEvents: speechModelInstallEvents,
-                        termsAcceptance: termsAcceptance, disclosure: modelDisclosure,
-                        controller: self, rowOverride: .models, existingCell: cell)
-                }
+            if let cell = tableView.cellForRow(at: modelSummaryPath) {
+                _ = modelsCell(at: modelSummaryPath, existingCell: cell)
             }
             // Self-sizing invalidation is iOS 16+; re-measure the live rows without replacing them.
             tableView.beginUpdates()

@@ -165,7 +165,7 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
         XCTAssertNotNil(destination.navigationItem.rightBarButtonItem, "The sheet needs its own way back to the book")
         XCTAssertTrue(tabs.selectedViewController !== settingsNavigation, "The covered tab shell is left alone")
         XCTAssertTrue(settingsNavigation.topViewController === settings)
-        XCTAssertNil(settings.modelEntry(at: IndexPath(row: 0, section: 1)), "Settings never expands inline")
+        XCTAssertEqual(settings.tableView(settings.tableView, numberOfRowsInSection: 0), 1, "Settings never expands inline")
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }

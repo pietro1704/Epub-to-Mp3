@@ -23,7 +23,7 @@ let production = [
     "Features/Playback/Services/PlaybackSpeechAlignment.swift",
     "Features/Reader/Services/ReaderSpokenTextResolver.swift",
     "Features/Settings/Services/BookAudioRemoval.swift",
-    "Features/Settings/Services/SpeechModelSettingsDisclosure.swift",
+    "Features/Settings/Services/SpeechModelSettingsSummary.swift",
     "Features/Reader/Services/ReaderFontCatalog.swift",
     "Shared/Configuration/ReaderFontFamily.swift",
     "Shared/Presentation/VisibilityTransition.swift",
@@ -123,7 +123,7 @@ let production = [
 let tests = [
     "SpeechAudioAlignmentTests.swift",
     "BookAudioRemovalTests.swift",
-    "SpeechModelSettingsDisclosureTests.swift",
+    "SpeechModelSettingsSummaryTests.swift",
     "ReaderFontCatalogTests.swift",
     "ReaderViewportTransitionTests.swift",
     "PlayerVisibilityTransitionTests.swift",

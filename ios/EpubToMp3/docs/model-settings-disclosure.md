@@ -1,20 +1,13 @@
-# Model settings disclosure
+# Models settings row
 
-Model management starts collapsed on iOS and macOS. Primary/secondary selection,
-online consent and cellular policy remain accessible independently of the model
-rows. The summary identifies the configured primary, its installation/readiness
-state, and known active, failed or cancelled transfers. Expanding the section
-exposes the existing per-model actions; it neither starts nor cancels an install.
+iOS Settings shows a single Models row that pushes the Models screen; model rows
+never appear inline. The row summary identifies the configured primary, its
+installation/readiness state, and known active, failed or cancelled transfers.
 
-`SpeechModelSettingsDisclosure` owns only presentation state and row mapping.
-The client retains its snapshot and installation events across toggles and
-catalog refreshes. Foreign-model events are ignored by the summary. The AppKit
-disclosure button remains the same control during progress updates so progress
-cannot replace a button while the user presses it. Selection, installation,
-licence acceptance and removal keep their existing owners and confirmations.
+`SpeechModelSettingsSummary` owns only that text. Foreign-model events are
+ignored. Install progress reconfigures the existing cell, so it never replaces a
+row while the user presses it. Selection, installation, licence acceptance and
+removal keep their existing owners and confirmations in the Models screen.
 
-Foundation tests cover default/collapse/expand, catalog replacement, empty
-catalogs, readiness, transfer failure/cancellation and foreign event identity.
-Native UIKit/AppKit tests exercise the actual disclosure without changing the
-persisted narration selection; their execution is deferred to the final native
-campaign. No model is downloaded or installed by these presentation tests.
+Foundation tests cover readiness, transfer failure/cancellation and foreign event
+identity. No model is downloaded or installed by these presentation tests.
