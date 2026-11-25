@@ -59,7 +59,11 @@ class UiTrace {
           void walk(SemanticsNode node, Matrix4 parent) {
             final transform = node.transform == null ? parent : parent.multiplied(node.transform!);
             final data = node.getSemanticsData();
-            final text = [data.label, data.value].where((part) => part.isNotEmpty).join(' ').trim();
+            // Icon buttons (Back, More) carry their name as a tooltip, not a label.
+            final text = [data.label, data.value, if (data.label.isEmpty) data.tooltip]
+                .where((part) => part.isNotEmpty)
+                .join(' ')
+                .trim();
             if (text.isNotEmpty && !node.isInvisible) {
               final rect = MatrixUtils.transformRect(transform, node.rect);
               nodes.add({
