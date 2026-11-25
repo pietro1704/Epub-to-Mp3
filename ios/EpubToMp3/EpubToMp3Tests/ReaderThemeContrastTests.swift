@@ -61,8 +61,19 @@ final class ReaderThemeContrastTests: XCTestCase {
                 #else
                 let expected = NSColor.linkColor
                 #endif
-                XCTAssertEqual(channels(settings.readerColors.link, dark: dark),
-                               channels(expected, dark: selectedDark), "\(theme.rawValue)")
+                let actual = channels(settings.readerColors.link, dark: dark)
+                let native = channels(expected, dark: selectedDark)
+                let background = channels(settings.readerColors.background, dark: dark)
+                if WCAGContrast.ratio(
+                    (native[0], native[1], native[2]), (background[0], background[1], background[2])) >= 4.5 {
+                    XCTAssertEqual(actual, native, "\(theme.rawValue)")
+                } else {
+                    // CONTRAST-AUDIT: the system link only fails AA on some warm or custom backgrounds; there the
+                    // same hue is darkened or lightened until it passes.
+                    XCTAssertGreaterThanOrEqual(WCAGContrast.ratio((actual[0], actual[1], actual[2]),
+                        (background[0], background[1], background[2])), 4.5, "\(theme.rawValue)")
+                    XCTAssertGreaterThan(actual[2], actual[0], "\(theme.rawValue) keeps the blue hue")
+                }
             }
         }
     }
