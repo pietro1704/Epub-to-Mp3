@@ -230,7 +230,7 @@
   "readerNarrationModel": "Modelo de narración",
   "readerFootnotes": "Notas al pie",
   "openReaderAtPlayback": "Abrir en el lector",
-  "goToNarratedPage": "Ir a la página narrada",
+  "goToNarratedPage": "Ir a la lectura",
   "readerAppearance": "Apariencia del texto",
   "readerPlayFromHere": "Reproducir desde aquí",
   "errorNoReadableText": "No se pudo extraer texto legible de este libro.",

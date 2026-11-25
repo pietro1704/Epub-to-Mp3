@@ -414,7 +414,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             key: const ValueKey('fullPlayer.narratedPage'),
             onPressed: _goToNarratedPage,
             icon: const Icon(Icons.my_location, size: 18),
-            label: Text(t?.goToNarratedPage ?? 'Go to narrated page'),
+            label: Text(t?.goToNarratedPage ?? 'Go to reading'),
           ),
 
         // Chapter list button
