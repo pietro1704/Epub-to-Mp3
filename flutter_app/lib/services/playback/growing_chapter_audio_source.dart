@@ -17,6 +17,9 @@ class GrowingChapterAudioSource extends StreamAudioSource {
   String? _completedPath;
 
   bool get isComplete => _closed;
+
+  /// Synthesis stopped before the chapter finished (cancelled or failed): it cannot be played.
+  bool get hasFailed => _failure != null;
   Future<void> get finished => _finished.future;
   int get chunkCount => _chunks.length;
   String? get completedPath => _completedPath;
