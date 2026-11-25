@@ -64,7 +64,6 @@
 "settings.fontStep" = "%d of %d";
 "settings.audioEngine" = "Audio engine";
 "settings.audioEngineChoice" = "Voice engine";
-"settings.audioEngineChoiceDescription" = "Edge uses online speech. Piper uses the installed local model.";
 "settings.modelInstall" = "Install %@";
 "settings.modelInstalled" = "%@ installed";
 "settings.modelQuality.low" = "Low";
@@ -96,7 +95,6 @@
 "settings.modelSize.installed" = "Installed size %@";
 "settings.modelPerformance.unmeasured" = "Speed not measured on this device";
 "settings.modelLanguage.exact" = "Language %@";
-"settings.modelLanguage.study" = "Voice catalogue language";
 "settings.modelLanguage.routingOnly" = "Exact language evidence unavailable";
 "settings.modelLanguage.runtimeValidated" = "runtime validated";
 "settings.modelLanguage.artifactDeclared" = "declared by artifact";
@@ -426,8 +424,6 @@
 "conversion.systemVoiceFallback" = "Using an installed device voice temporarily. The primary voice will be retried automatically.";
 "conversion.profileMissingVoices" = "This book also has passages in %@. No voice is installed for them, so the main voice reads them. You can install one in Models.";
 
-"settings.secondaryVoice" = "Secondary voice";
-"settings.noSecondary" = "None";
 "settings.onlineFallback" = "Allow online fallback";
 "settings.onlineFallbackDescription" = "Permit sending failed segments to an online voice.";
 "convert.usePreferences" = "Use preferences";
@@ -457,8 +453,6 @@
 
 "settings.models.show" = "Show models";
 "settings.models.hide" = "Hide models";
-"settings.models.expanded" = "Expanded";
-"settings.models.collapsed" = "Collapsed";
 
 "settings.downloadListFailed" = "Could not load downloaded books";
 

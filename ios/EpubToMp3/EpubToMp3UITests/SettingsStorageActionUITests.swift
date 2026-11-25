@@ -24,38 +24,6 @@ final class SettingsStorageActionUITests: XCTestCase {
                             destructive: "Apagar tudo", cancel: "Cancelar")
     }
 
-    func testPhysicalCatalogueGroupsRetainedModelsByLanguage() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-currentlyReadingBookID", ""]
-        app.launch()
-        defer { app.terminate() }
-        let closePlayer = app.buttons["fullPlayer.close"].firstMatch
-        if closePlayer.waitForExistence(timeout: 2) { closePlayer.tap() }
-        let settings = app.tabBars.buttons["Settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 15))
-        settings.tap()
-        let table = app.tables.firstMatch
-        let disclosure = table.cells["settings.speechModels.disclosure"]
-        XCTAssertTrue(disclosure.waitForExistence(timeout: 15))
-        disclosure.tap()
-        let cori = table.cells["settings.speechModel.en_GB-cori-medium"]
-        for _ in 0..<12 {
-            if cori.exists && cori.isHittable { break }
-            table.swipeUp(velocity: .slow)
-        }
-        XCTAssertTrue(cori.exists && cori.isHittable, "The user's downloaded model must remain in the catalogue")
-        XCTAssertTrue(table.staticTexts["English (United Kingdom)"].exists)
-        attach("settings-english-language-section", app: app)
-        let faber = table.cells["settings.speechModel.pt_BR-faber-medium"]
-        for _ in 0..<16 {
-            if faber.exists && faber.isHittable { break }
-            table.swipeUp(velocity: .slow)
-        }
-        XCTAssertTrue(faber.exists && faber.isHittable)
-        XCTAssertTrue(table.staticTexts["Portuguese (Brazil)"].exists)
-        attach("settings-portuguese-language-section", app: app)
-    }
-
     private func verifyConfirmations(language: String, locale: String, settings: String,
                                      temporaryRow: String, temporaryTitle: String, temporaryMessage: String,
                                      downloadsRow: String, downloadsTitle: String, downloadsMessage: String,

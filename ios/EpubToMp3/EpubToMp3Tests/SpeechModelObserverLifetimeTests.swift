@@ -200,57 +200,21 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
     }
 
     #if os(iOS)
-    func testVoiceModelDestinationGroupsModelsByLanguageWhileSettingsKeepsOneSummaryRow() async throws {
+    func testSettingsKeepsOneModelsRowAndConfiguresItInPlaceDuringInstallProgress() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
-        let root = fixture.makeOwner()
+        let owner = fixture.makeOwner()
         await waitForObservers(1, fixture: fixture)
-        XCTAssertEqual(root.numberOfSections(in: root.tableView), SettingsSection.allCases.count)
-        XCTAssertEqual(root.tableView(root.tableView, numberOfRowsInSection: 0), 1)
-        XCTAssertTrue(root.modelLanguageSections.isEmpty, "Settings itself never lists models inline")
-        XCTAssertNil(root.modelEntry(at: IndexPath(row: 0, section: 1)))
-        XCTAssertEqual(root.settingsSection(at: SettingsSection.storage.rawValue), .storage)
-        let owner = root.makeVoiceModelsDestination()
-        owner.loadViewIfNeeded()
-        await waitForObservers(2, fixture: fixture)
-        XCTAssertEqual(owner.numberOfSections(in: owner.tableView), 3)
-        XCTAssertEqual(owner.tableView(owner.tableView, numberOfRowsInSection: 0), 6)
-        XCTAssertEqual(owner.settingsSection(at: 0), .runtime)
-        XCTAssertNil(owner.settingsSection(at: 1))
-        let paths = (1...2).flatMap { section in
-            (0..<owner.tableView(owner.tableView, numberOfRowsInSection: section)).map { IndexPath(row: $0, section: section) }
-        }
-        XCTAssertEqual(Set(paths.compactMap { owner.modelEntry(at: $0)?.identity.modelID }), Set(Fixture.modelIDs))
-        XCTAssertEqual(paths.count, Fixture.modelIDs.count)
-        for path in paths {
-            let entry = try XCTUnwrap(owner.modelEntry(at: path))
-            let tag = try XCTUnwrap(entry.languageEvidence.exactTags.first?.tag)
-            XCTAssertEqual(owner.tableView(owner.tableView, titleForHeaderInSection: path.section),
-                           SpeechModelLibraryViewState(snapshot: fixture.snapshot).languageTitle(tag))
-        }
-        let path = try XCTUnwrap(paths.first { owner.modelEntry(at: $0)?.identity.modelID == Fixture.modelIDs[0] })
-        let modelCell = owner.tableView(owner.tableView, cellForRowAt: path)
-        XCTAssertEqual(modelCell.accessibilityIdentifier, "settings.speechModel.\(Fixture.modelIDs[0])")
-        let summary = owner.tableView(owner.tableView, cellForRowAt: owner.modelSummaryPath)
-        XCTAssertEqual(summary.accessibilityIdentifier, "settings.speechModels.disclosure")
-    }
-
-    func testProgressPreservesVisibleCellsAndScrollPosition() async throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanUp() }
-        let root = fixture.makeOwner()
-        await waitForObservers(1, fixture: fixture)
-        let owner = root.makeVoiceModelsDestination()
-        owner.loadViewIfNeeded()
-        await waitForObservers(2, fixture: fixture)
+        XCTAssertEqual(owner.numberOfSections(in: owner.tableView), SettingsSection.allCases.count)
+        XCTAssertEqual(owner.tableView(owner.tableView, numberOfRowsInSection: 0), 1)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = owner
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         owner.tableView.layoutIfNeeded()
         let summaryPath = owner.modelSummaryPath
-        XCTAssertEqual(summaryPath, IndexPath(row: 1, section: 0))
         let summary = try XCTUnwrap(owner.tableView.cellForRow(at: summaryPath))
+        XCTAssertEqual(summary.accessibilityIdentifier, "settings.speechModels.disclosure")
         let offset = owner.tableView.contentOffset
         owner.applyInstallEvent(.init(sequence: 1, operationID: "foreign", modelID: "missing-model",
             stage: .downloading, artifactIndex: nil, bytesCompleted: 50, bytesTotal: 100, failure: nil))
@@ -346,7 +310,11 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
         }
 
         func startConfirmedInstall(on owner: ModelObservationOwner) -> Task<Void, Never> {
+            #if os(iOS)
+            owner.modelLibrary.install(snapshot.entries[0], acceptedTermsFingerprint: nil)
+            #else
             owner.install(snapshot.entries[0], acceptedTermsFingerprint: nil)
+            #endif
         }
 
         private static func makeSnapshot() throws -> SpeechModelSnapshot {

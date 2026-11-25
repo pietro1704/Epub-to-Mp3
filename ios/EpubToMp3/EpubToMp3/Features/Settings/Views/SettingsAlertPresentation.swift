@@ -3,30 +3,6 @@ import UIKit
 
 @MainActor
 enum SettingsAlertPresentation {
-    static func studyLanguage(
-        state: SpeechModelLibraryViewState, speechModels: SpeechModelLibraryClient,
-        on controller: UIViewController, tableView: UITableView, source: IndexPath,
-        onSnapshot: @escaping (SpeechModelSnapshot) -> Void
-    ) {
-        let alert = UIAlertController(
-            title: L10n.string("settings.modelLanguage.study"),
-            message: nil, preferredStyle: .actionSheet
-        )
-        for language in state.studyLanguages {
-            alert.addAction(UIAlertAction(title: state.languageTitle(language), style: .default) { _ in
-                Task { @MainActor in
-                    do {
-                        onSnapshot(try await speechModels.setStudyLanguage(language))
-                    } catch {
-                        info(on: controller, title: L10n.string("settings.modelLanguage.study"),
-                             message: AppErrorReporter.message(error, context: #function))
-                    }
-                }
-            })
-        }
-        actionSheet(alert, on: controller, tableView: tableView, source: source)
-    }
-
     static func actionSheet(
         _ alert: UIAlertController,
         on controller: UIViewController,
@@ -61,53 +37,6 @@ enum SettingsAlertPresentation {
         controller.present(alert, animated: true)
     }
 
-    static func confirmModelInstall(
-        _ entry: SpeechModelSnapshot.Entry,
-        state: SpeechModelLibraryViewState,
-        configuredSelections: [TtsSelection],
-        termsAcceptance: SpeechModelTermsAcceptanceStore,
-        on controller: UIViewController,
-        install: @escaping (String?) -> Void
-    ) {
-        let details = state.details(for: entry, configuredSelections: configuredSelections)
-        let needsTerms = entry.licence.requiresAcceptance
-            && !termsAcceptance.isAccepted(
-                modelID: entry.identity.modelID,
-                fingerprint: entry.licence.termsFingerprint
-            )
-        guard needsTerms else {
-            presentInstallConfirmation(
-                entry, state: state, details: details, on: controller, install: install
-            )
-            return
-        }
-        guard let fingerprint = entry.licence.termsFingerprint else {
-            info(
-                on: controller,
-                title: state.installTitle(for: entry),
-                message: SpeechModelInstallationError.termsAcceptanceRequired(entry.identity.modelID)
-                    .localizedDescription
-            )
-            return
-        }
-        let evidence = entry.licence.evidenceURL.map { "\n\($0.absoluteString)" } ?? ""
-        let alert = UIAlertController(
-            title: L10n.string("settings.modelTerms.acceptTitle"),
-            message: details + evidence,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: L10n.string("settings.modelTerms.accept"), style: .default) { _ in
-            termsAcceptance.accept(modelID: entry.identity.modelID, fingerprint: fingerprint)
-            controller.dismiss(animated: true) {
-                presentInstallConfirmation(
-                    entry, state: state, details: details, on: controller, install: install
-                )
-            }
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
-        controller.present(alert, animated: true)
-    }
-
     static func confirmModelRemoval(
         _ entry: SpeechModelSnapshot.Entry,
         state: SpeechModelLibraryViewState,
@@ -121,23 +50,6 @@ enum SettingsAlertPresentation {
         )
         alert.addAction(UIAlertAction(title: L10n.string("common.remove"), style: .destructive) { _ in
             remove()
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
-        controller.present(alert, animated: true)
-    }
-
-    private static func presentInstallConfirmation(
-        _ entry: SpeechModelSnapshot.Entry,
-        state: SpeechModelLibraryViewState,
-        details: String,
-        on controller: UIViewController,
-        install: @escaping (String?) -> Void
-    ) {
-        let alert = UIAlertController(
-            title: state.installTitle(for: entry), message: details, preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: L10n.string("settings.modelInstall.confirm"), style: .default) { _ in
-            install(entry.licence.requiresAcceptance ? entry.licence.termsFingerprint : nil)
         })
         alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
         controller.present(alert, animated: true)
