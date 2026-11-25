@@ -207,6 +207,17 @@ class MacValidateTest < Minitest::Test
     assert_match(/"ENABLE_OUTGOING_NETWORK_CONNECTIONS\[sdk=macosx\*\]": YES/, project)
   end
 
+  # `mise run mac:build` with MAC_BUILD_CONFIG=Debug signs with the Debug file,
+  # so every sandboxed Mac app entitlements file must grant outgoing network.
+  def test_every_sandboxed_app_entitlements_file_grants_outgoing_network
+    resources = File.expand_path('../ios/EpubToMp3/EpubToMp3/Resources', __dir__)
+    files = Dir.glob(File.join(resources, 'EpubToMp3*.entitlements')).reject { |path| path.end_with?('-iOS.entitlements') }
+    assert_includes files.map { |path| File.basename(path) }, 'EpubToMp3-Debug.entitlements'
+    files.each do |path|
+      assert_empty MacValidate.missing_entitlements(File.read(path)), "#{File.basename(path)} lacks network.client"
+    end
+  end
+
   def test_signature_failure_prevents_gui_launch
     receipt
     FileUtils.rm_f(@trace)
