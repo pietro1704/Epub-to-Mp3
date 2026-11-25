@@ -45,7 +45,7 @@ class ConversionOptionsSection extends StatelessWidget {
         DropdownButtonFormField<String>(
           isExpanded: true,
           initialValue: engine,
-          decoration: const InputDecoration(labelText: 'Engine'),
+          decoration: InputDecoration(labelText: t.convertEngine),
           items: [
             DropdownMenuItem(
               value: 'preferences',
@@ -66,7 +66,7 @@ class ConversionOptionsSection extends StatelessWidget {
           DropdownButtonFormField<String>(
             isExpanded: true,
             initialValue: voice,
-            decoration: const InputDecoration(labelText: 'Voice'),
+            decoration: InputDecoration(labelText: t.convertVoice),
             items: const [
               DropdownMenuItem(
                 value: 'pt-BR-AntonioNeural',
@@ -86,19 +86,19 @@ class ConversionOptionsSection extends StatelessWidget {
         DropdownButtonFormField<String>(
           isExpanded: true,
           initialValue: language,
-          decoration: const InputDecoration(labelText: 'Language'),
+          decoration: InputDecoration(labelText: t.convertLanguage),
           items: [
             DropdownMenuItem(value: '', child: Text(t.ttsDetectLanguage)),
-            const DropdownMenuItem(value: 'pt', child: Text('Portuguese')),
-            const DropdownMenuItem(value: 'en', child: Text('English')),
-            const DropdownMenuItem(value: 'es', child: Text('Spanish')),
+            DropdownMenuItem(value: 'pt', child: Text(t.convertLanguagePortuguese)),
+            DropdownMenuItem(value: 'en', child: Text(t.convertLanguageEnglish)),
+            DropdownMenuItem(value: 'es', child: Text(t.convertLanguageSpanish)),
           ],
           onChanged: (v) => onLanguageChanged(v ?? language),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Chapter range',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        Text(
+          t.convertChapterRange,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         Row(
           children: [
@@ -106,7 +106,7 @@ class ConversionOptionsSection extends StatelessWidget {
               child: TextField(
                 controller: startController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'From'),
+                decoration: InputDecoration(labelText: t.convertChapterFrom),
               ),
             ),
             const SizedBox(width: 12),
@@ -114,25 +114,26 @@ class ConversionOptionsSection extends StatelessWidget {
               child: TextField(
                 controller: endController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'To'),
+                decoration: InputDecoration(labelText: t.convertChapterTo),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          t.convertOptions,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         if (usesEmbeddedConversion)
-          const Text(
-            'Cover and audio processing options are managed by the local converter.',
-          )
+          Text(t.convertOptionsManagedLocally)
         else ...[
           SwitchListTile(
-            title: const Text('Include cover'),
+            title: Text(t.convertIncludeCover),
             value: includeCover,
             onChanged: (v) => onIncludeCoverChanged(v),
           ),
           SwitchListTile(
-            title: const Text('Normalize audio'),
+            title: Text(t.convertNormalizeAudio),
             value: normalizeAudio,
             onChanged: (v) => onNormalizeAudioChanged(v),
           ),

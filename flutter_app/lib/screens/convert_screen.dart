@@ -390,7 +390,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           OutlinedButton.icon(
             onPressed: _pickFile,
             icon: const Icon(Icons.attach_file),
-            label: Text(_filePath == null ? 'Choose EPUB or PDF' : _filePath!),
+            label: Text(_filePath == null ? t.convertChooseFile : _filePath!),
           ),
           if (_usedSelections.isNotEmpty)
             Text(
@@ -432,7 +432,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           FilledButton.icon(
             onPressed: _filePath == null || _submitting ? null : _submit,
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Start conversion'),
+            label: Text(t.convertStart),
           ),
         ],
       ),

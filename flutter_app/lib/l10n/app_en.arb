@@ -282,5 +282,20 @@
   "modelsMissingBody": "Install a narration model for this language, then try again.",
   "modelsMissingAction": "Open Models",
   "bookLanguagesMissingModels": "This book also has passages in {languages}. No voice is installed for them, so they are read with the main voice.",
-  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}}
+  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}},
+  "convertChooseFile": "Choose EPUB or PDF",
+  "convertEngine": "Engine",
+  "convertVoice": "Voice",
+  "convertLanguage": "Language",
+  "convertLanguagePortuguese": "Portuguese",
+  "convertLanguageEnglish": "English",
+  "convertLanguageSpanish": "Spanish",
+  "convertChapterRange": "Chapter range",
+  "convertChapterFrom": "From",
+  "convertChapterTo": "To",
+  "convertOptions": "Options",
+  "convertOptionsManagedLocally": "Cover and audio processing options are managed by the local converter.",
+  "convertIncludeCover": "Include cover",
+  "convertNormalizeAudio": "Normalize audio",
+  "convertStart": "Start conversion"
 }
