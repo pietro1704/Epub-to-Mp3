@@ -8,10 +8,16 @@ import XCTest
 /// dark. It only writes files when EPUB2MP3_MODELS_SNAPSHOT_DIR is set.
 @MainActor
 final class ModelsScreenSnapshotTests: XCTestCase {
-    func testRenderDownloadProgressAndChoiceInLightAndDark() async throws {
-        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
+    private func snapshotDirectory() throws -> String {
+        guard let directory = ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
             ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { throw XCTSkip("Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render") }
+        return directory
+    }
+
+    func testRenderDownloadProgressAndChoiceInLightAndDark() async throws {
+        let directory = try snapshotDirectory()
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let source = ModelsByLanguageModelTests.FakeSource()
@@ -68,9 +74,7 @@ final class ModelsScreenSnapshotTests: XCTestCase {
 
     /// The macOS missing-model alert (same text and buttons as iOS), light and dark.
     func testRenderMissingModelAlert() async throws {
-        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
-            ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+        let directory = try snapshotDirectory()
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let alert = MacTtsMissingVoiceAlert.makeAlert(language: "pt-BR", recommended: nil, systemAvailable: true)
