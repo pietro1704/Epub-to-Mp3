@@ -20,6 +20,7 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
                 chapter_start,
                 chapter_end,
                 false,
+                -1,
                 None,
             )
         },
@@ -36,6 +37,7 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     chapter_end: jint,
     options_json: JString<'_>,
     streaming: jboolean,
+    text_offset: jint,
 ) -> jstring {
     super::panic_boundary::jni_guard(
         env.get_raw(),
@@ -60,6 +62,7 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
                 chapter_start,
                 chapter_end,
                 streaming != 0,
+                i64::from(text_offset),
                 Some(options),
             )
         },
@@ -74,6 +77,7 @@ fn convert_android(
     chapter_start: jint,
     chapter_end: jint,
     streaming: bool,
+    text_offset: i64,
     options: Option<EmbeddedConversionOptionsV1>,
 ) -> jstring {
     eprintln!("converter-ffi: nativeConvert entered");
@@ -132,6 +136,11 @@ fn convert_android(
         }
     };
     session.platform_tts = Some(Arc::new(platform));
+    // Rust owns the start: a mid-chapter listen begins at this source offset.
+    if let Err(error) = control.start_listening_at(chapter_start.max(0) as usize, text_offset) {
+        fail::<()>(format!("Rust rejected the requested source text range: {error}"));
+        return std::ptr::null_mut();
+    }
     let job = converter_core::embedded::fresh_embedded_job_id();
     let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes()) {
         Ok(output) => output,

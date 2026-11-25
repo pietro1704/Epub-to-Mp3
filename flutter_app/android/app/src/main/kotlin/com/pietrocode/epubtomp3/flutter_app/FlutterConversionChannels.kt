@@ -155,7 +155,7 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                                     // same worker thread immediately after nativeConvert;
                                     // reading it after Future.get would lose the real error.
                                     val nativeFuture = isolatedExecutor.submit<Pair<String?, String?>> {
-                                        val value = nativeConvertWithOptions(inputPath, outputPath, chapterStart, chapterEnd, conversionOptions(call.argument<String>("optionsJson")), call.argument<Boolean>("streaming") == true)
+                                        val value = nativeConvertWithOptions(inputPath, outputPath, chapterStart, chapterEnd, conversionOptions(call.argument<String>("optionsJson")), call.argument<Boolean>("streaming") == true, call.argument<Int>("textOffset") ?: -1)
                                         value to if (value == null) nativeLastError() else null
                                     }
                                     // A complete EPUB can legitimately take several minutes on

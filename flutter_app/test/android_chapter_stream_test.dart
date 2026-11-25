@@ -49,6 +49,33 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     },
   );
+  test('a mid-chapter start reaches the native bridge as a source text offset', () async {
+    const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+    final events = StreamController<dynamic>.broadcast();
+    Map<Object?, Object?>? sent;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'status') return {'engineReady': true};
+      if (call.method == 'streamReady') return true;
+      if (call.method == 'convert') sent = call.arguments as Map<Object?, Object?>;
+      return null;
+    });
+    final converter = AndroidEmbeddedConverter(channel: channel, chunkEvents: events.stream);
+    expect(converter, isA<PositionedChapterConverter>());
+    await expectLater(
+      converter.convertPositionedChapter(
+        inputPath: '/book.epub',
+        outputPath: '/request-offset',
+        chapterIndex: 4,
+        textOffset: 120,
+        onFirstAudio: (_) async {},
+      ),
+      throwsA(isA<EmbeddedConversionFailure>()),
+    );
+    expect(sent?['textOffset'], 120);
+    expect(sent?['chapterStart'], 4);
+    await events.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+  });
   test(
     'request-scoped chunk reaches reader before final chapter result',
     () async {
