@@ -515,6 +515,32 @@ extension ModelsByLanguageModel {
         systemLanguages: [String] = Locale.preferredLanguages, bookLanguages: [String] = [],
         resolve: ((LanguageModelResolutionRequest) -> LanguageModelResolution?)? = nil
     ) -> [ModelsRootRows.Row] {
-        []
+        // What is installed, from the loaded catalog: the ready local voices and the languages they belong to.
+        var installedIDs: [String] = []
+        var installedLanguages: [String] = []
+        for section in state.sections {
+            let ready = section.local.filter { $0.availability == .ready && $0.selection.engine == TtsSelection.piperEngine }
+            guard !ready.isEmpty else { continue }
+            installedLanguages.append(section.language)
+            installedIDs.append(contentsOf: ready.compactMap(\.selection.modelID))
+        }
+        let systemVoices = Array(systemVoiceLanguages()).sorted()
+        let resolver = resolve ?? { try? ConverterFFIAdapter().resolveLanguageModel($0) }
+        var input = ModelsRootRows.Input()
+        input.systemLanguages = systemLanguages
+        input.bookLanguages = bookLanguages
+        input.choices = settings.languageModelChoices
+        input.installedLanguages = installedLanguages
+        input.resolution = { [settings] language in
+            var request = LanguageModelResolutionRequest(bookLanguage: language, platform: LanguageModelResolutionRequest.currentPlatform)
+            request.perLanguageChoices = settings.languageModelChoices
+            request.primary = settings.primaryTtsSelection
+            request.allowOnlineFallback = settings.allowOnlineAudioFallback
+            request.allowAutomaticSystemVoiceFallback = settings.allowAutomaticSystemVoiceFallback
+            request.installedModelIDs = installedIDs
+            request.systemVoices = systemVoices
+            return resolver(request)
+        }
+        return ModelsRootRows.rows(input)
     }
 }
