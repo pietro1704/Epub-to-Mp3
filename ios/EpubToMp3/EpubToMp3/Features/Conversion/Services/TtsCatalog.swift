@@ -24,7 +24,8 @@ struct TtsCatalog: Sendable {
             return captured
         }
         return TtsPreferences(primary: selection(preferences.primary), secondary: preferences.secondary.map(selection),
-            allowOnlineFallback: preferences.allowOnlineFallback, policyVersion: preferences.policyVersion)
+            allowOnlineFallback: preferences.allowOnlineFallback, policyVersion: preferences.policyVersion,
+            footnoteNarration: preferences.footnoteNarration)
     }
 
     struct Model: Sendable {

@@ -20,9 +20,17 @@ struct TtsPreferences: Codable, Sendable, Equatable {
     var allowOnlineFallback: Bool
     /// Absent in legacy job snapshots, which must retain their original policy.
     var policyVersion: UInt32? = nil
+    /// How Rust narrates footnotes; nil is the Rust default (`inline`) and is not sent.
+    var footnoteNarration: FootnoteNarration? = nil
     enum CodingKeys: String, CodingKey {
         case primary, secondary
         case allowOnlineFallback = "allow_online_fallback"
         case policyVersion = "policy_version"
+        case footnoteNarration = "footnote_narration"
     }
+}
+
+/// Rust `FootnoteNarration`: `inline` reads each note at its reference, `skip` leaves the notes out.
+enum FootnoteNarration: String, Codable, Sendable, Equatable {
+    case inline, skip
 }

@@ -5,6 +5,10 @@ import Foundation
 extension AppSettings {
     var primaryTtsSelection: TtsSelection { speechPreferences.primaryTtsSelection }
     var secondaryTtsSelection: TtsSelection? { speechPreferences.secondaryTtsSelection }
+    var narratesFootnotes: Bool {
+        get { speechPreferences.narratesFootnotes }
+        set { speechPreferences.narratesFootnotes = newValue }
+    }
     var allowAutomaticSystemVoiceFallback: Bool {
         get { speechPreferences.allowAutomaticSystemVoiceFallback }
         set { speechPreferences.allowAutomaticSystemVoiceFallback = newValue }

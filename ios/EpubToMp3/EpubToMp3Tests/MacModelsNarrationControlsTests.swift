@@ -39,6 +39,13 @@ final class MacModelsNarrationControlsTests: XCTestCase {
         // The system-voice fallback setting persists.
         automatic.performClick(nil)
         XCTAssertFalse(AppSettings(defaults: defaults).allowAutomaticSystemVoiceFallback)
+
+        // FOOTNOTE-NARRATION: on by default; turning it off is saved and sent to Rust as `skip`.
+        let footnotes = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.footnoteNarration" })
+        XCTAssertEqual(footnotes.state, .on)
+        footnotes.performClick(nil)
+        XCTAssertFalse(AppSettings(defaults: defaults).narratesFootnotes)
+        XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.footnoteNarration, .skip)
     }
 }
 #endif

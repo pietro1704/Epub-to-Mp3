@@ -12,6 +12,7 @@ import os.log
 /// delegation and republishes its changes.
 final class SpeechPreferences: ObservableObject {
     static let automaticSystemFallbackKey = "allowAutomaticSystemVoiceFallback"
+    static let narratesFootnotesKey = "narratesFootnotes"
     static let languageModelChoicesKey = "languageModelChoices.v1"
     private let defaults: UserDefaults
     private var loadingPersistedValues = true
@@ -26,6 +27,7 @@ final class SpeechPreferences: ObservableObject {
         self.allowOnlineAudioFallback = defaults.bool(forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
         self.allowAutomaticSystemVoiceFallback =
             defaults.object(forKey: Self.automaticSystemFallbackKey) as? Bool ?? true
+        self.narratesFootnotes = defaults.object(forKey: Self.narratesFootnotesKey) as? Bool ?? true
         self.languageModelChoices = Self.storedLanguageChoices(defaults)
         loadingPersistedValues = false
         migrateUnconsentedEdgePrimary()
@@ -59,6 +61,13 @@ final class SpeechPreferences: ObservableObject {
         didSet {
             guard !loadingPersistedValues else { return }
             defaults.set(allowAutomaticSystemVoiceFallback, forKey: Self.automaticSystemFallbackKey)
+        }
+    }
+    /// Footnotes are read inline at their reference unless the listener turns that off.
+    @Published var narratesFootnotes = true {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(narratesFootnotes, forKey: Self.narratesFootnotesKey)
         }
     }
     @Published var allowOnlineAudioFallback = false {
@@ -148,7 +157,8 @@ final class SpeechPreferences: ObservableObject {
         return TtsPreferences(primary: primaryTtsSelection,
                               secondary: secondary,
                               allowOnlineFallback: allowOnlineAudioFallback,
-                              policyVersion: allowAutomaticSystemVoiceFallback ? 2 : 3)
+                              policyVersion: allowAutomaticSystemVoiceFallback ? 2 : 3,
+                              footnoteNarration: narratesFootnotes ? nil : .skip)
     }
 
     var configuredNarrationSelections: [TtsSelection] {

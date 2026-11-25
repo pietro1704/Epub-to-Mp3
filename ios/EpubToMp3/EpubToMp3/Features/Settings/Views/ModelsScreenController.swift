@@ -92,7 +92,7 @@ final class ModelsScreenController: UITableViewController {
     /// Section 0 of the root holds the fallback switches, the quality filter and the
     /// language list entry; one section with the voice for each language follows. On the language page
     /// section 0 holds the Automatic row and the voice groups follow.
-    private enum NarrationRow: Int, CaseIterable { case automaticSystemFallback, onlineFallback, showLowQuality, languages }
+    private enum NarrationRow: Int, CaseIterable { case automaticSystemFallback, onlineFallback, footnotes, showLowQuality, languages }
 
     override func numberOfSections(in tableView: UITableView) -> Int { onlyLanguage == nil ? 2 : groups.count + 1 }
 
@@ -215,6 +215,13 @@ final class ModelsScreenController: UITableViewController {
                            subtitle: L10n.string("settings.onlineFallbackDescription"),
                            isOn: model.allowOnlineFallback, accessibilityIdentifier: "settings.tts.onlineConsent")
             cell.onValueChanged = { [weak self] isAllowed in self?.model.allowOnlineFallback = isAllowed }
+            return cell
+        case .footnotes:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+            cell.configure(title: L10n.string("settings.footnoteNarration"),
+                           subtitle: L10n.string("settings.footnoteNarrationDescription"),
+                           isOn: model.narratesFootnotes, accessibilityIdentifier: "settings.tts.footnoteNarration")
+            cell.onValueChanged = { [weak self] reads in self?.model.narratesFootnotes = reads }
             return cell
         case .showLowQuality:
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell

@@ -458,6 +458,8 @@
 
 "settings.automaticSystemFallback" = "Automatic system voice fallback";
 "settings.automaticSystemFallbackDescription" = "If selected voices fail, try an installed system voice. Turn off to use only your selected voices.";
+"settings.footnoteNarration" = "Read footnotes in the text";
+"settings.footnoteNarrationDescription" = "Each note is read where it is referenced, between \"Footnote N\" markers. Turn off to skip the notes.";
 
 // Speech compatibility recovery and converter diagnostics.
 "error.converterUnavailable" = "The speech converter is unavailable. Please reinstall the app or try again.";

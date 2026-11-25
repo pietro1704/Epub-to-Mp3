@@ -28,7 +28,7 @@ final class ModelsScreenAlertTests: XCTestCase {
             controller.tableView(table, cellForRowAt: IndexPath(row: $0, section: 0))
         }
         XCTAssertEqual(rows.compactMap(\.accessibilityIdentifier), ["models.languages"])
-        XCTAssertEqual(rows.count, 4, "Two fallback switches, the quality filter and the language list")
+        XCTAssertEqual(rows.count, 5, "Two fallback switches, the footnote switch, the quality filter and the language list")
         XCTAssertFalse(rows.flatMap { $0.contentView.subviews }.contains { ($0 as? UIButton)?.menu != nil })
         XCTAssertNil(controller.tableView(table, titleForHeaderInSection: 0))
         XCTAssertNil(controller.tableView(table, titleForFooterInSection: 0))
