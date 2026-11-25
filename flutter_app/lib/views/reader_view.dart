@@ -1,3 +1,4 @@
+import '../services/ui_trace.dart';
 import '../services/reader/narration_pairing.dart';
 import '../models/reader_listening_position.dart';
 import '../features/reader/rich_reader_surface.dart';
@@ -91,6 +92,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     _committedChapterToken = widget.chapter.index;
     _visibleSourceAnchor = widget.initialSourceOffset;
     _pageLayoutKey = null;
+    UiTrace.instance.emit('reader.chapter', {
+      'index': widget.chapter.index,
+      'name': widget.chapter.name,
+      'head': widget.chapter.text.trimLeft(),
+    });
   }
 
   /// The chapter the currently-displayed `_pages` were paginated from.
