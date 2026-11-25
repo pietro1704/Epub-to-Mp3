@@ -234,116 +234,6 @@ final class ModelsByLanguageModel: ObservableObject {
 
     func declinePendingTerms() { pendingTerms = nil }
 
-    struct NarrationChoice: Equatable, Identifiable {
-        let selection: TtsSelection
-        let title: String
-        var id: String { "\(selection.engine):\(selection.modelID ?? ""):\(selection.voice ?? "")" }
-    }
-
-    /// Voices the user may make the default primary or reserve: every ready local
-    /// model of any language, the installed system voice, online Edge, and any
-    /// configured selection that is not in the catalog (kept so it stays visible).
-    var narrationChoices: [NarrationChoice] {
-        var choices: [NarrationChoice] = []
-        func add(_ selection: TtsSelection, _ title: String) {
-            if !choices.contains(where: { $0.selection.representsSameRequest(as: selection) }) {
-                choices.append(NarrationChoice(selection: selection, title: title))
-            }
-        }
-        for section in state.sections {
-            // Piper Low voices are never offered as the default or reserve voice, only per language.
-            for row in section.rows where row.kind == .local && row.selection.engine == TtsSelection.piperEngine
-                && row.availability == .ready && !row.isExplicitOnly {
-                add(row.selection, row.title)
-            }
-        }
-        add(.systemDefault, L10n.string("settings.systemTts"))
-        add(.edgeDefault, TtsSelection.displayName(forEngine: TtsSelection.edgeEngine) ?? "Edge")
-        for selection in settings.configuredNarrationSelections { add(selection, title(for: selection)) }
-        return choices
-    }
-
-    // MARK: engine-first narration menu
-
-    /// The two-level narration choice: the engine first (System, Piper, Edge), then, inside an engine that has
-    /// several, its voice or model. Built from the same ready models as `narrationChoices`.
-    struct NarrationMenu: Equatable {
-        struct Voice: Equatable, Identifiable {
-            let title: String
-            let selection: TtsSelection
-            let isSelected: Bool
-            var id: String { "\(selection.engine):\(selection.modelID ?? ""):\(selection.voice ?? "")" }
-        }
-        struct Engine: Equatable, Identifiable {
-            let engine: String
-            let title: String
-            let isSelected: Bool
-            let isEnabled: Bool
-            /// Engines without a voice list (System, Edge) select directly.
-            let direct: TtsSelection?
-            /// Piper: the downloaded models. Empty when none can be chosen.
-            let voices: [Voice]
-            /// Why a disabled engine is disabled (Edge without the online permission).
-            let hint: String?
-            var id: String { engine }
-            var hasVoiceList: Bool { engine == TtsSelection.piperEngine }
-        }
-        /// Secondary only: "None" is the first entry and selected when no reserve voice is set.
-        let showsNone: Bool
-        let noneIsSelected: Bool
-        let engines: [Engine]
-    }
-
-    func narrationMenu(secondary: Bool) -> NarrationMenu {
-        let current = secondary ? secondarySelection : primarySelection
-        let primary = primarySelection
-        let consent = allowOnlineFallback
-        func allowed(_ selection: TtsSelection) -> Bool {
-            secondary ? selection.canBeSecondary(to: primary, allowOnlineFallback: consent)
-                      : (!selection.isEdge || consent)
-        }
-        func isSelected(_ selection: TtsSelection) -> Bool { current?.representsSameRequest(as: selection) == true }
-        let choices = narrationChoices
-        var engines: [NarrationMenu.Engine] = []
-
-        let systemSelection = choices.first { $0.selection.isSystem }?.selection ?? .systemDefault
-        engines.append(.init(engine: TtsSelection.systemEngine, title: L10n.string("models.engine.system"),
-                             isSelected: current?.isSystem == true, isEnabled: allowed(systemSelection),
-                             direct: systemSelection, voices: [], hint: nil))
-
-        let voices = choices.filter { $0.selection.isPiper && allowed($0.selection) }
-            .map { NarrationMenu.Voice(title: $0.title, selection: $0.selection, isSelected: isSelected($0.selection)) }
-        engines.append(.init(engine: TtsSelection.piperEngine, title: "Piper", isSelected: current?.isPiper == true,
-                             isEnabled: !voices.isEmpty, direct: nil, voices: voices,
-                             hint: voices.isEmpty ? L10n.string("models.engine.noPiperVoice") : nil))
-
-        let edgeSelection = choices.first { $0.selection.isEdge }?.selection ?? .edgeDefault
-        let edgeAllowed = allowed(edgeSelection)
-        engines.append(.init(engine: TtsSelection.edgeEngine, title: "Edge", isSelected: current?.isEdge == true,
-                             isEnabled: edgeAllowed, direct: edgeSelection, voices: [],
-                             hint: consent ? nil : L10n.string("models.needsConsent")))
-        return NarrationMenu(showsNone: secondary, noneIsSelected: secondary && current == nil, engines: engines)
-    }
-
-    /// The cell's headline: the engine of the current choice ("None" for an empty reserve).
-    func engineTitle(for selection: TtsSelection?) -> String {
-        guard let selection else { return L10n.string("settings.noSecondary") }
-        switch selection.engine {
-        case TtsSelection.systemEngine: return L10n.string("models.engine.system")
-        default: return TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
-        }
-    }
-
-    /// The cell's detail: the voice or model inside the engine.
-    func voiceTitle(for selection: TtsSelection?) -> String? {
-        guard let selection else { return nil }
-        switch selection.engine {
-        case TtsSelection.piperEngine: return title(for: selection)
-        case TtsSelection.systemEngine: return L10n.string("models.engine.systemDetail")
-        default: return nil
-        }
-    }
-
     func title(for selection: TtsSelection) -> String {
         if selection.engine == TtsSelection.piperEngine, let id = selection.modelID {
             for section in state.sections {
@@ -354,17 +244,6 @@ final class ModelsByLanguageModel: ObservableObject {
         return TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
     }
 
-    /// Choices valid as a reserve for the current primary and consent.
-    var secondaryChoices: [NarrationChoice] {
-        narrationChoices.filter {
-            $0.selection.canBeSecondary(to: settings.primaryTtsSelection, allowOnlineFallback: settings.allowOnlineAudioFallback)
-        }
-    }
-
-    func selectPrimary(_ selection: TtsSelection) { settings.selectPrimaryNarration(selection) }
-    func selectSecondary(_ selection: TtsSelection?) { settings.selectSecondaryNarration(selection) }
-    var primarySelection: TtsSelection { settings.primaryTtsSelection }
-    var secondarySelection: TtsSelection? { settings.secondaryTtsSelection }
     var allowAutomaticSystemVoiceFallback: Bool {
         get { settings.allowAutomaticSystemVoiceFallback }
         set { settings.allowAutomaticSystemVoiceFallback = newValue }
