@@ -47,6 +47,22 @@ module MacValidate
       'flags' => %w[DEVELOPER_DIR TOOLCHAINS SDKROOT ARCHS OTHER_SWIFT_FLAGS OTHER_CFLAGS OTHER_LDFLAGS SWIFT_VERSION SWIFT_ACTIVE_COMPILATION_CONDITIONS MACOSX_DEPLOYMENT_TARGET].to_h { |name| [name, ENV[name]] } }
   end
 
+  # A sandboxed app needs these to work at all: without network.client DNS is
+  # denied and model downloads fail with NSURLError -1003.
+  SANDBOX_REQUIRED_ENTITLEMENTS = %w[com.apple.security.network.client].freeze
+
+  def self.missing_entitlements(plist_xml)
+    granted = plist_xml.scan(%r{<key>([^<]+)</key>\s*<true\s*/>}).flatten
+    return [] unless granted.include?('com.apple.security.app-sandbox')
+
+    SANDBOX_REQUIRED_ENTITLEMENTS - granted
+  end
+
+  def self.verify_entitlements!(app)
+    missing = missing_entitlements(capture('codesign', '-d', '--entitlements', '-', '--xml', app))
+    raise "Signed app lacks #{missing.join(', ')}; refusing to launch" unless missing.empty?
+  end
+
   def self.build_command(derived, configuration)
     arguments = ['xcodebuild', '-project', 'EpubToMp3.xcodeproj', '-scheme', 'EpubToMp3Mac',
                  '-configuration', configuration, '-destination', 'platform=macOS',
@@ -137,6 +153,7 @@ module MacValidate
     when 'gui'
       raise 'Build identity unknown or changed; use explicit incremental build before GUI validation' unless compatible
       capture('codesign', '--verify', '--deep', '--strict', app)
+      verify_entitlements!(app)
       run!('open', app)
     when 'build'
       status = NativeJob.run(phase: 'build', build_dir: derived, command: [RbConfig.ruby, __FILE__,
