@@ -109,7 +109,7 @@ jobs:
         working-directory: ios/EpubToMp3
         run: |
           set -euo pipefail
-          default='ModelsScreenAlertTests,ModelsRootViewTests,LocalAudioSettingsScreenControllerTests,TocScreenControllerTests,IOSMainReaderControllerTests,IOSAppShellTests,ModelsByLanguageTests,ModelsLanguagePageTests,VoiceModelSettingsNavigationTests,PlatformSettingsCellTests,ReaderContentsSheetTests,ReaderChromeOverlayTests,FullPlayerFittingTests,SettingsStorageActionTests,ModelsLanguagesScreenIOSTests,ReaderSettingsScopeHeaderTests,ReaderFollowNarrationReaderTests,ReaderFollowNarrationTests,ReaderNarrationFollowerTests,LanguageModelPlaybackTests,ReaderLinkContrastTests,ReaderThemeContrastTests,WCAGContrastTests,NarrationPlanContractTests,ReaderHighlightContrastTests'
+          default='ModelsScreenAlertTests,ModelsRootViewTests,BookLanguageSheetSummaryTests,LocalAudioSettingsScreenControllerTests,TocScreenControllerTests,IOSMainReaderControllerTests,IOSAppShellTests,ModelsByLanguageTests,ModelsLanguagePageTests,VoiceModelSettingsNavigationTests,PlatformSettingsCellTests,ReaderContentsSheetTests,ReaderChromeOverlayTests,FullPlayerFittingTests,SettingsStorageActionTests,ModelsLanguagesScreenIOSTests,ReaderSettingsScopeHeaderTests,ReaderFollowNarrationReaderTests,ReaderFollowNarrationTests,ReaderNarrationFollowerTests,LanguageModelPlaybackTests,ReaderLinkContrastTests,ReaderThemeContrastTests,WCAGContrastTests,NarrationPlanContractTests,ReaderHighlightContrastTests'
           classes="${TEST_CLASSES:-$default}"
           only=()
           IFS=',' read -ra names <<< "$classes"

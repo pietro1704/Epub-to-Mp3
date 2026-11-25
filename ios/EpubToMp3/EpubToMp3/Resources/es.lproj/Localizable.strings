@@ -485,6 +485,9 @@
 "language.passage" = "Idioma del pasaje";
 "language.downloadTitle" = "Voz para %@";
 "language.downloadMessage" = "Descarga %@ para los pasajes en este idioma. Se narrarán ambos idiomas; se conservará tu voz principal.";
+"language.detected" = "Detectado: %@.";
+"language.quoted" = "También cita: %@.";
+"language.conflict" = "El archivo dice %1$@; el texto está en %2$@.";
 "language.choosePrompt" = "Elige un idioma";
 "language.correctionHelp" = "Esta elección se aplica a este libro o pasaje. Elige Detección automática para eliminar tu corrección.";
 
