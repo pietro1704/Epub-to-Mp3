@@ -5,6 +5,31 @@ import '../models/app_settings.dart';
 import '../models/ebook_fulltext.dart';
 import 'reader_typography.dart';
 
+/// Link colour that meets WCAG AA (4.5:1) on [background] (Apple #1501): the system
+/// link blue keeps its hue and is darkened or lightened only until it passes.
+Color readerLinkColor(Color background) {
+  final dark = background.computeLuminance() < 0.18;
+  final base = HSLColor.fromColor(
+    dark ? const Color(0xff0a84ff) : const Color(0xff007aff),
+  );
+  double ratio(Color c) {
+    final a = c.computeLuminance(), b = background.computeLuminance();
+    return ((a > b ? a : b) + 0.05) / ((a > b ? b : a) + 0.05);
+  }
+
+  if (ratio(base.toColor()) >= 4.5) return base.toColor();
+  for (final lighten in dark ? [true, false] : [false, true]) {
+    for (var step = 1; step <= 100; step++) {
+      final l = lighten
+          ? base.lightness + (1 - base.lightness) * step / 100
+          : base.lightness * (1 - step / 100);
+      final candidate = base.withLightness(l.clamp(0.0, 1.0)).toColor();
+      if (ratio(candidate) >= 4.5) return candidate;
+    }
+  }
+  return dark ? Colors.white : Colors.black;
+}
+
 class ReaderHtmlChapterContent extends StatelessWidget {
   const ReaderHtmlChapterContent({
     super.key,
@@ -69,6 +94,9 @@ class ReaderHtmlChapterContent extends StatelessWidget {
         'h4': (sourceStyles['h4'] ?? Style()).merge(headingStyleHtml),
         'h5': (sourceStyles['h5'] ?? Style()).merge(headingStyleHtml),
         'h6': (sourceStyles['h6'] ?? Style()).merge(headingStyleHtml),
+        'a': (sourceStyles['a'] ?? Style()).merge(
+          Style(color: readerLinkColor(bg)),
+        ),
       },
     );
   }
