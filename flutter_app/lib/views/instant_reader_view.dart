@@ -327,107 +327,111 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       custom: settings.readerCustomColors,
     );
 
-    return Column(
-      children: [
-        // Toolbar with settings button. Hidden when the chrome is off, but it
-        // keeps its space: the page area never moves or resizes (Pietro's rule).
-        Visibility(
-          visible: _chromeVisible,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: Container(
-            color: bg,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: SafeArea(
-              bottom: false,
-              child: Row(
-                children: [
-                  BackButton(
-                    color: fg,
-                    onPressed: () =>
-                        ref.read(appDestinationProvider.notifier).state =
-                            AppDestination.library,
-                  ),
-                  Expanded(
-                    child: Semantics(
-                      header: true,
-                      child: Text(
-                        widget.fulltext.bookTitle ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+    return ColoredBox(
+      // The hidden bars keep their space; it shows the page colour, not the scaffold.
+      color: bg,
+      child: Column(
+        children: [
+          // Toolbar with settings button. Hidden when the chrome is off, but it
+          // keeps its space: the page area never moves or resizes (Pietro's rule).
+          Visibility(
+            visible: _chromeVisible,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Container(
+              color: bg,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: SafeArea(
+                bottom: false,
+                child: Row(
+                  children: [
+                    BackButton(
+                      color: fg,
+                      onPressed: () =>
+                          ref.read(appDestinationProvider.notifier).state =
+                              AppDestination.library,
+                    ),
+                    Expanded(
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          widget.fulltext.bookTitle ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
-                  ),
-                  // Apple-style chrome: the recent tool beside More; the
-                  // other tools live in the overflow menu.
-                  ..._chromeTools(chapter, fg),
-                  ReaderNarrationMenu(
-                    color: fg,
-                    bookId: widget.bookId,
-                    entries: _menuEntries(chapter),
-                    onChanged: widget.onNarrationChanged,
-                    currentSentence: _liveSentencePosition,
-                  ),
-                ],
+                    // Apple-style chrome: the recent tool beside More; the
+                    // other tools live in the overflow menu.
+                    ..._chromeTools(chapter, fg),
+                    ReaderNarrationMenu(
+                      color: fg,
+                      bookId: widget.bookId,
+                      entries: _menuEntries(chapter),
+                      onChanged: widget.onNarrationChanged,
+                      currentSentence: _liveSentencePosition,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
 
-        Expanded(
-          child: ReaderView(
-            key: ValueKey((_currentChapterIndex, _requestedSourceOffset)),
-            initialSourceOffset:
-                _requestedSourceOffset ??
-                (ref
-                            .read(sharedPrefsProvider)
-                            .getInt('readPos_sourceChapter_${widget.bookId}') ==
-                        _currentChapterIndex
-                    ? ref
+          Expanded(
+            child: ReaderView(
+              key: ValueKey((_currentChapterIndex, _requestedSourceOffset)),
+              initialSourceOffset:
+                  _requestedSourceOffset ??
+                  (ref
                               .read(sharedPrefsProvider)
-                              .getInt('readPos_offset_${widget.bookId}') ??
-                          0
-                    : 0),
-            onPlayFromHere: widget.onListenFrom == null
-                ? null
-                : (utf16) => _playFromHere(chapter, utf16),
-            onVisibleTextOffset: (offset) {
-              _visibleTextOffset = offset ?? _visibleTextOffset;
-              final book = widget.bookId;
-              if (book != null && offset != null) {
-                ref
-                    .read(sharedPrefsProvider)
-                    .setInt(
-                      'readPos_sourceChapter_$book',
-                      _currentChapterIndex,
-                    );
-                ref
-                    .read(sharedPrefsProvider)
-                    .setInt('readPos_offset_$book', offset);
-              }
-              widget.onVisibleTextOffset?.call(
-                widget.fulltext.chapters.indexOf(chapter),
-                offset,
-              );
-            },
-            chapter: chapter,
-            measuredHighlight: _measuredRange,
-            spans: spans,
-            // Live sentence id (driven by SyncEngine + position stream
-            // through slice 25) takes precedence over the static prop.
-            currentSentenceId: ownsHighlight
-                ? _liveSentenceId ?? widget.activeSentenceId
-                : null,
-            onAdvanceChapter: advanceToNextChapter,
-            onPreviousChapter: returnToPreviousChapter,
-            onCenterTap: () => _setChromeVisible(!_chromeVisible),
-            onAutoHideChrome: () => _setChromeVisible(false),
+                              .getInt('readPos_sourceChapter_${widget.bookId}') ==
+                          _currentChapterIndex
+                      ? ref
+                                .read(sharedPrefsProvider)
+                                .getInt('readPos_offset_${widget.bookId}') ??
+                            0
+                      : 0),
+              onPlayFromHere: widget.onListenFrom == null
+                  ? null
+                  : (utf16) => _playFromHere(chapter, utf16),
+              onVisibleTextOffset: (offset) {
+                _visibleTextOffset = offset ?? _visibleTextOffset;
+                final book = widget.bookId;
+                if (book != null && offset != null) {
+                  ref
+                      .read(sharedPrefsProvider)
+                      .setInt(
+                        'readPos_sourceChapter_$book',
+                        _currentChapterIndex,
+                      );
+                  ref
+                      .read(sharedPrefsProvider)
+                      .setInt('readPos_offset_$book', offset);
+                }
+                widget.onVisibleTextOffset?.call(
+                  widget.fulltext.chapters.indexOf(chapter),
+                  offset,
+                );
+              },
+              chapter: chapter,
+              measuredHighlight: _measuredRange,
+              spans: spans,
+              // Live sentence id (driven by SyncEngine + position stream
+              // through slice 25) takes precedence over the static prop.
+              currentSentenceId: ownsHighlight
+                  ? _liveSentenceId ?? widget.activeSentenceId
+                  : null,
+              onAdvanceChapter: advanceToNextChapter,
+              onPreviousChapter: returnToPreviousChapter,
+              onCenterTap: () => _setChromeVisible(!_chromeVisible),
+              onAutoHideChrome: () => _setChromeVisible(false),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
