@@ -124,6 +124,9 @@
 "settings.modelRemove.notInstalled" = "Este modelo não está instalado.";
 "settings.audioEngineFooter" = "Faber medium funciona offline após a instalação. Edge exige internet. A voz secundária atende apenas trechos isolados com falha.";
 "settings.reader" = "Leitor";
+"settings.readingPreferences" = "Preferências de leitura";
+"settings.readingPreferencesSubtitle" = "Padrão para todos os livros";
+"settings.modelsSubtitle" = "Escolha a narração de cada idioma de livro";
 "settings.fontSize" = "Tamanho da fonte";
 "settings.font" = "Fonte";
 "settings.theme" = "Tema";
