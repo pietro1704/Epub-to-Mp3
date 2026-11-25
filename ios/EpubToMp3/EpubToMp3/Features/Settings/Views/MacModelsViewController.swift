@@ -10,6 +10,8 @@ import Combine
 final class MacModelsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private enum Item {
         case header(String, footer: String?)
+        /// The language page's first row: no voice chosen for the language.
+        case automatic(language: String, isChosen: Bool)
         case model(ModelsByLanguageViewState.Row, language: String)
     }
 
@@ -48,8 +50,9 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         title = L10n.string("models.title")
     }
 
-    /// The single-language screen: shares the model (and its loaded catalog) of the screen it is pushed from.
-    private init(sharing model: ModelsByLanguageModel, onlyLanguage: String) {
+    /// The language page: an Automatic row, then the voices by engine. It shares the model (and its loaded
+    /// catalog) of the screen it is pushed from.
+    init(sharing model: ModelsByLanguageModel, onlyLanguage: String) {
         self.model = model
         self.focusLanguage = nil
         self.onlyLanguage = onlyLanguage
@@ -176,6 +179,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         }
         languagesButton.isEnabled = !model.catalogLanguages.isEmpty
         items = sections.flatMap { section -> [Item] in
+            if onlyLanguage != nil { return languagePageItems(section) }
             var result: [Item] = []
             let name = languageTitle(section.language)
             let automatic = section.chosen == nil ? L10n.string("models.automatic") : nil
@@ -193,6 +197,13 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         table.reloadData()
         presentPendingTermsIfNeeded()
         presentNewFailures()
+    }
+
+    private func languagePageItems(_ section: ModelsByLanguageViewState.Section) -> [Item] {
+        [.automatic(language: section.language, isChosen: section.chosen == nil)]
+            + section.engineSections.flatMap { engine in
+                [Item.header(engine.engine.title, footer: nil)] + engine.rows.map { .model($0, language: section.language) }
+            }
     }
 
     // MARK: narration
@@ -275,8 +286,8 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        if case .model = items[row] { return true }
-        return false
+        if case .header = items[row] { return false }
+        return true
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -297,9 +308,27 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             stack.spacing = 2
             stack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 4, right: 12)
             return stack
+        case let .automatic(language, isChosen):
+            return automaticView(language: language, isChosen: isChosen)
         case let .model(row, language):
             return rowView(row, language: language)
         }
+    }
+
+    private func automaticView(language: String, isChosen: Bool) -> NSView {
+        let title = NSTextField(labelWithString: (isChosen ? "✓ " : "") + L10n.string("models.page.automatic"))
+        title.font = .systemFont(ofSize: NSFont.systemFontSize)
+        let note = NSTextField(wrappingLabelWithString: L10n.string("models.automatic"))
+        note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        note.textColor = .readableSecondaryLabel
+        let stack = NSStackView(views: [title, note])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        stack.setAccessibilityIdentifier("models.automatic.\(language)")
+        stack.setAccessibilityValue(isChosen ? L10n.string("models.inUse") : nil)
+        return stack
     }
 
     private func rowView(_ row: ModelsByLanguageViewState.Row, language: String) -> NSView {
@@ -365,7 +394,9 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
 
     /// What a click on a row does (also driven directly by tests).
     func activateRow(at index: Int) {
-        guard items.indices.contains(index), case let .model(row, language) = items[index] else { return }
+        guard items.indices.contains(index) else { return }
+        if case let .automatic(language, _) = items[index] { return model.clearChoice(in: language) }
+        guard case let .model(row, language) = items[index] else { return }
         switch row.availability {
         case .ready:
             if row.isChosen { model.clearChoice(in: language) }
