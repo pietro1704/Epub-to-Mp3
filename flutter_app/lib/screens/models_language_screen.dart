@@ -18,6 +18,21 @@ import 'models_languages_screen.dart' show ModelsData, loadModelsData;
 /// models of this device (quality and size as a subtitle; a tap downloads with progress in the
 /// row) and the EDGE online voices (they need the online consent). Choosing a voice here is what
 /// plays books in this language; Rust resolves Automatic at job start.
+/// The catalog models a language page lists. The "piper-default" alias is a catalog
+/// placeholder, not a voice (iOS ModelsByLanguageViewState), so it is not a row.
+List<Map<String, dynamic>> languageModelRows(
+  Iterable<Map<String, dynamic>> models,
+  String base,
+) => [
+  for (final model in models)
+    if (model['id'] != 'piper-default' &&
+        model['languages'] is List &&
+        (model['languages'] as List).any(
+          (tag) => LanguageModelChoices.baseLanguage('$tag') == base,
+        ))
+      model,
+];
+
 class ModelsLanguageScreen extends ConsumerStatefulWidget {
   const ModelsLanguageScreen({super.key, required this.language});
 
@@ -247,7 +262,7 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
                 );
               }
               final data = snapshot.requireData;
-              final models = data.models.where((m) => _serves(m, _base)).toList();
+              final models = languageModelRows(data.models, _base);
               final piper = models.where((m) => !_isOnline(m)).toList();
               final edge = models.where(_isOnline).toList();
               final speaksSystem = systemVoices.any(
