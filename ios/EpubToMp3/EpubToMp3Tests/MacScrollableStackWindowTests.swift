@@ -7,11 +7,12 @@ import XCTest
 /// maximum width must stay centred in a wide window instead of shrinking the window the user sized.
 @MainActor
 final class MacScrollableStackWindowTests: XCTestCase {
+    // 900 pt fits the 1024 pt screen of the CI runner; AppKit shrinks wider windows to the screen.
     func testAWideWindowKeepsItsWidthAroundAWidthCappedForm() {
-        let (window, stack) = hostForm(maximumWidth: 620, windowWidth: 1200)
+        let (window, stack) = hostForm(maximumWidth: 620, windowWidth: 900)
         defer { close(window) }
 
-        XCTAssertEqual(window.contentLayoutRect.width, 1200, accuracy: 1, "the page must not resize the window")
+        XCTAssertEqual(window.contentLayoutRect.width, 900, accuracy: 1, "the page must not resize the window")
         XCTAssertEqual(stack.frame.width, 620, accuracy: 1, "the form stops at its maximum width")
     }
 
