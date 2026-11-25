@@ -5,6 +5,13 @@ import XCTest
 
 @MainActor
 final class ExpandedPlayerTransportTests: XCTestCase {
+    /// The button renders the committed transport state, published after the current main-actor turn.
+    private func waitForLabel(_ button: UIButton, _ label: String) async throws {
+        for _ in 0..<100 where button.accessibilityLabel != label {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     private func makeController(
         player: AudioPlayer,
         startListening: @escaping () -> Void
@@ -55,7 +62,7 @@ final class ExpandedPlayerTransportTests: XCTestCase {
         }
     }
 
-    func testPlayPauseControlsTheSameSpeechSessionWithoutStartingAnotherProducer() throws {
+    func testPlayPauseControlsTheSameSpeechSessionWithoutStartingAnotherProducer() async throws {
         let synth = SpeechFallbackPlayerTests.FakeSynthesizer()
         let fallback = SpeechFallbackPlayer(
             synthesizer: synth, sessionConfigurator: SpeechFallbackPlayerTests.FakeSpeechAudioSession()
@@ -67,14 +74,17 @@ final class ExpandedPlayerTransportTests: XCTestCase {
         let (controller, button) = try makeController(player: player) {
             XCTFail("An existing speech session must receive transport commands")
         }
-        withExtendedLifetime(controller) {
+        defer { withExtendedLifetime(controller) {} }
+        do {
             button.sendActions(for: .touchUpInside)
             XCTAssertFalse(player.isPlaying)
             XCTAssertEqual(synth.pauseCalls, 1)
+            try await waitForLabel(button, L10n.string("player.play"))
             XCTAssertEqual(button.accessibilityLabel, L10n.string("player.play"))
             button.sendActions(for: .touchUpInside)
             XCTAssertTrue(player.isPlaying)
             XCTAssertEqual(synth.continueCalls, 1)
+            try await waitForLabel(button, L10n.string("player.pause"))
             XCTAssertEqual(button.accessibilityLabel, L10n.string("player.pause"))
             XCTAssertFalse(unrelatedPlayer.isPlaying)
             XCTAssertFalse(unrelatedPlayer.hasPendingAutoplay)
