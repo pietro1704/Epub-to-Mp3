@@ -63,7 +63,8 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
-        view = NSView()
+        // A zero-sized root would shrink a hosting window and wrap the option descriptions letter by letter.
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 760))
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("model"))
         table.addTableColumn(column)
         table.headerView = nil
