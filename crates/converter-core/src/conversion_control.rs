@@ -351,6 +351,19 @@ impl ConversionControl {
 }
 
 impl ConversionControl {
+    /// Bridges that cannot reach the C control (JNI) pin the first listening
+    /// position here; a negative offset means "start at the chapter start".
+    pub fn start_listening_at(&self, chapter_index: usize, text_offset: i64) -> Result<(), String> {
+        let Ok(text_offset) = usize::try_from(text_offset) else {
+            return Ok(());
+        };
+        self.set_listening_position(crate::tts_session::ListeningPosition {
+            version: crate::tts_session::CONTRACT_VERSION,
+            chapter_index,
+            text_offset,
+        })
+    }
+
     pub fn set_listening_position(
         &self,
         position: crate::tts_session::ListeningPosition,

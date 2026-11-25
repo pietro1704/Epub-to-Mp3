@@ -417,3 +417,13 @@ fn migrated_manual_selection_retries_current_listening_range_without_stale_audio
     assert!(matches!(worker.run(request), Err(WorkerError::Cancelled)));
     assert_eq!(calls.load(Ordering::Acquire), 2);
 }
+
+#[test]
+fn a_native_start_offset_pins_the_listening_position_and_a_negative_one_leaves_it_unset() {
+    let control = crate::conversion_control::ConversionControl::default();
+    control.start_listening_at(2, -1).unwrap();
+    assert!(control.listening_plan().is_none());
+    control.start_listening_at(2, 40).unwrap();
+    let position = control.listening_plan().unwrap().position;
+    assert_eq!((position.chapter_index, position.text_offset), (2, 40));
+}
