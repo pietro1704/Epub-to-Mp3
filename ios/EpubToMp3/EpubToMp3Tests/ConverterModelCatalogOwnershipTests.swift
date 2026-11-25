@@ -134,8 +134,9 @@ final class ConverterModelCatalogOwnershipTests: XCTestCase {
         XCTAssertEqual(descriptors.models.first?.artifacts?.first?.sha256, "checksum-a")
         let preferences = TtsPreferences(
             primary: TtsSelection(engine: "provider-a", modelID: "model-b", voice: "captured-voice"),
-            secondary: nil, allowOnlineFallback: false, policyVersion: 2)
+            secondary: nil, allowOnlineFallback: false, policyVersion: 2, footnoteNarration: .skip)
         let captured = descriptors.capture(preferences, target: "macos")
+        XCTAssertEqual(captured.footnoteNarration, .skip, "Capture keeps the footnote choice")
         XCTAssertEqual(captured.primary.session?.modelRevision, "sha-b")
         XCTAssertEqual(captured.primary.voice, "captured-voice")
         XCTAssertNil(preferences.primary.session)

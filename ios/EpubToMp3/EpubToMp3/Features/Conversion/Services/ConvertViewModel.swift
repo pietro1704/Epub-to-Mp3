@@ -81,7 +81,8 @@ final class ConvertViewModel {
                     primary: TtsSelection(engine: engine, modelID: options.modelID, voice: options.voice),
                     secondary: allowSecondary ? distinctManualSecondary : nil,
                     allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false),
-                    policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil)
+                    policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil,
+                    footnoteNarration: inheritedPreferences?.footnoteNarration)
             }
             if let recoverySelection, let recoveryLanguage {
                 options = options.recovering(with: recoverySelection, language: recoveryLanguage)

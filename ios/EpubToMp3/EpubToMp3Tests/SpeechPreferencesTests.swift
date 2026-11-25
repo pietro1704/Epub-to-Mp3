@@ -123,4 +123,23 @@ final class SpeechPreferencesTests: XCTestCase {
         defaults.set(try JSONEncoder().encode(TtsSelection.defaultPiper), forKey: SpeechPreferenceMigration.Key.secondarySelection)
         XCTAssertNil(SpeechPreferences(defaults: defaults).secondaryTtsSelection)
     }
+    /// FOOTNOTE-NARRATION: notes are read inline unless the listener turns that off; Rust applies the choice.
+    func testFootnotesAreReadInlineUntilTheListenerTurnsThemOff() throws {
+        let defaults = try makeDefaults()
+        markGlobalVoiceMigrationDone(defaults)
+        let speech = SpeechPreferences(defaults: defaults)
+        XCTAssertTrue(speech.narratesFootnotes)
+        XCTAssertNil(speech.ttsPreferences.footnoteNarration, "Inline is the Rust default and is not sent")
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(speech.ttsPreferences), as: UTF8.self)
+            .contains("footnote_narration"))
+
+        speech.narratesFootnotes = false
+        let reloaded = SpeechPreferences(defaults: defaults)
+        XCTAssertFalse(reloaded.narratesFootnotes, "The choice is saved")
+        XCTAssertEqual(reloaded.ttsPreferences.footnoteNarration, .skip)
+        XCTAssertTrue(String(decoding: try JSONEncoder().encode(reloaded.ttsPreferences), as: UTF8.self)
+            .contains(#""footnote_narration":"skip""#))
+        let decoded = try JSONDecoder().decode(TtsPreferences.self, from: Data(#"{"primary":{"engine":"piper"},"allow_online_fallback":false,"footnote_narration":"skip"}"#.utf8))
+        XCTAssertEqual(decoded.footnoteNarration, .skip)
+    }
 }

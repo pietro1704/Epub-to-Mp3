@@ -458,6 +458,8 @@
 
 "settings.automaticSystemFallback" = "Voz do sistema como alternativa automática";
 "settings.automaticSystemFallbackDescription" = "Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.";
+"settings.footnoteNarration" = "Ler notas de rodapé no texto";
+"settings.footnoteNarrationDescription" = "Cada nota é lida onde é citada, entre os avisos \"Início/Fim da nota de rodapé N\". Desative para pular as notas.";
 
 // Speech compatibility recovery and converter diagnostics.
 "error.converterUnavailable" = "O conversor de voz está indisponível. Reinstale o app ou tente novamente.";

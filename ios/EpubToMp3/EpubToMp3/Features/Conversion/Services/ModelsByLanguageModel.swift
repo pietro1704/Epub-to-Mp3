@@ -244,6 +244,10 @@ final class ModelsByLanguageModel: ObservableObject {
         return TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
     }
 
+    var narratesFootnotes: Bool {
+        get { settings.narratesFootnotes }
+        set { settings.narratesFootnotes = newValue }
+    }
     var allowAutomaticSystemVoiceFallback: Bool {
         get { settings.allowAutomaticSystemVoiceFallback }
         set { settings.allowAutomaticSystemVoiceFallback = newValue }

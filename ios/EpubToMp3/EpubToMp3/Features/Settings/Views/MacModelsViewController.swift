@@ -23,6 +23,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let statusLabel = NSTextField(labelWithString: "")
     private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let footnotesButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let lowQualityButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let bookLanguages: () -> [String]
     private var items: [Item] = []
@@ -88,13 +89,19 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         onlineFallbackButton.target = self
         onlineFallbackButton.action = #selector(onlineFallbackChanged)
         onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
+        footnotesButton.title = L10n.string("settings.footnoteNarration")
+        footnotesButton.toolTip = L10n.string("settings.footnoteNarrationDescription")
+        footnotesButton.target = self
+        footnotesButton.action = #selector(footnotesChanged)
+        footnotesButton.setAccessibilityIdentifier("settings.tts.footnoteNarration")
+        footnotesButton.setAccessibilityHelp(L10n.string("settings.footnoteNarrationDescription"))
         lowQualityButton.title = L10n.string("models.showLowQuality")
         lowQualityButton.toolTip = L10n.string("models.showLowQualityDescription")
         lowQualityButton.target = self
         lowQualityButton.action = #selector(lowQualityChanged)
         lowQualityButton.setAccessibilityIdentifier("models.showLowQuality")
         lowQualityButton.setAccessibilityHelp(L10n.string("models.showLowQualityDescription"))
-        let narration = NSStackView(views: [automaticFallbackButton, onlineFallbackButton, lowQualityButton])
+        let narration = NSStackView(views: [automaticFallbackButton, onlineFallbackButton, footnotesButton, lowQualityButton])
         narration.orientation = .vertical
         narration.alignment = .leading
         narration.spacing = 8
@@ -167,10 +174,12 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private func refreshNarration() {
         automaticFallbackButton.state = model.allowAutomaticSystemVoiceFallback ? .on : .off
         onlineFallbackButton.state = model.allowOnlineFallback ? .on : .off
+        footnotesButton.state = model.narratesFootnotes ? .on : .off
         lowQualityButton.state = model.showLowQuality ? .on : .off
     }
 
     @objc private func automaticFallbackChanged() { model.allowAutomaticSystemVoiceFallback = automaticFallbackButton.state == .on }
+    @objc private func footnotesChanged() { model.narratesFootnotes = footnotesButton.state == .on }
     @objc private func onlineFallbackChanged() { model.allowOnlineFallback = onlineFallbackButton.state == .on }
     @objc private func lowQualityChanged() {
         let show = lowQualityButton.state == .on
