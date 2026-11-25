@@ -107,7 +107,9 @@ final class ModelsScreenController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0, onlyLanguage != nil { return L10n.string("models.automatic") }
+        if section == 0, let onlyLanguage {
+            return L10n.string(model.isAwaiting(onlyLanguage) ? "models.loading" : "models.automatic")
+        }
         return nil
     }
 
