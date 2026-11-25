@@ -26,6 +26,13 @@ impl WorkerError {
             return "language_model_unavailable";
         }
         match self {
+            // A text-less page with drawn content (often an image cover) needs
+            // OCR; clients explain that instead of a generic unreadable input.
+            // The integration test `pdf_image_only_page_failure_carries_the_ocr_required_code`
+            // pins this to the real ingestion message.
+            Self::BookInput(crate::book_input::BookInputError::Pdf(
+                crate::ingestion::IngestionError::InvalidInput { message },
+            )) if message.contains("OCR is required") => "pdf_ocr_required",
             Self::BookInput(_) | Self::Epub(_) => "input_unreadable",
             Self::Job(_) => "job_state",
             Self::Cache(_) => "storage",
