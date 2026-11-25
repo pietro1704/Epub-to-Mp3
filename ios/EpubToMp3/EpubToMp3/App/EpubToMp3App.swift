@@ -406,7 +406,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         }
     }
 
-    static func isRunningUnderXCTest(
+    nonisolated static func isRunningUnderXCTest(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         classLookup: (String) -> AnyClass? = NSClassFromString
     ) -> Bool {
