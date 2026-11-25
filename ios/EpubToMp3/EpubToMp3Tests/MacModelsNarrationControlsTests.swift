@@ -25,8 +25,8 @@ final class MacModelsNarrationControlsTests: XCTestCase {
         for _ in 0..<60 { try await Task.sleep(nanoseconds: 50_000_000) }
         let controls = descendants(controller.view)
         XCTAssertTrue(controls.compactMap { $0 as? NSPopUpButton }.isEmpty, "No global voice or reserve popup")
-        let online = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
-        let automatic = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.automaticSystemFallback" })
+        let online = try XCTUnwrap(controls.compactMap { $0 as? NSSwitch }.first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
+        let automatic = try XCTUnwrap(controls.compactMap { $0 as? NSSwitch }.first { $0.accessibilityIdentifier() == "settings.tts.automaticSystemFallback" })
         XCTAssertEqual(online.state, .off)
 
         // Withdrawing the consent drops a saved online reserve.
@@ -41,7 +41,7 @@ final class MacModelsNarrationControlsTests: XCTestCase {
         XCTAssertFalse(AppSettings(defaults: defaults).allowAutomaticSystemVoiceFallback)
 
         // FOOTNOTE-NARRATION: on by default; turning it off is saved and sent to Rust as `skip`.
-        let footnotes = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.footnoteNarration" })
+        let footnotes = try XCTUnwrap(controls.compactMap { $0 as? NSSwitch }.first { $0.accessibilityIdentifier() == "settings.tts.footnoteNarration" })
         XCTAssertEqual(footnotes.state, .on)
         footnotes.performClick(nil)
         XCTAssertFalse(AppSettings(defaults: defaults).narratesFootnotes)

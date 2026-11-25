@@ -76,7 +76,11 @@ final class MacModelsLanguagesViewController: NSViewController, NSTableViewDataS
             let detail = NSTextField(labelWithString: ModelLanguageOrder.modelCountText(count))
             detail.textColor = .readableSecondaryLabel
             detail.font = .preferredFont(forTextStyle: .caption1)
-            let stack = NSStackView(views: [title, NSView(), detail])
+            // Each language opens its page, so it carries a disclosure chevron, as on the iPhone 16e.
+            let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) ?? NSImage())
+            chevron.contentTintColor = .tertiaryLabelColor
+            chevron.setAccessibilityIdentifier("models.languages.chevron.\(tag)")
+            let stack = NSStackView(views: [title, NSView(), detail, chevron])
             stack.orientation = .horizontal
             stack.edgeInsets = NSEdgeInsets(top: 6, left: 16, bottom: 6, right: 16)
             stack.setAccessibilityElement(true)

@@ -21,10 +21,10 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let audition = VoiceAuditionPresentation()
     private let table = NSTableView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let automaticFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let footnotesButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let lowQualityButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let automaticFallbackButton = NSSwitch()
+    private let onlineFallbackButton = NSSwitch()
+    private let footnotesButton = NSSwitch()
+    private let lowQualityButton = NSSwitch()
     private let bookLanguages: () -> [String]
     private var items: [Item] = []
     private var observations: Set<AnyCancellable> = []
@@ -81,47 +81,45 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         scroll.hasVerticalScroller = true
         statusLabel.textColor = .readableSecondaryLabel
         statusLabel.stringValue = L10n.string("models.loading")
-        automaticFallbackButton.title = L10n.string("settings.automaticSystemFallback")
-        automaticFallbackButton.target = self
-        automaticFallbackButton.action = #selector(automaticFallbackChanged)
-        automaticFallbackButton.setAccessibilityIdentifier("settings.tts.automaticSystemFallback")
-        onlineFallbackButton.title = L10n.string("settings.onlineFallback")
-        onlineFallbackButton.target = self
-        onlineFallbackButton.action = #selector(onlineFallbackChanged)
-        onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
-        footnotesButton.title = L10n.string("settings.footnoteNarration")
-        footnotesButton.toolTip = L10n.string("settings.footnoteNarrationDescription")
-        footnotesButton.target = self
-        footnotesButton.action = #selector(footnotesChanged)
-        footnotesButton.setAccessibilityIdentifier("settings.tts.footnoteNarration")
-        footnotesButton.setAccessibilityHelp(L10n.string("settings.footnoteNarrationDescription"))
-        lowQualityButton.title = L10n.string("models.showLowQuality")
-        lowQualityButton.toolTip = L10n.string("models.showLowQualityDescription")
-        lowQualityButton.target = self
-        lowQualityButton.action = #selector(lowQualityChanged)
-        lowQualityButton.setAccessibilityIdentifier("models.showLowQuality")
-        lowQualityButton.setAccessibilityHelp(L10n.string("models.showLowQualityDescription"))
-        let narration = NSStackView(views: [automaticFallbackButton, onlineFallbackButton, footnotesButton, lowQualityButton])
-        narration.orientation = .vertical
-        narration.alignment = .leading
-        narration.spacing = 8
-        narration.translatesAutoresizingMaskIntoConstraints = false
-        let narrationBox = NSStackView(views: [narration])
-        narrationBox.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 8, right: 16)
-        languagesButton.title = L10n.string("models.languages.open")
-        languagesButton.bezelStyle = .rounded
+        // The root mirrors the iPhone 16e: each narration option is a switch row with its description,
+        // then a "Languages" row with a globe and a disclosure chevron (MAC-MODELS-BY-LANGUAGE).
+        let options: [(NSSwitch, String, String, String, Selector)] = [
+            (automaticFallbackButton, "settings.automaticSystemFallback", "settings.automaticSystemFallbackDescription",
+             "settings.tts.automaticSystemFallback", #selector(automaticFallbackChanged)),
+            (onlineFallbackButton, "settings.onlineFallback", "settings.onlineFallbackDescription",
+             "settings.tts.onlineConsent", #selector(onlineFallbackChanged)),
+            (footnotesButton, "settings.footnoteNarration", "settings.footnoteNarrationDescription",
+             "settings.tts.footnoteNarration", #selector(footnotesChanged)),
+            (lowQualityButton, "models.showLowQuality", "models.showLowQualityDescription",
+             "models.showLowQuality", #selector(lowQualityChanged)),
+        ]
+        var rows: [NSView] = options.map { toggle, titleKey, descriptionKey, identifier, action in
+            toggle.target = self
+            toggle.action = action
+            toggle.setAccessibilityIdentifier(identifier)
+            toggle.setAccessibilityLabel(L10n.string(titleKey))
+            toggle.setAccessibilityHelp(L10n.string(descriptionKey))
+            return MacSettingsSections.row(title: L10n.string(titleKey), subtitle: L10n.string(descriptionKey),
+                                           accessory: toggle)
+        }
         languagesButton.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
-        languagesButton.imagePosition = .imageTrailing
+        languagesButton.imagePosition = .imageOnly
+        languagesButton.isBordered = false
         languagesButton.target = self
         languagesButton.action = #selector(showLanguages)
         languagesButton.setAccessibilityIdentifier("models.languages")
         languagesButton.setAccessibilityLabel(L10n.string("models.languages"))
-        languagesButton.isHidden = onlyLanguage != nil
+        let languagesRow = MacSettingsSections.row(title: L10n.string("models.languages.open"), symbol: "globe",
+                                                   accessory: languagesButton)
+        languagesRow.addGestureRecognizer(NSClickGestureRecognizer(target: languagesButton,
+                                                                   action: #selector(NSButton.performClick(_:))))
+        rows.append(languagesRow)
+        let narrationBox = NSStackView(views: [MacSettingsSections.card(rows)])
+        narrationBox.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 8, right: 16)
+        narrationBox.arrangedSubviews[0].widthAnchor
+            .constraint(equalTo: narrationBox.widthAnchor, constant: -32).isActive = true
         narrationBox.isHidden = onlyLanguage != nil
-        let languagesBox = NSStackView(views: [languagesButton])
-        languagesBox.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 8, right: 16)
-        languagesBox.isHidden = onlyLanguage != nil
-        let stack = NSStackView(views: [narrationBox, languagesBox, statusLabel, scroll])
+        let stack = NSStackView(views: [narrationBox, statusLabel, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -130,6 +128,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             stack.topAnchor.constraint(equalTo: view.topAnchor), stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            narrationBox.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
     }
 
