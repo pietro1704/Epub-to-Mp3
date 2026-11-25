@@ -19,19 +19,23 @@ class XcodeBuildPathsTest < Minitest::Test
   def test_iphone16e_never_silently_falls_back_to_xcode16
     assert_raises(RuntimeError) do
       XcodeBuildPaths.developer(environment: { 'IOS_DEVICE_ID' => '44B2CFBD-2193-5086-8E8D-BF7A2876C321' },
-                               directory: ->(path) { path == XcodeBuildPaths::DEVELOPER })
+                               directory: ->(path) { path.match?(%r{/Xcode[-_]16\.4(\.0)?\.app/}) })
     end
   end
 
-  def test_other_devices_and_unscoped_builds_keep_the_legacy_toolchain
+  def test_other_devices_and_unscoped_builds_default_to_local_xcode26
     [{}, { 'IOS_DEVICE_ID' => 'other-device' }].each do |environment|
-      assert_equal XcodeBuildPaths::DEVELOPER,
+      assert_equal '/Applications/Xcode-26.3.0.app/Contents/Developer',
                    XcodeBuildPaths.developer(environment: environment, directory: ->(_) { true })
     end
   end
 
-  def test_local_and_hosted_xcode16_names_are_supported_without_global_selection
-    assert_equal XcodeBuildPaths::DEVELOPER, XcodeBuildPaths.developer(environment: {}, directory: ->(_) { true })
+  def test_local_xcode26_and_hosted_xcode16_are_supported_without_global_selection
+    assert_equal '/Applications/Xcode-26.3.0.app/Contents/Developer',
+                 XcodeBuildPaths.developer(environment: {}, directory: ->(_) { true })
+    # Hosted runners spell the app Xcode_<version>.app and stay on the pinned 16.4.
+    hosted = ['/Applications/Xcode_16.4.app/Contents/Developer', '/Applications/Xcode_26.3.app/Contents/Developer']
+    assert_equal hosted.first, XcodeBuildPaths.developer(environment: {}, directory: ->(path) { hosted.include?(path) })
     assert_equal XcodeBuildPaths::HOSTED_DEVELOPER,
                  XcodeBuildPaths.developer(environment: {}, directory: ->(path) { path == XcodeBuildPaths::HOSTED_DEVELOPER })
     assert_raises(RuntimeError) { XcodeBuildPaths.developer(environment: {}, directory: ->(_) { false }) }

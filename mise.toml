@@ -30,7 +30,7 @@ node.compile = false
 ruby.compile = false
 
 [env]
-# Development uses Xcode 16 without changing the system selection used by Homebrew.
+# Local development uses Xcode 26.3 (hosted CI keeps 16.4) without changing the system selection.
 DEVELOPER_DIR = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb developer') }}{% else %}{{ env.DEVELOPER_DIR | default(value='') }}{% endif %}"
 # Reuse the GUI workspace cache; SDK/configuration subdirectories stay isolated.
 APPLE_DERIVED_DATA_PATH = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb derived-data') }}{% else %}{{ config_root }}/ios/EpubToMp3/.build{% endif %}"
