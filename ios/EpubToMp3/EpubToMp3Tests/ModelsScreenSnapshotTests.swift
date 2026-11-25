@@ -61,9 +61,7 @@ final class ModelsScreenSnapshotTests: XCTestCase {
 
     /// The Models root ("the voice for each language"), light and dark.
     func testRenderRootInLightAndDark() async throws {
-        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
-            ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+        let directory = try snapshotDirectory()
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let suite = "models-snapshot-\(UUID().uuidString)"
