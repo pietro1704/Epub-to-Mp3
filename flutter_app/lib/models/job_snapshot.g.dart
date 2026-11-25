@@ -18,6 +18,7 @@ _ChapterProgress _$ChapterProgressFromJson(Map<String, dynamic> json) =>
       durationSeconds: (json['durationSeconds'] as num?)?.toDouble(),
       startedAt: (json['startedAt'] as num?)?.toDouble(),
       completedAt: (json['completedAt'] as num?)?.toDouble(),
+      textOffset: (json['textOffset'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$ChapterProgressToJson(_ChapterProgress instance) =>
@@ -32,4 +33,5 @@ Map<String, dynamic> _$ChapterProgressToJson(_ChapterProgress instance) =>
       'durationSeconds': instance.durationSeconds,
       'startedAt': instance.startedAt,
       'completedAt': instance.completedAt,
+      'textOffset': instance.textOffset,
     };

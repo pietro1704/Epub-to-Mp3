@@ -25,6 +25,11 @@ mixin _$ChapterProgress {
   double? get startedAt;
   double? get completedAt;
 
+  /// Unicode scalar offset in the chapter text where this audio starts (a
+  /// listening started inside the chapter, e.g. Play from here); 0 or null
+  /// for audio of the whole chapter. Mirrors iOS `ChapterProgress.textOffset`.
+  int? get textOffset;
+
   /// Create a copy of ChapterProgress
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -62,7 +67,9 @@ mixin _$ChapterProgress {
             (identical(other.startedAt, _this.startedAt) ||
                 other.startedAt == _this.startedAt) &&
             (identical(other.completedAt, _this.completedAt) ||
-                other.completedAt == _this.completedAt));
+                other.completedAt == _this.completedAt) &&
+            (identical(other.textOffset, _this.textOffset) ||
+                other.textOffset == _this.textOffset));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -81,13 +88,14 @@ mixin _$ChapterProgress {
       _this.durationSeconds,
       _this.startedAt,
       _this.completedAt,
+      _this.textOffset,
     );
   }
 
   @override
   String toString() {
     final _this = this as ChapterProgress;
-    return 'ChapterProgress(index: ${_this.index}, name: ${_this.name}, status: ${_this.status}, downloadUrl: ${_this.downloadUrl}, chars: ${_this.chars}, charsProcessed: ${_this.charsProcessed}, progressRatio: ${_this.progressRatio}, durationSeconds: ${_this.durationSeconds}, startedAt: ${_this.startedAt}, completedAt: ${_this.completedAt})';
+    return 'ChapterProgress(index: ${_this.index}, name: ${_this.name}, status: ${_this.status}, downloadUrl: ${_this.downloadUrl}, chars: ${_this.chars}, charsProcessed: ${_this.charsProcessed}, progressRatio: ${_this.progressRatio}, durationSeconds: ${_this.durationSeconds}, startedAt: ${_this.startedAt}, completedAt: ${_this.completedAt}, textOffset: ${_this.textOffset})';
   }
 }
 
@@ -109,6 +117,7 @@ abstract mixin class $ChapterProgressCopyWith<$Res> {
     double? durationSeconds,
     double? startedAt,
     double? completedAt,
+    int? textOffset,
   });
 }
 
@@ -135,6 +144,7 @@ class _$ChapterProgressCopyWithImpl<$Res>
     Object? durationSeconds = freezed,
     Object? startedAt = freezed,
     Object? completedAt = freezed,
+    Object? textOffset = freezed,
   }) {
     return _then(
       ChapterProgress(
@@ -178,6 +188,10 @@ class _$ChapterProgressCopyWithImpl<$Res>
             ? _self.completedAt
             : completedAt // ignore: cast_nullable_to_non_nullable
                   as double?,
+        textOffset: freezed == textOffset
+            ? _self.textOffset
+            : textOffset // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -287,6 +301,7 @@ extension ChapterProgressPatterns on ChapterProgress {
       double? durationSeconds,
       double? startedAt,
       double? completedAt,
+      int? textOffset,
     )?
     $default, {
     required TResult orElse(),
@@ -305,6 +320,7 @@ extension ChapterProgressPatterns on ChapterProgress {
           _that.durationSeconds,
           _that.startedAt,
           _that.completedAt,
+          _that.textOffset,
         );
       case _:
         return orElse();
@@ -337,6 +353,7 @@ extension ChapterProgressPatterns on ChapterProgress {
       double? durationSeconds,
       double? startedAt,
       double? completedAt,
+      int? textOffset,
     )
     $default,
   ) {
@@ -354,6 +371,7 @@ extension ChapterProgressPatterns on ChapterProgress {
           _that.durationSeconds,
           _that.startedAt,
           _that.completedAt,
+          _that.textOffset,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -385,6 +403,7 @@ extension ChapterProgressPatterns on ChapterProgress {
       double? durationSeconds,
       double? startedAt,
       double? completedAt,
+      int? textOffset,
     )?
     $default,
   ) {
@@ -402,6 +421,7 @@ extension ChapterProgressPatterns on ChapterProgress {
           _that.durationSeconds,
           _that.startedAt,
           _that.completedAt,
+          _that.textOffset,
         );
       case _:
         return null;
@@ -423,6 +443,7 @@ class _ChapterProgress extends ChapterProgress {
     this.durationSeconds,
     this.startedAt,
     this.completedAt,
+    this.textOffset,
   }) : super._();
   factory _ChapterProgress.fromJson(Map<String, dynamic> json) =>
       _$ChapterProgressFromJson(json);
@@ -447,6 +468,12 @@ class _ChapterProgress extends ChapterProgress {
   final double? startedAt;
   @override
   final double? completedAt;
+
+  /// Unicode scalar offset in the chapter text where this audio starts (a
+  /// listening started inside the chapter, e.g. Play from here); 0 or null
+  /// for audio of the whole chapter. Mirrors iOS `ChapterProgress.textOffset`.
+  @override
+  final int? textOffset;
 
   /// Create a copy of ChapterProgress
   /// with the given fields replaced by the non-null parameter values.
@@ -481,7 +508,9 @@ class _ChapterProgress extends ChapterProgress {
             (identical(other.startedAt, startedAt) ||
                 other.startedAt == startedAt) &&
             (identical(other.completedAt, completedAt) ||
-                other.completedAt == completedAt));
+                other.completedAt == completedAt) &&
+            (identical(other.textOffset, textOffset) ||
+                other.textOffset == textOffset));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -499,12 +528,13 @@ class _ChapterProgress extends ChapterProgress {
       durationSeconds,
       startedAt,
       completedAt,
+      textOffset,
     );
   }
 
   @override
   String toString() {
-    return 'ChapterProgress(index: $index, name: $name, status: $status, downloadUrl: $downloadUrl, chars: $chars, charsProcessed: $charsProcessed, progressRatio: $progressRatio, durationSeconds: $durationSeconds, startedAt: $startedAt, completedAt: $completedAt)';
+    return 'ChapterProgress(index: $index, name: $name, status: $status, downloadUrl: $downloadUrl, chars: $chars, charsProcessed: $charsProcessed, progressRatio: $progressRatio, durationSeconds: $durationSeconds, startedAt: $startedAt, completedAt: $completedAt, textOffset: $textOffset)';
   }
 }
 
@@ -528,6 +558,7 @@ abstract mixin class _$ChapterProgressCopyWith<$Res>
     double? durationSeconds,
     double? startedAt,
     double? completedAt,
+    int? textOffset,
   });
 }
 
@@ -554,6 +585,7 @@ class __$ChapterProgressCopyWithImpl<$Res>
     Object? durationSeconds = freezed,
     Object? startedAt = freezed,
     Object? completedAt = freezed,
+    Object? textOffset = freezed,
   }) {
     return _then(
       _ChapterProgress(
@@ -597,6 +629,10 @@ class __$ChapterProgressCopyWithImpl<$Res>
             ? _self.completedAt
             : completedAt // ignore: cast_nullable_to_non_nullable
                   as double?,
+        textOffset: freezed == textOffset
+            ? _self.textOffset
+            : textOffset // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }

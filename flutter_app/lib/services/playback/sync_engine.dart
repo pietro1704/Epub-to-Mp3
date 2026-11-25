@@ -37,8 +37,18 @@ class SyncEngine {
 
   void dispose() => _controller.close();
 
-  void load(FulltextChapter chapter, double chapterDurationSeconds) {
-    spans = chapter.splitSentences();
+  /// [textOffset] is where the audio starts in the chapter text (Unicode
+  /// scalars): audio of a listening started inside the chapter covers only the
+  /// sentences from there on.
+  void load(
+    FulltextChapter chapter,
+    double chapterDurationSeconds, {
+    int textOffset = 0,
+  }) {
+    final all = chapter.splitSentences();
+    spans = textOffset > 0
+        ? all.where((span) => span.endChar > textOffset).toList()
+        : all;
     if (spans.isEmpty) {
       timing = const [];
       source = TimingSource.empty;

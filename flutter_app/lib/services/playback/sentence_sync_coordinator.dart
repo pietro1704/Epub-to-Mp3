@@ -55,23 +55,17 @@ class SentenceSyncCoordinator {
     _lastFulltext = fulltext;
     _lastPlayableIndex = playableIndex;
     // The queue is keyed by place in the book, not by FulltextChapter.index.
-    final duration = _durationForChapter(
-      playableChapters,
-      fulltext.chapters.indexOf(chapter),
+    final position = fulltext.chapters.indexOf(chapter);
+    final audio = playableChapters.where((c) => c.index == position).firstOrNull;
+    _engine.load(
+      chapter,
+      audio?.durationSeconds ?? 0.0,
+      textOffset: audio?.textOffset ?? 0,
     );
-    _engine.load(chapter, duration);
   }
 
   /// Forward an audio position tick (seconds) to the engine. Returns
   /// the resolved sentence id, if any.
   String? updatePosition(double positionSeconds) =>
       _engine.update(positionSeconds);
-
-  double _durationForChapter(
-      List<ChapterProgress> playableChapters, int epubIndex) {
-    for (final c in playableChapters) {
-      if (c.index == epubIndex) return c.durationSeconds ?? 0.0;
-    }
-    return 0.0;
-  }
 }

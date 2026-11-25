@@ -20,6 +20,10 @@ abstract class ChapterProgress with _$ChapterProgress {
     double? durationSeconds,
     double? startedAt,
     double? completedAt,
+    /// Unicode scalar offset in the chapter text where this audio starts (a
+    /// listening started inside the chapter, e.g. Play from here); 0 or null
+    /// for audio of the whole chapter. Mirrors iOS `ChapterProgress.textOffset`.
+    int? textOffset,
   }) = _ChapterProgress;
 
   factory ChapterProgress.fromJson(Map<String, dynamic> json) =>

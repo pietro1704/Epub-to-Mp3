@@ -180,6 +180,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             downloadUrl: Uri.file(path).toString(),
             chars: source?.text.length,
             progressRatio: 1.0,
+            textOffset: saved.textOffset,
           ),
         );
       }
@@ -204,6 +205,9 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       if (!_isCurrentConversion(generation)) return;
 
       _platformVoiceSession.begin(inputPath);
+      // Audio of the first chapter starts where the listening started inside it.
+      int startOffsetOf(int chapter) =>
+          chapter == playbackChapterIndex ? readerPosition?.textOffset ?? 0 : 0;
       final conversionService = RustPlaybackConversionService(
         converter: converter,
         coordinator: coordinator,
@@ -256,6 +260,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                   ).toString(),
                   chars: chapter.text.length,
                   progressRatio: 0.0,
+                  textOffset: startOffsetOf(chapter.index),
                 );
                 final existing = _playableChapters.indexWhere(
                   (item) => item.index == chapter.index,
@@ -282,6 +287,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             downloadUrl: Uri.file(path).toString(),
             chars: chapter.text.length,
             progressRatio: 1.0,
+            textOffset: startOffsetOf(chapter.index),
           );
           if (player is StreamingChapterPlayer) {
             (player as StreamingChapterPlayer).finishGrowingChapter(
