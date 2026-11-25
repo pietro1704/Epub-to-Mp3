@@ -11,11 +11,9 @@ final class MacSettingsViewController: NSViewController {
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
     private var voiceModelDestination: MacSettingsDetailNavigation?
     private var isClearingDownloads = false
-    private let fontSizeSlider = NSSlider()
-    private let fontSizeLabel = NSTextField(labelWithString: "")
-    private let fontPopup = NSPopUpButton()
-    private let themePopup = NSPopUpButton()
-    private let layoutPopup = NSPopUpButton()
+    private let skipForwardPopup = NSPopUpButton()
+    private let skipBackwardPopup = NSPopUpButton()
+    private let remoteButtonsControl = NSSegmentedControl()
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
     private let diagnosticsButton = NSButton()
@@ -75,84 +73,178 @@ final class MacSettingsViewController: NSViewController {
         diagnosticsExpiryTask?.cancel()
     }
 
+    /// MAC-SETTINGS-TABS-LIKE-LINUX: sections follow the Linux client — Models,
+    /// Reader, Playback, Storage, Advanced, About — with the iPhone rows.
     private func configureControls() {
-        fontSizeSlider.minValue = 0
-        fontSizeSlider.maxValue = 4
-        fontSizeSlider.numberOfTickMarks = 5
-        fontSizeSlider.allowsTickMarkValuesOnly = true
-        fontSizeSlider.isContinuous = true
-        fontSizeSlider.target = self
-        fontSizeSlider.action = #selector(fontSizeChanged(_:))
-        ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
-        fontPopup.target = self
-        fontPopup.action = #selector(fontChanged(_:))
-        themePopup.addItems(withTitles: ReaderTheme.allCases.map(\.displayName))
-        themePopup.target = self
-        themePopup.action = #selector(themeChanged(_:))
-        layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
-        layoutPopup.target = self
-        layoutPopup.action = #selector(layoutChanged(_:))
         statusLabel.textColor = .readableSecondaryLabel
         storageLabel.textColor = .readableSecondaryLabel
+        let models = MacSettingsSections.disclosureRow(
+            title: L10n.string("models.title"), subtitle: L10n.string("settings.modelsSubtitle"),
+            symbol: "person.wave.2", identifier: "settings.speechModels.disclosure",
+            target: self, action: #selector(showVoiceModels))
+        let readingPreferences = MacSettingsSections.disclosureRow(
+            title: L10n.string("settings.readingPreferences"),
+            subtitle: L10n.string("settings.readingPreferencesSubtitle"), symbol: "textformat",
+            identifier: "settings.readingPreferences.disclosure",
+            target: self, action: #selector(showReadingPreferences))
+        let form = NSStackView(views: [
+            MacSettingsSections.card([models.row]),
+            MacSettingsSections.header(L10n.string("settings.reader")),
+            MacSettingsSections.card([readingPreferences.row] + readerToggleRows()),
+            MacSettingsSections.footer(L10n.string("settings.readerFooter")),
+            MacSettingsSections.header(L10n.string("settings.playback")),
+            MacSettingsSections.card(playbackRows()),
+            MacSettingsSections.footer(L10n.string("settings.playbackFooter")),
+            MacSettingsSections.header(L10n.string("settings.storage")),
+            MacSettingsSections.card(storageRows()),
+            MacSettingsSections.header(L10n.string("settings.advanced")),
+            MacSettingsSections.card(advancedRows()),
+            MacSettingsSections.header(L10n.string("settings.about")),
+            MacSettingsSections.card(aboutRows()),
+        ])
+        form.orientation = .vertical
+        form.alignment = .leading
+        form.spacing = 8
+        for view in form.arrangedSubviews {
+            view.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
+            if view is MacSettingsCard { form.setCustomSpacing(14, after: view) }
+        }
+        MacScrollableStack.install(form, in: view, maximumWidth: 680)
+    }
 
-        let clearButton = NSButton(title: L10n.string("settings.clearAllDownloads"),
-                                   target: self,
+    private func readerToggleRows() -> [NSView] {
+        let autoScroll = MacSettingsSections.switchControl(
+            isOn: settings.readerAutoScroll, label: L10n.string("settings.autoScroll"),
+            identifier: "settings.reader.autoScroll", target: self, action: #selector(autoScrollChanged(_:)))
+        let tracking = MacSettingsSections.switchControl(
+            isOn: settings.readerAudioTrackingEnabled, label: L10n.string("readerSettings.audioTracking"),
+            identifier: "settings.reader.audioTracking", target: self, action: #selector(audioTrackingChanged(_:)))
+        return [
+            MacSettingsSections.row(title: L10n.string("settings.autoScroll"), symbol: "arrow.down.to.line",
+                                    accessory: autoScroll),
+            MacSettingsSections.row(title: L10n.string("readerSettings.audioTracking"),
+                                    subtitle: L10n.string("readerSettings.audioTrackingDescription"),
+                                    symbol: "text.word.spacing", accessory: tracking),
+        ]
+    }
+
+    private func playbackRows() -> [NSView] {
+        let seconds = Self.skipIntervals.map { L10n.string("settings.seconds", $0) }
+        for (popup, key) in [(skipBackwardPopup, "settings.skipBackward"), (skipForwardPopup, "settings.skipForward")] {
+            popup.removeAllItems()
+            popup.addItems(withTitles: seconds)
+            popup.target = self
+            popup.action = #selector(skipIntervalChanged(_:))
+            popup.setAccessibilityLabel(L10n.string(key))
+            popup.setAccessibilityIdentifier(key)
+        }
+        remoteButtonsControl.segmentCount = RemoteButtonMode.allCases.count
+        for (index, mode) in RemoteButtonMode.allCases.enumerated() {
+            remoteButtonsControl.setLabel(mode.title, forSegment: index)
+        }
+        remoteButtonsControl.trackingMode = .selectOne
+        remoteButtonsControl.target = self
+        remoteButtonsControl.action = #selector(remoteButtonsChanged(_:))
+        remoteButtonsControl.setAccessibilityLabel(L10n.string("settings.remoteButtons"))
+        remoteButtonsControl.setAccessibilityIdentifier("settings.remoteButtons")
+        let remote = NSStackView(views: [
+            MacSettingsSections.row(title: L10n.string("settings.remoteButtons"), symbol: "car"),
+            remoteButtonsControl,
+        ])
+        remote.orientation = .vertical
+        remote.alignment = .centerX
+        remote.spacing = 4
+        remote.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 10, right: 0)
+        remote.arrangedSubviews[0].widthAnchor.constraint(equalTo: remote.widthAnchor).isActive = true
+        return [
+            MacSettingsSections.row(title: L10n.string("settings.skipBackward"), symbol: "gobackward",
+                                    accessory: skipBackwardPopup),
+            MacSettingsSections.row(title: L10n.string("settings.skipForward"), symbol: "goforward",
+                                    accessory: skipForwardPopup),
+            remote,
+        ]
+    }
+
+    private func storageRows() -> [NSView] {
+        let refreshButton = NSButton(title: L10n.string("settings.refreshStorage"), target: self,
+                                     action: #selector(refreshStorage))
+        refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
+        let clearButton = NSButton(title: L10n.string("settings.clearAllDownloads"), target: self,
                                    action: #selector(clearDownloads))
-        let refreshButton = NSButton(title: L10n.string("settings.refreshStorage"),
-                                     target: self,
-                                   action: #selector(refreshStorage))
+        clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
+        return [
+            MacSettingsSections.row(title: L10n.string("settings.storageUsage"), symbol: "internaldrive",
+                                    accessory: storageLabel),
+            MacSettingsSections.row(title: L10n.string("settings.refreshStorage"), symbol: "arrow.clockwise",
+                                    accessory: refreshButton),
+            MacSettingsSections.row(title: L10n.string("settings.clearAllDownloads"), symbol: "trash",
+                                    accessory: clearButton),
+        ]
+    }
+
+    private func advancedRows() -> [NSView] {
         let exportDiagnosticsButton = NSButton(
             title: L10n.string("settings.exportPerformanceDiagnostics"),
             target: self,
             action: #selector(exportPerformanceDiagnostics)
         )
+        exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
         diagnosticsButton.target = self
         diagnosticsButton.action = #selector(toggleStreamingDiagnostics)
         diagnosticsButton.setAccessibilityIdentifier("settings.recordStreamingDiagnostics")
         diagnosticsLabel.setAccessibilityIdentifier("settings.streamingDiagnosticsStatus")
-        fontSizeSlider.setAccessibilityLabel(L10n.string("settings.fontSize"))
-        fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
-        themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
-        layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
-        clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
-        refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
-        exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
-        func row(_ label: String, _ control: NSView) -> [NSView] {
-            let title = NSTextField(wrappingLabelWithString: label)
-            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            return [title, control]
-        }
-        let sizeControl = NSStackView(views: [fontSizeSlider, fontSizeLabel])
-        sizeControl.spacing = 8
-        sizeControl.alignment = .centerY
-        let modelsButton = NSButton(title: L10n.string("models.title"), target: self,
-                                   action: #selector(showVoiceModels))
-        modelsButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
-        let rows = [
-            row(L10n.string("settings.embeddedServer"), statusLabel),
-            row(L10n.string("models.title"), modelsButton),
-            row(L10n.string("settings.fontSize"), sizeControl),
-            row(L10n.string("settings.font"), fontPopup),
-            row(L10n.string("settings.theme"), themePopup),
-            row(L10n.string("settings.layout"), layoutPopup),
-            row(L10n.string("settings.storageUsage"), storageLabel),
+        let diagnostics = NSStackView(views: [exportDiagnosticsButton, diagnosticsButton, diagnosticsLabel])
+        diagnostics.orientation = .vertical
+        diagnostics.alignment = .leading
+        diagnostics.spacing = 8
+        diagnostics.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        diagnosticsLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        diagnosticsLabel.widthAnchor.constraint(lessThanOrEqualTo: diagnostics.widthAnchor,
+                                                constant: -32).isActive = true
+        return [diagnostics]
+    }
+
+    private func aboutRows() -> [NSView] {
+        let platform = NSTextField(labelWithString: "macOS")
+        platform.textColor = .readableSecondaryLabel
+        platform.setAccessibilityIdentifier("settings.platform")
+        return [
+            MacSettingsSections.row(title: L10n.string("settings.platform"), symbol: "info.circle",
+                                    accessory: platform),
+            MacSettingsSections.row(title: L10n.string("settings.embeddedServer"), symbol: "cpu",
+                                    accessory: statusLabel),
         ]
-        let grid = NSGridView(views: rows)
-        grid.rowSpacing = 10
-        grid.columnSpacing = 12
-        grid.yPlacement = .center
-        grid.column(at: 0).width = 180
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .leading
-        let form = NSStackView(views: [grid, refreshButton, exportDiagnosticsButton,
-                                      diagnosticsButton, diagnosticsLabel, clearButton])
-        form.orientation = .vertical
-        form.alignment = .leading
-        form.spacing = 16
-        form.translatesAutoresizingMaskIntoConstraints = false
-        grid.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
-        diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
-        MacScrollableStack.install(form, in: view)
+    }
+
+    private static let skipIntervals = [15, 30, 45, 60]
+
+    @objc private func showReadingPreferences() {
+        guard voiceModelDestination == nil, children.isEmpty else { return }
+        pushDetail(MacReadingPreferencesViewController(settings: settings)) { [weak self] in self?.refresh() }
+    }
+
+    @objc private func autoScrollChanged(_ sender: NSSwitch) {
+        settings.readerAutoScroll = sender.state == .on
+    }
+
+    @objc private func audioTrackingChanged(_ sender: NSSwitch) {
+        settings.readerAudioTrackingEnabled = sender.state == .on
+    }
+
+    @objc private func skipIntervalChanged(_ sender: NSPopUpButton) {
+        guard Self.skipIntervals.indices.contains(sender.indexOfSelectedItem) else { return }
+        let value = Double(Self.skipIntervals[sender.indexOfSelectedItem])
+        if sender === skipForwardPopup {
+            settings.playbackForwardSeconds = value
+        } else {
+            settings.playbackBackwardSeconds = value
+        }
+        PlaybackSystemSession.refreshSkipIntervals()
+    }
+
+    @objc private func remoteButtonsChanged(_ sender: NSSegmentedControl) {
+        guard RemoteButtonMode.allCases.indices.contains(sender.selectedSegment) else { return }
+        settings.remoteButtonMode = RemoteButtonMode.allCases[sender.selectedSegment]
     }
 
     @objc private func showVoiceModels() {
@@ -184,13 +276,9 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func refresh() {
-        fontSizeSlider.integerValue = settings.readerFontSize
-        fontSizeLabel.stringValue = PointPresetScale.label(Double(settings.readerPointSize))
-        ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
-        selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0,
-                   in: themePopup)
-        selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
-                   in: layoutPopup)
+        select(Self.skipIntervals.firstIndex(of: Int(settings.playbackBackwardSeconds)), in: skipBackwardPopup)
+        select(Self.skipIntervals.firstIndex(of: Int(settings.playbackForwardSeconds)), in: skipForwardPopup)
+        remoteButtonsControl.selectedSegment = RemoteButtonMode.allCases.firstIndex(of: settings.remoteButtonMode) ?? 0
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current())
     }
@@ -203,26 +291,8 @@ final class MacSettingsViewController: NSViewController {
         ByteCountFormatter.string(fromByteCount: usage.totalBytes, countStyle: .file)
     }
 
-    @objc private func fontSizeChanged(_ sender: NSSlider) {
-        settings.readerFontSize = sender.integerValue
-        fontSizeLabel.stringValue = L10n.string("settings.fontStep", sender.integerValue + 1, 5)
-    }
-
-    @objc private func fontChanged(_ sender: NSPopUpButton) {
-        guard let key = sender.selectedItem?.representedObject as? String, let family = ReaderFontFamily(rawValue: key) else { return }
-        settings.readerFontFamily = family
-    }
-
-    @objc private func themeChanged(_ sender: NSPopUpButton) {
-        settings.readerTheme = ReaderTheme.allCases[sender.indexOfSelectedItem]
-    }
-
-    @objc private func layoutChanged(_ sender: NSPopUpButton) {
-        settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
-    }
-
-    private func selectItem(at index: Int, in popup: NSPopUpButton) {
-        guard index >= 0, index < popup.numberOfItems else { return }
+    private func select(_ index: Int?, in popup: NSPopUpButton) {
+        guard let index, index < popup.numberOfItems else { return }
         popup.selectItem(at: index)
     }
 
