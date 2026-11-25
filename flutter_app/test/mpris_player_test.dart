@@ -49,6 +49,29 @@ void main() {
 
   tearDown(() => handler.dispose());
 
+  // Linux run 2026-11-25: with a book loaded but nothing queued yet, MPRIS Play logged
+  // "play ignored: no queued audio". The mini player starts the narration in that case; a car,
+  // headphones, media keys or the lock screen must do the same.
+  test('Play and PlayPause with nothing queued start the narration like the mini player', () async {
+    final empty = FakeAudioPlayerService();
+    final remote = BackgroundAudioHandler(empty);
+    addTearDown(remote.dispose);
+    var requests = 0;
+    remote.startNarration = () async => requests++;
+    final mpris = MprisPlayerObject(remote);
+    expect(await _call(mpris, 'Play'), isA<DBusMethodSuccessResponse>());
+    expect(requests, 1);
+    expect(await _call(mpris, 'PlayPause'), isA<DBusMethodSuccessResponse>());
+    expect(requests, 2);
+  });
+
+  test('Play with audio queued resumes it without a new request', () async {
+    var requests = 0;
+    handler.startNarration = () async => requests++;
+    await _call(object, 'Play');
+    expect(requests, 0);
+  });
+
   test('Next and Previous move between chapters', () async {
     expect(await _call(object, 'Next'), isA<DBusMethodSuccessResponse>());
     expect(player.currentIndexValue, 1);
