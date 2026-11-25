@@ -101,7 +101,10 @@ final class MacReaderTextPresentation {
                 let origin = self.contentScrollView.contentView.bounds.origin
                 self.applyCurrentReaderTheme()
                 self.showChapter(self.selectedChapter)
-                self.contentScrollView.contentView.scroll(to: origin)
+                // A new column count can shorten the document.
+                let maximumY = max(0, (self.contentScrollView.documentView?.frame.height ?? 0)
+                    - self.contentScrollView.contentView.bounds.height)
+                self.contentScrollView.contentView.scroll(to: NSPoint(x: origin.x, y: min(origin.y, maximumY)))
                 self.contentScrollView.reflectScrolledClipView(self.contentScrollView.contentView)
                 self.persistReadingProgress()
             }
@@ -154,7 +157,7 @@ final class MacReaderTextPresentation {
                 textView.font = ReaderFontCatalog.font(for: settings.readerOverrideFontFamily ? settings.readerFontFamily : .original, size: settings.readerPointSize)
                 textView.textColor = settings.readerColors.foreground
             }
-            MacReaderTextLayout.fit(textView, in: contentScrollView)
+            MacReaderTextLayout.fit(textView, in: contentScrollView, columns: settings.readerColumns)
             repaintSavedHighlights(index)
             // NSTextView's responder actions need not move this read-only
             // viewport. Commit its measured destination directly.
@@ -192,11 +195,13 @@ final class MacReaderTextPresentation {
         contentScrollView.layoutSubtreeIfNeeded()
         let clipView = contentScrollView.contentView
         let visibleBounds = clipView.bounds
-        let page = max(1, visibleBounds.height * 0.9)
+        // Column pages are exact viewport pages; one column keeps an overlap.
+        let columnar = (documentView as? NSTextView).map(MacReaderTextLayout.showsColumns) ?? false
+        let page = max(1, visibleBounds.height * (columnar ? 1 : 0.9))
         let maximumY = max(0, documentView.frame.height - visibleBounds.height)
         let atStart = visibleBounds.origin.y <= 1
         let atEnd: Bool
-        if let readerTextView = documentView as? NSTextView,
+        if !columnar, let readerTextView = documentView as? NSTextView,
            let container = readerTextView.textContainer,
            let layoutManager = readerTextView.layoutManager {
             layoutManager.ensureLayout(for: container)
@@ -270,13 +275,9 @@ final class MacReaderTextPresentation {
         if let chapter = chapter(at: selectedChapter) {
             var playbackFraction = clipView.bounds.origin.y / max(documentView.frame.height, 1)
             if let text = documentView as? NSTextView,
-               let manager = text.layoutManager, let container = text.textContainer,
                text.string.utf16.count > 0 {
-                var visible = clipView.documentVisibleRect
-                visible.origin.y -= text.textContainerInset.height
-                let glyphs = manager.glyphRange(forBoundingRect: visible, in: container)
-                if glyphs.length > 0 {
-                    playbackFraction = Double(manager.characterIndexForGlyph(at: glyphs.location))
+                if let visible = MacReaderTextLayout.characterRange(in: clipView.documentVisibleRect, of: text) {
+                    playbackFraction = Double(visible.location)
                         / Double(text.string.utf16.count)
                 }
             }
@@ -303,7 +304,7 @@ final class MacReaderTextPresentation {
             }
             self.view.layoutSubtreeIfNeeded()
             if self.contentScrollView.documentView === self.textView {
-                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView)
+                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView, columns: self.settings.readerColumns)
             }
             guard let documentView = self.contentScrollView.documentView else {
                 self.isRestoringInitialPosition = false

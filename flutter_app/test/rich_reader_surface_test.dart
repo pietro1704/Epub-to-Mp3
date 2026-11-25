@@ -203,6 +203,161 @@ void main() {
         reason: 'the start of the second paragraph, not the first');
   });
 
+  // Linux run 2026-11-25: in the default paginated layout a double-click or a drag on the
+  // text never selected it, so Play from here was unreachable with a mouse.
+  testWidgets('paginated layout: a single mouse click on the page centre toggles the chrome once the double-click window passes', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    const html = '<p>First paragraph is here.</p><p>Second paragraph follows now.</p>';
+    final offsets = <int>[];
+    var centerTaps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: text, html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onPlayFromHere: offsets.add,
+              onCenterTap: () => centerTaps++,
+              onNextChapter: () => false,
+              onPreviousChapter: () => false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final centre = tester.getRect(find.textContaining('Second', findRichText: true)).center;
+    await tester.tapAt(centre, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(centerTaps, 0, reason: 'waits to see whether it is a double-click');
+    await tester.pump(kDoubleTapTimeout);
+    expect(centerTaps, 1);
+  });
+
+  testWidgets('paginated layout: a desktop double-click selects and offers Play from here', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    const html = '<p>First paragraph is here.</p><p>Second paragraph follows now.</p>';
+    final offsets = <int>[];
+    var centerTaps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: text, html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onPlayFromHere: offsets.add,
+              onCenterTap: () => centerTaps++,
+              onNextChapter: () => false,
+              onPreviousChapter: () => false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Double-click a word of the second paragraph (it selects the word), then
+    // open the desktop context menu on it with a secondary click.
+    final second = tester.getRect(find.textContaining('Second', findRichText: true));
+    final word = second.center; // outside the page-turn edge zones
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      word,
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    expect(centerTaps, 0, reason: 'a double-click on text selects; it does not toggle the chrome');
+    expect(find.text('Play from here'), findsOneWidget);
+    await tester.tap(find.text('Play from here'));
+    await tester.pump();
+    expect(offsets, hasLength(1));
+    expect(offsets.single, greaterThanOrEqualTo(text.indexOf('Second')));
+    expect(offsets.single, lessThan(text.length),
+        reason: 'the clicked word of the second paragraph, not the first');
+  });
+
+  testWidgets('paginated layout: a mouse drag over the text does not turn the page (it is left to text selection)', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    const html = '<p>First paragraph is here.</p><p>Second paragraph follows now.</p>';
+    final offsets = <int>[];
+    var centerTaps = 0;
+    var chapterTurns = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: text, html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onPlayFromHere: offsets.add,
+              onCenterTap: () => centerTaps++,
+              onNextChapter: () {
+                chapterTurns++;
+                return false;
+              },
+              onPreviousChapter: () {
+                chapterTurns++;
+                return false;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final second = tester.getRect(find.textContaining('Second', findRichText: true));
+    final gesture = await tester.startGesture(second.center, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    for (var step = 1; step <= 6; step++) {
+      await gesture.moveTo(second.center + Offset(step * 20, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(chapterTurns, 0, reason: 'a mouse drag selects; it does not turn the page');
+    expect(centerTaps, 0);
+  });
+
   testWidgets('Play from here leaves selection mode: the selection is cleared and the action bar closes', (tester) async {
     SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
     final settings = MirrorAppSettings(await SharedPreferences.getInstance());

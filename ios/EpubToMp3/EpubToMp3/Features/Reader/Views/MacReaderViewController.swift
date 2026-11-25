@@ -140,7 +140,7 @@ final class MacReaderViewController: NSViewController {
         observeOpenStage("reader_view_did_layout_started")
         super.viewDidLayout()
         if contentScrollView.documentView === textView {
-            MacReaderTextLayout.fit(textView, in: contentScrollView)
+            MacReaderTextLayout.fit(textView, in: contentScrollView, columns: settings.readerColumns)
         }
         observeOpenStage("reader_view_did_layout_completed")
     }
