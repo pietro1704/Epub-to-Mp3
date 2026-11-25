@@ -187,6 +187,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
 
   void _showContents() {
     final t = AppLocalizations.of(context)!;
+    final rows = readerTocRows(widget.fulltext);
     _showPanel(
       Material(
         child: SafeArea(
@@ -202,15 +203,26 @@ extension _InstantReaderTools on _InstantReaderViewState {
               ),
               Expanded(
                 child: ListView.builder(
-                  itemCount: widget.fulltext.chapters.length,
-                  itemBuilder: (context, index) => ListTile(
-                    selected: index == _currentChapterIndex,
-                    title: Text(widget.fulltext.chapters[index].displayTitle),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _jumpToChapter(index);
-                    },
-                  ),
+                  itemCount: rows.length,
+                  itemBuilder: (context, position) {
+                    final row = rows[position];
+                    final index = row.chapterIndex;
+                    return ListTile(
+                      contentPadding: EdgeInsetsDirectional.only(
+                        start: 16.0 + 16 * row.level,
+                        end: 16,
+                      ),
+                      selected: index == _currentChapterIndex,
+                      enabled: index != null,
+                      title: Text(row.title),
+                      onTap: index == null
+                          ? null
+                          : () {
+                              Navigator.pop(context);
+                              _jumpToChapter(index);
+                            },
+                    );
+                  },
                 ),
               ),
             ],

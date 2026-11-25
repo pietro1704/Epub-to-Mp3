@@ -59,6 +59,26 @@ Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
       'footnotes': instance.footnotes,
     };
 
+_FulltextTocEntry _$FulltextTocEntryFromJson(Map<String, dynamic> json) =>
+    _FulltextTocEntry(
+      title: json['title'] as String,
+      level: (json['level'] as num?)?.toInt() ?? 1,
+      chapterIndex: (json['chapterIndex'] as num?)?.toInt(),
+      children:
+          (json['children'] as List<dynamic>?)
+              ?.map((e) => FulltextTocEntry.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <FulltextTocEntry>[],
+    );
+
+Map<String, dynamic> _$FulltextTocEntryToJson(_FulltextTocEntry instance) =>
+    <String, dynamic>{
+      'title': instance.title,
+      'level': instance.level,
+      'chapterIndex': instance.chapterIndex,
+      'children': instance.children,
+    };
+
 _EbookFulltext _$EbookFulltextFromJson(Map<String, dynamic> json) =>
     _EbookFulltext(
       jobId: json['jobId'] as String,
@@ -67,6 +87,11 @@ _EbookFulltext _$EbookFulltextFromJson(Map<String, dynamic> json) =>
       chapters: (json['chapters'] as List<dynamic>)
           .map((e) => FulltextChapter.fromJson(e as Map<String, dynamic>))
           .toList(),
+      toc:
+          (json['toc'] as List<dynamic>?)
+              ?.map((e) => FulltextTocEntry.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <FulltextTocEntry>[],
     );
 
 Map<String, dynamic> _$EbookFulltextToJson(_EbookFulltext instance) =>
@@ -75,4 +100,5 @@ Map<String, dynamic> _$EbookFulltextToJson(_EbookFulltext instance) =>
       'bookTitle': instance.bookTitle,
       'bookAuthor': instance.bookAuthor,
       'chapters': instance.chapters,
+      'toc': instance.toc,
     };
