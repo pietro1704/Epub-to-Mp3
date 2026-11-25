@@ -83,6 +83,15 @@ final class FullPlayerContentsTests: XCTestCase {
         XCTAssertEqual(row.selectionStyle, .none)
         XCTAssertNil(contents.tableView(contents.tableView, willSelectRowAt: unconverted))
         XCTAssertEqual(row.accessoryView?.accessibilityLabel, L10n.string("player.downloadChapter"))
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        window.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "toc-player-contents"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         contents.tableView(contents.tableView, didSelectRowAt: unconverted)
 
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
