@@ -140,6 +140,20 @@ abstract class FulltextChapter with _$FulltextChapter {
   }
 }
 
+/// One nav/NCX entry; [chapterIndex] is the 1-based position in `chapters`.
+@freezed
+abstract class FulltextTocEntry with _$FulltextTocEntry {
+  const factory FulltextTocEntry({
+    required String title,
+    @Default(1) int level,
+    int? chapterIndex,
+    @Default(<FulltextTocEntry>[]) List<FulltextTocEntry> children,
+  }) = _FulltextTocEntry;
+
+  factory FulltextTocEntry.fromJson(Map<String, dynamic> json) =>
+      _$FulltextTocEntryFromJson(json);
+}
+
 @freezed
 abstract class EbookFulltext with _$EbookFulltext {
   const factory EbookFulltext({
@@ -147,6 +161,9 @@ abstract class EbookFulltext with _$EbookFulltext {
     String? bookTitle,
     String? bookAuthor,
     required List<FulltextChapter> chapters,
+
+    /// The book's own contents list (nav/NCX); empty when the book has none.
+    @Default(<FulltextTocEntry>[]) List<FulltextTocEntry> toc,
   }) = _EbookFulltext;
 
   factory EbookFulltext.fromJson(Map<String, dynamic> json) =>

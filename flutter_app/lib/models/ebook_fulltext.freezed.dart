@@ -1626,11 +1626,447 @@ class __$FulltextChapterCopyWithImpl<$Res>
 }
 
 /// @nodoc
+mixin _$FulltextTocEntry {
+  String get title;
+  int get level;
+  int? get chapterIndex;
+  List<FulltextTocEntry> get children;
+
+  /// Create a copy of FulltextTocEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  $FulltextTocEntryCopyWith<FulltextTocEntry> get copyWith =>
+      _$FulltextTocEntryCopyWithImpl<FulltextTocEntry>(
+        this as FulltextTocEntry,
+        _$identity,
+      );
+
+  /// Serializes this FulltextTocEntry to a JSON map.
+  Map<String, dynamic> toJson();
+
+  @override
+  bool operator ==(Object other) {
+    final _this = this as FulltextTocEntry;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is FulltextTocEntry &&
+            (identical(other.title, _this.title) ||
+                other.title == _this.title) &&
+            (identical(other.level, _this.level) ||
+                other.level == _this.level) &&
+            (identical(other.chapterIndex, _this.chapterIndex) ||
+                other.chapterIndex == _this.chapterIndex) &&
+            const DeepCollectionEquality().equals(
+              other.children,
+              _this.children,
+            ));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    final _this = this as FulltextTocEntry;
+    return Object.hash(
+      runtimeType,
+      _this.title,
+      _this.level,
+      _this.chapterIndex,
+      const DeepCollectionEquality().hash(_this.children),
+    );
+  }
+
+  @override
+  String toString() {
+    final _this = this as FulltextTocEntry;
+    return 'FulltextTocEntry(title: ${_this.title}, level: ${_this.level}, chapterIndex: ${_this.chapterIndex}, children: ${_this.children})';
+  }
+}
+
+/// @nodoc
+abstract mixin class $FulltextTocEntryCopyWith<$Res> {
+  factory $FulltextTocEntryCopyWith(
+    FulltextTocEntry value,
+    $Res Function(FulltextTocEntry) _then,
+  ) = _$FulltextTocEntryCopyWithImpl;
+  @useResult
+  $Res call({
+    String title,
+    int level,
+    int? chapterIndex,
+    List<FulltextTocEntry> children,
+  });
+}
+
+/// @nodoc
+class _$FulltextTocEntryCopyWithImpl<$Res>
+    implements $FulltextTocEntryCopyWith<$Res> {
+  _$FulltextTocEntryCopyWithImpl(this._self, this._then);
+
+  final FulltextTocEntry _self;
+  final $Res Function(FulltextTocEntry) _then;
+
+  /// Create a copy of FulltextTocEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? title = null,
+    Object? level = null,
+    Object? chapterIndex = freezed,
+    Object? children = null,
+  }) {
+    return _then(
+      FulltextTocEntry(
+        title: null == title
+            ? _self.title
+            : title // ignore: cast_nullable_to_non_nullable
+                  as String,
+        level: null == level
+            ? _self.level
+            : level // ignore: cast_nullable_to_non_nullable
+                  as int,
+        chapterIndex: freezed == chapterIndex
+            ? _self.chapterIndex
+            : chapterIndex // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        children: null == children
+            ? _self.children
+            : children // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextTocEntry>,
+      ),
+    );
+  }
+}
+
+/// Adds pattern-matching-related methods to [FulltextTocEntry].
+extension FulltextTocEntryPatterns on FulltextTocEntry {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_FulltextTocEntry value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_FulltextTocEntry value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_FulltextTocEntry value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(
+      String title,
+      int level,
+      int? chapterIndex,
+      List<FulltextTocEntry> children,
+    )?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry() when $default != null:
+        return $default(
+          _that.title,
+          _that.level,
+          _that.chapterIndex,
+          _that.children,
+        );
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(
+      String title,
+      int level,
+      int? chapterIndex,
+      List<FulltextTocEntry> children,
+    )
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry():
+        return $default(
+          _that.title,
+          _that.level,
+          _that.chapterIndex,
+          _that.children,
+        );
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(
+      String title,
+      int level,
+      int? chapterIndex,
+      List<FulltextTocEntry> children,
+    )?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextTocEntry() when $default != null:
+        return $default(
+          _that.title,
+          _that.level,
+          _that.chapterIndex,
+          _that.children,
+        );
+      case _:
+        return null;
+    }
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _FulltextTocEntry implements FulltextTocEntry {
+  const _FulltextTocEntry({
+    required this.title,
+    this.level = 1,
+    this.chapterIndex,
+    List<FulltextTocEntry> children = const <FulltextTocEntry>[],
+  }) : _children = children;
+  factory _FulltextTocEntry.fromJson(Map<String, dynamic> json) =>
+      _$FulltextTocEntryFromJson(json);
+
+  @override
+  final String title;
+  @override
+  @JsonKey()
+  final int level;
+  @override
+  final int? chapterIndex;
+  final List<FulltextTocEntry> _children;
+  @override
+  @JsonKey()
+  List<FulltextTocEntry> get children {
+    if (_children is EqualUnmodifiableListView) return _children;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_children);
+  }
+
+  /// Create a copy of FulltextTocEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$FulltextTocEntryCopyWith<_FulltextTocEntry> get copyWith =>
+      __$FulltextTocEntryCopyWithImpl<_FulltextTocEntry>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$FulltextTocEntryToJson(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _FulltextTocEntry &&
+            (identical(other.title, title) || other.title == title) &&
+            (identical(other.level, level) || other.level == level) &&
+            (identical(other.chapterIndex, chapterIndex) ||
+                other.chapterIndex == chapterIndex) &&
+            const DeepCollectionEquality().equals(other.children, _children));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    return Object.hash(
+      runtimeType,
+      title,
+      level,
+      chapterIndex,
+      const DeepCollectionEquality().hash(_children),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'FulltextTocEntry(title: $title, level: $level, chapterIndex: $chapterIndex, children: $children)';
+  }
+}
+
+/// @nodoc
+abstract mixin class _$FulltextTocEntryCopyWith<$Res>
+    implements $FulltextTocEntryCopyWith<$Res> {
+  factory _$FulltextTocEntryCopyWith(
+    _FulltextTocEntry value,
+    $Res Function(_FulltextTocEntry) _then,
+  ) = __$FulltextTocEntryCopyWithImpl;
+  @override
+  @useResult
+  $Res call({
+    String title,
+    int level,
+    int? chapterIndex,
+    List<FulltextTocEntry> children,
+  });
+}
+
+/// @nodoc
+class __$FulltextTocEntryCopyWithImpl<$Res>
+    implements _$FulltextTocEntryCopyWith<$Res> {
+  __$FulltextTocEntryCopyWithImpl(this._self, this._then);
+
+  final _FulltextTocEntry _self;
+  final $Res Function(_FulltextTocEntry) _then;
+
+  /// Create a copy of FulltextTocEntry
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $Res call({
+    Object? title = null,
+    Object? level = null,
+    Object? chapterIndex = freezed,
+    Object? children = null,
+  }) {
+    return _then(
+      _FulltextTocEntry(
+        title: null == title
+            ? _self.title
+            : title // ignore: cast_nullable_to_non_nullable
+                  as String,
+        level: null == level
+            ? _self.level
+            : level // ignore: cast_nullable_to_non_nullable
+                  as int,
+        chapterIndex: freezed == chapterIndex
+            ? _self.chapterIndex
+            : chapterIndex // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        children: null == children
+            ? _self._children
+            : children // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextTocEntry>,
+      ),
+    );
+  }
+}
+
+/// @nodoc
 mixin _$EbookFulltext {
   String get jobId;
   String? get bookTitle;
   String? get bookAuthor;
   List<FulltextChapter> get chapters;
+
+  /// The book's own contents list (nav/NCX); empty when the book has none.
+  List<FulltextTocEntry> get toc;
 
   /// Create a copy of EbookFulltext
   /// with the given fields replaced by the non-null parameter values.
@@ -1660,7 +2096,8 @@ mixin _$EbookFulltext {
             const DeepCollectionEquality().equals(
               other.chapters,
               _this.chapters,
-            ));
+            ) &&
+            const DeepCollectionEquality().equals(other.toc, _this.toc));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1673,13 +2110,14 @@ mixin _$EbookFulltext {
       _this.bookTitle,
       _this.bookAuthor,
       const DeepCollectionEquality().hash(_this.chapters),
+      const DeepCollectionEquality().hash(_this.toc),
     );
   }
 
   @override
   String toString() {
     final _this = this as EbookFulltext;
-    return 'EbookFulltext(jobId: ${_this.jobId}, bookTitle: ${_this.bookTitle}, bookAuthor: ${_this.bookAuthor}, chapters: ${_this.chapters})';
+    return 'EbookFulltext(jobId: ${_this.jobId}, bookTitle: ${_this.bookTitle}, bookAuthor: ${_this.bookAuthor}, chapters: ${_this.chapters}, toc: ${_this.toc})';
   }
 }
 
@@ -1695,6 +2133,7 @@ abstract mixin class $EbookFulltextCopyWith<$Res> {
     String? bookTitle,
     String? bookAuthor,
     List<FulltextChapter> chapters,
+    List<FulltextTocEntry> toc,
   });
 }
 
@@ -1715,6 +2154,7 @@ class _$EbookFulltextCopyWithImpl<$Res>
     Object? bookTitle = freezed,
     Object? bookAuthor = freezed,
     Object? chapters = null,
+    Object? toc = null,
   }) {
     return _then(
       EbookFulltext(
@@ -1734,6 +2174,10 @@ class _$EbookFulltextCopyWithImpl<$Res>
             ? _self.chapters
             : chapters // ignore: cast_nullable_to_non_nullable
                   as List<FulltextChapter>,
+        toc: null == toc
+            ? _self.toc
+            : toc // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextTocEntry>,
       ),
     );
   }
@@ -1837,6 +2281,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookTitle,
       String? bookAuthor,
       List<FulltextChapter> chapters,
+      List<FulltextTocEntry> toc,
     )?
     $default, {
     required TResult orElse(),
@@ -1849,6 +2294,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookTitle,
           _that.bookAuthor,
           _that.chapters,
+          _that.toc,
         );
       case _:
         return orElse();
@@ -1875,6 +2321,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookTitle,
       String? bookAuthor,
       List<FulltextChapter> chapters,
+      List<FulltextTocEntry> toc,
     )
     $default,
   ) {
@@ -1886,6 +2333,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookTitle,
           _that.bookAuthor,
           _that.chapters,
+          _that.toc,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -1911,6 +2359,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookTitle,
       String? bookAuthor,
       List<FulltextChapter> chapters,
+      List<FulltextTocEntry> toc,
     )?
     $default,
   ) {
@@ -1922,6 +2371,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookTitle,
           _that.bookAuthor,
           _that.chapters,
+          _that.toc,
         );
       case _:
         return null;
@@ -1937,7 +2387,9 @@ class _EbookFulltext implements EbookFulltext {
     this.bookTitle,
     this.bookAuthor,
     required List<FulltextChapter> chapters,
-  }) : _chapters = chapters;
+    List<FulltextTocEntry> toc = const <FulltextTocEntry>[],
+  }) : _chapters = chapters,
+       _toc = toc;
   factory _EbookFulltext.fromJson(Map<String, dynamic> json) =>
       _$EbookFulltextFromJson(json);
 
@@ -1953,6 +2405,18 @@ class _EbookFulltext implements EbookFulltext {
     if (_chapters is EqualUnmodifiableListView) return _chapters;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(_chapters);
+  }
+
+  /// The book's own contents list (nav/NCX); empty when the book has none.
+  final List<FulltextTocEntry> _toc;
+
+  /// The book's own contents list (nav/NCX); empty when the book has none.
+  @override
+  @JsonKey()
+  List<FulltextTocEntry> get toc {
+    if (_toc is EqualUnmodifiableListView) return _toc;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_toc);
   }
 
   /// Create a copy of EbookFulltext
@@ -1978,7 +2442,8 @@ class _EbookFulltext implements EbookFulltext {
                 other.bookTitle == bookTitle) &&
             (identical(other.bookAuthor, bookAuthor) ||
                 other.bookAuthor == bookAuthor) &&
-            const DeepCollectionEquality().equals(other.chapters, _chapters));
+            const DeepCollectionEquality().equals(other.chapters, _chapters) &&
+            const DeepCollectionEquality().equals(other.toc, _toc));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1990,12 +2455,13 @@ class _EbookFulltext implements EbookFulltext {
       bookTitle,
       bookAuthor,
       const DeepCollectionEquality().hash(_chapters),
+      const DeepCollectionEquality().hash(_toc),
     );
   }
 
   @override
   String toString() {
-    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters)';
+    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters, toc: $toc)';
   }
 }
 
@@ -2013,6 +2479,7 @@ abstract mixin class _$EbookFulltextCopyWith<$Res>
     String? bookTitle,
     String? bookAuthor,
     List<FulltextChapter> chapters,
+    List<FulltextTocEntry> toc,
   });
 }
 
@@ -2033,6 +2500,7 @@ class __$EbookFulltextCopyWithImpl<$Res>
     Object? bookTitle = freezed,
     Object? bookAuthor = freezed,
     Object? chapters = null,
+    Object? toc = null,
   }) {
     return _then(
       _EbookFulltext(
@@ -2052,6 +2520,10 @@ class __$EbookFulltextCopyWithImpl<$Res>
             ? _self._chapters
             : chapters // ignore: cast_nullable_to_non_nullable
                   as List<FulltextChapter>,
+        toc: null == toc
+            ? _self._toc
+            : toc // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextTocEntry>,
       ),
     );
   }
