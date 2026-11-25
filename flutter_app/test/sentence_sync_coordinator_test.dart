@@ -186,5 +186,38 @@ void main() {
       expect(engine.spans, same(spans),
           reason: 'identical engine must keep the load skipped');
     });
+
+    // Linux run 2026-11-25 (synthetic EPUB): Play from here on the fifth paragraph played that
+    // paragraph, but the highlight walked the chapter from its first sentence. The audio of a
+    // listening started inside the chapter covers only the text from its offset (iOS
+    // ReaderPlaybackLocation uses ChapterProgress.textOffset the same way).
+    test('audio that starts inside the chapter highlights from its start offset', () {
+      const text = 'One alpha. Two beta. Three gamma. Four delta.';
+      final book = EbookFulltext(
+        jobId: 'j',
+        bookTitle: 'Synthetic',
+        bookAuthor: null,
+        chapters: [FulltextChapter(index: 0, name: 'Ch', text: text)],
+      );
+      final engine = SyncEngine();
+      SentenceSyncCoordinator(engine).loadIfChanged(
+        fulltext: book,
+        playableChapters: [
+          ChapterProgress(
+            index: 0,
+            status: 'completed',
+            downloadUrl: 'a',
+            durationSeconds: 10,
+            textOffset: text.indexOf('Three'),
+          ),
+        ],
+        playableIndex: 0,
+      );
+
+      final first = engine.spans.firstWhere((s) => s.id == engine.update(0));
+      expect(first.text.trim(), 'Three gamma.');
+      final last = engine.spans.firstWhere((s) => s.id == engine.update(9.9));
+      expect(last.text.trim(), 'Four delta.');
+    });
   });
 }
