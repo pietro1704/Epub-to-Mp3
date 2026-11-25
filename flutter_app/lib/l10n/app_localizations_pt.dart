@@ -807,4 +807,50 @@ class AppLocalizationsPt extends AppLocalizations {
   String bookLanguagesMissingModels(String languages) {
     return 'Este livro também tem trechos em $languages. Não há voz instalada para eles, então serão lidos com a voz principal.';
   }
+
+  @override
+  String get convertChooseFile => 'Escolher EPUB ou PDF';
+
+  @override
+  String get convertEngine => 'Mecanismo';
+
+  @override
+  String get convertVoice => 'Voz';
+
+  @override
+  String get convertLanguage => 'Idioma';
+
+  @override
+  String get convertLanguagePortuguese => 'Português';
+
+  @override
+  String get convertLanguageEnglish => 'Inglês';
+
+  @override
+  String get convertLanguageSpanish => 'Espanhol';
+
+  @override
+  String get convertChapterRange => 'Intervalo de capítulos';
+
+  @override
+  String get convertChapterFrom => 'De';
+
+  @override
+  String get convertChapterTo => 'Até';
+
+  @override
+  String get convertOptions => 'Opções';
+
+  @override
+  String get convertOptionsManagedLocally =>
+      'As opções de capa e de processamento de áudio são definidas pelo conversor local.';
+
+  @override
+  String get convertIncludeCover => 'Incluir capa';
+
+  @override
+  String get convertNormalizeAudio => 'Normalizar áudio';
+
+  @override
+  String get convertStart => 'Iniciar conversão';
 }

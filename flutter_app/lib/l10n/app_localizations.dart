@@ -1521,6 +1521,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This book also has passages in {languages}. No voice is installed for them, so they are read with the main voice.'**
   String bookLanguagesMissingModels(String languages);
+
+  /// No description provided for @convertChooseFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose EPUB or PDF'**
+  String get convertChooseFile;
+
+  /// No description provided for @convertEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine'**
+  String get convertEngine;
+
+  /// No description provided for @convertVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice'**
+  String get convertVoice;
+
+  /// No description provided for @convertLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get convertLanguage;
+
+  /// No description provided for @convertLanguagePortuguese.
+  ///
+  /// In en, this message translates to:
+  /// **'Portuguese'**
+  String get convertLanguagePortuguese;
+
+  /// No description provided for @convertLanguageEnglish.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get convertLanguageEnglish;
+
+  /// No description provided for @convertLanguageSpanish.
+  ///
+  /// In en, this message translates to:
+  /// **'Spanish'**
+  String get convertLanguageSpanish;
+
+  /// No description provided for @convertChapterRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter range'**
+  String get convertChapterRange;
+
+  /// No description provided for @convertChapterFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get convertChapterFrom;
+
+  /// No description provided for @convertChapterTo.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get convertChapterTo;
+
+  /// No description provided for @convertOptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Options'**
+  String get convertOptions;
+
+  /// No description provided for @convertOptionsManagedLocally.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover and audio processing options are managed by the local converter.'**
+  String get convertOptionsManagedLocally;
+
+  /// No description provided for @convertIncludeCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Include cover'**
+  String get convertIncludeCover;
+
+  /// No description provided for @convertNormalizeAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Normalize audio'**
+  String get convertNormalizeAudio;
+
+  /// No description provided for @convertStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start conversion'**
+  String get convertStart;
 }
 
 class _AppLocalizationsDelegate

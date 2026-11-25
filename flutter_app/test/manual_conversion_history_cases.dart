@@ -38,11 +38,11 @@ void registerManualConversionHistoryCases() {
       );
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.text('Start conversion'),
+        find.text('Iniciar conversão'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(find.text('Start conversion'));
+      await tester.tap(find.text('Iniciar conversão'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('completed-rust-id'),

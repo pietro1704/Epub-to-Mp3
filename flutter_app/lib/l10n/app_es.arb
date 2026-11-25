@@ -275,5 +275,20 @@
   "modelsMissingBody": "Instala un modelo de narración para este idioma e inténtalo de nuevo.",
   "modelsMissingAction": "Abrir Modelos",
   "bookLanguagesMissingModels": "Este libro también tiene pasajes en {languages}. No hay voz instalada para ellos, así que se leerán con la voz principal.",
-  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}}
+  "@bookLanguagesMissingModels": {"placeholders": {"languages": {"type": "String"}}},
+  "convertChooseFile": "Elegir EPUB o PDF",
+  "convertEngine": "Motor",
+  "convertVoice": "Voz",
+  "convertLanguage": "Idioma",
+  "convertLanguagePortuguese": "Portugués",
+  "convertLanguageEnglish": "Inglés",
+  "convertLanguageSpanish": "Español",
+  "convertChapterRange": "Rango de capítulos",
+  "convertChapterFrom": "Desde",
+  "convertChapterTo": "Hasta",
+  "convertOptions": "Opciones",
+  "convertOptionsManagedLocally": "Las opciones de portada y de procesamiento de audio las define el conversor local.",
+  "convertIncludeCover": "Incluir portada",
+  "convertNormalizeAudio": "Normalizar audio",
+  "convertStart": "Iniciar conversión"
 }
