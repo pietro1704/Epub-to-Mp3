@@ -72,7 +72,9 @@ enum ReaderTextViewFactory {
         let textContainer = NSTextContainer(size: .zero)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(textContainer)
-        return ReaderSelectionTextView(frame: .zero, textContainer: textContainer)
+        let textView = ReaderSelectionTextView(frame: .zero, textContainer: textContainer)
+        layoutManager.hostTextView = textView
+        return textView
     }
 }
 

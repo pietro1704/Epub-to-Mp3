@@ -204,10 +204,27 @@ final class ReaderPlaybackLayoutManager: NSLayoutManager {
         draw(activeWordRange, alpha: 0.65, visible: glyphsToShow, origin: origin)
     }
 
+    /// The view that shows this layout. UIKit's TextKit 1 has no public way back from the layout manager to it.
+    weak var hostTextView: UITextView?
+
+    /// CONTRAST-AUDIT: the text under the highlight keeps WCAG AA in the reader's own theme colours.
+    func contrastSafeAlpha(_ preferred: CGFloat, at location: Int) -> CGFloat {
+        guard let textView = hostTextView else { return preferred }
+        let traits = textView.traitCollection
+        let text = (textStorage?.attribute(.foregroundColor, at: location, effectiveRange: nil) as? UIColor)
+            ?? textView.textColor ?? .label
+        let background = textView.backgroundColor ?? .systemBackground
+        func components(_ color: UIColor) -> WCAGContrast.RGB? { color.resolvedColor(with: traits).srgbComponents }
+        guard let text = components(text), let background = components(background),
+              let tint = components(.systemYellow) else { return preferred }
+        return CGFloat(ReaderHighlightContrast.alpha(preferred: Double(preferred), tint: tint, text: text, background: background))
+    }
+
     private func draw(_ characters: NSRange?, alpha: CGFloat, visible: NSRange, origin: CGPoint) {
         guard let characters, let length = textStorage?.length, NSMaxRange(characters) <= length else { return }
         let glyphs = NSIntersectionRange(glyphRange(forCharacterRange: characters, actualCharacterRange: nil), visible)
         guard glyphs.length > 0, let container = textContainer(forGlyphAt: glyphs.location, effectiveRange: nil) else { return }
+        let alpha = contrastSafeAlpha(alpha, at: characters.location)
         UIColor.systemYellow.withAlphaComponent(alpha).setFill()
         enumerateEnclosingRects(forGlyphRange: glyphs,
             withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
