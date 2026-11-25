@@ -1,7 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'fallback_chapter_name.dart';
 
-import 'ebook_fulltext.dart' show FulltextChapter;
 
 part 'job_snapshot.freezed.dart';
 part 'job_snapshot.g.dart';
@@ -29,7 +28,7 @@ abstract class ChapterProgress with _$ChapterProgress {
   String get displayTitle =>
       (name != null && name!.isNotEmpty)
           ? FallbackChapterName.localizedGenerated(name!) ??
-                FulltextChapter.cleanTitle(name!)
+                name!.trim()
           : FallbackChapterName.of(index + 1);
 
   bool get isCompleted =>
