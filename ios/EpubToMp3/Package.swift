@@ -77,6 +77,7 @@ let production = [
     "Features/Conversion/Services/ConverterFFIAdapter.swift",
     "Features/Conversion/Services/ConverterABISignatures.swift",
     "Features/Conversion/Services/LanguageModelContract.swift",
+    "Features/Conversion/Services/NarrationPlanContract.swift",
     "Features/Conversion/Services/ConverterLanguageModels.swift",
     "Features/Conversion/Services/EmbeddedConverterError.swift",
     "Features/Conversion/Services/ConverterModelCatalog.swift",

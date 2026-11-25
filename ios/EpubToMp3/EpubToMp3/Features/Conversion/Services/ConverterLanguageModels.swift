@@ -6,6 +6,7 @@ struct ConverterLanguageModels {
     var catalogLanguagesJSON: ConverterTtsCatalogLanguagesV1?
     var resolveJSON: ConverterTtsResolveLanguageModelV1?
     var bookLanguageJSON: ConverterBookLanguageV1?
+    var narrationPlanJSON: ConverterBookNarrationPlanV1?
     var freeString: ConverterStringFree = { _ in }
     var lastError: ConverterLastError = { nil }
 
@@ -31,6 +32,14 @@ struct ConverterLanguageModels {
         guard let read = bookLanguageJSON else { throw EmbeddedConverterError.artifactUnavailable }
         let data = try owned(url.path.withCString { read($0) })
         return try JSONDecoder().decode(BookLanguageAnalysis.self, from: data)
+    }
+
+    /// The narration plan of one book, from Rust's own book-language answer. Pure; never downloads.
+    func narrationPlan(bookLanguageJSON: Data, inputs: NarrationPlanInputs) throws -> NarrationPlan {
+        guard let plan = narrationPlanJSON else { throw EmbeddedConverterError.artifactUnavailable }
+        let text = String(decoding: try inputs.requestBody(bookLanguageJSON: bookLanguageJSON), as: UTF8.self)
+        let data = try owned(text.withCString { plan($0) })
+        return try JSONDecoder().decode(NarrationPlan.self, from: data)
     }
 
     private func owned(_ result: UnsafeMutablePointer<CChar>?) throws -> Data {
