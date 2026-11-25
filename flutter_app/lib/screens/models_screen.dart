@@ -54,6 +54,16 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             ref.read(languageModelChoicesProvider.notifier).choose(language, selection),
         savePreferences: (preferences) =>
             ref.read(settingsProvider.notifier).setTtsPreferences(preferences),
+        deviceLanguages: [
+          for (final l in ref.read(systemLocalesProvider)) l.languageCode.toLowerCase(),
+        ],
+        libraryLanguages: ref
+            .read(bookLanguageCacheProvider)
+            .knownPrimaryLanguages(
+              corrected: (id) => ref.read(bookLanguageCorrectionsProvider).decision(id).bookLanguage,
+            )
+            .values
+            .toList(),
       );
     } catch (_) {
       // The catalog is unavailable: the migration runs at a later visit.

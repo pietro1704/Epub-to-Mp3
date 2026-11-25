@@ -497,6 +497,26 @@ void main() {
     expect(saved.secondary?.engine, 'system');
   });
 
+  testWidgets('opening Models moves a system global primary to the device languages, once', (tester) async {
+    const preferences = TtsPreferences(primary: TtsSelection.system, policyVersion: 2);
+    final (_, prefs) = await _pump(
+      tester,
+      prefsData: {'ttsPreferences': jsonEncode(preferences.toJson())},
+    );
+    await _settle(tester);
+    final choices = _stored(prefs);
+    expect(choices.byLanguage, isNotEmpty);
+    expect(choices.byLanguage.values.every((s) => s.engine == 'system'), isTrue);
+    final saved = TtsPreferences.fromJson(
+      Map<String, dynamic>.from(jsonDecode(prefs.getString('ttsPreferences')!) as Map),
+    );
+    expect(saved.primary.representsSameRequest(TtsSelection.automaticPiper), isTrue);
+    await tester.pageBack();
+    await _settle(tester);
+    final tile = tester.widget<ListTile>(find.byKey(ValueKey('models-language-${choices.byLanguage.keys.first}')));
+    expect((tile.subtitle! as Text).data, 'System voice');
+  });
+
   testWidgets(
     'an unavailable converter shows a message instead of an empty screen',
     (tester) async {
