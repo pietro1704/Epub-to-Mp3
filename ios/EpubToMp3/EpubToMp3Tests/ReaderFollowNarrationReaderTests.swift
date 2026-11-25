@@ -21,8 +21,8 @@ final class ReaderFollowNarrationReaderTests: XCTestCase {
 
     /// The narration of `bookID` is playing at `textOffset` of the one-based `chapter`.
     private func narrate(_ player: AudioPlayer, bookID: String, chapter: Int = 1, textOffset: Int) throws {
-        UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        UserDefaults.standard.set(chapter - 1, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        player.location.defaults.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        player.location.readerChapter = chapter - 1
         player.services.navigation.rememberReaderPlaybackAnchor()
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
             {"jobId":"\(bookID)","state":"finished","chapterIndexBase":1,"chapterProgress":[
