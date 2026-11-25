@@ -8,9 +8,10 @@ import XCTest
 @MainActor
 final class BookLanguageSheetSnapshotTests: XCTestCase {
     func testRenderTheSheetWithDetectionAndConflict() async throws {
-        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
+        guard let directory = ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
             ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { throw XCTSkip("Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render") }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         let json = """
         {"declared":"en-US","confirmed":null,"languages":[],"samples_examined":1,"inconclusive_samples":0,\

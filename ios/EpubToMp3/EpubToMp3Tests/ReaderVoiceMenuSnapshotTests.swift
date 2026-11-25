@@ -8,9 +8,10 @@ import XCTest
 @MainActor
 final class ReaderVoiceMenuSnapshotTests: XCTestCase {
     func testRenderTheMenuOfABookWithItsOwnVoice() async throws {
-        let directory = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
+        guard let directory = ProcessInfo.processInfo.environment["EPUB2MP3_MODELS_SNAPSHOT_DIR"]
             ?? (try? String(contentsOfFile: "/tmp/epub2mp3-models-snapshot-dir", encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines), "Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { throw XCTSkip("Set EPUB2MP3_MODELS_SNAPSHOT_DIR to render") }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         let suite = "voice-menu-snapshot-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
