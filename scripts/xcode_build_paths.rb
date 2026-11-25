@@ -5,7 +5,8 @@ require "open3"
 # Read Xcode's existing workspace identity; never move, clean or create a cache.
 module XcodeBuildPaths
   ROOT = File.expand_path("..", __dir__)
-  DEVELOPER = "/Applications/Xcode-16.4.0.app/Contents/Developer"
+  DEVELOPER = "/Applications/Xcode-26.3.0.app/Contents/Developer"
+  # Hosted CI stays on 16.4: its prebuilt artifact receipts require that toolchain.
   HOSTED_DEVELOPER = "/Applications/Xcode_16.4.app/Contents/Developer"
   IPHONE_16E_DEVICE = '44B2CFBD-2193-5086-8E8D-BF7A2876C321'
   IPHONE_16E_DEVELOPER = '/Applications/Xcode-26.3.0.app/Contents/Developer'
@@ -16,7 +17,7 @@ module XcodeBuildPaths
       raise "Xcode 26.3 is required for the physical iPhone 16e at #{IPHONE_16E_DEVELOPER}"
     end
     [DEVELOPER, HOSTED_DEVELOPER].find { |path| directory.call(path) } ||
-      raise("Xcode 16.4 is required at #{DEVELOPER} or #{HOSTED_DEVELOPER}")
+      raise("Xcode 26.3 is required at #{DEVELOPER} (hosted CI: Xcode 16.4 at #{HOSTED_DEVELOPER})")
   end
 
   def self.device_app(environment: ENV)

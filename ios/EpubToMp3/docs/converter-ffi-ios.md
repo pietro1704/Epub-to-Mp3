@@ -89,11 +89,11 @@ lease, refusing a booted Simulator. `mise run converter-ffi:ios-packaging:test`
 exercises real artifact rejection and isolated signed bundling, without launching
 Simulator. These do not prove app startup or native UI behavior.
 
-Use Xcode 16.4 for Apple development, builds and tests through the guarded
+Use Xcode 26.3 for local Apple development, builds and tests through the guarded
 project tasks and their explicit
-`DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`. Preserve the
-global Xcode 26 Command Line Tools selection; it serves terminal/Homebrew
-compatibility and does not select the app development toolchain.
+`DEVELOPER_DIR=/Applications/Xcode-26.3.0.app/Contents/Developer`. The hosted
+workflows keep Xcode 16.4 for the prebuilt packages and their receipts. Do not
+change the global Command Line Tools selection.
 
 Intel Simulator execution is quarantined. Do not launch a Simulator, reuse an
 old artifact to bypass the gate, or follow earlier smoke-test instructions.

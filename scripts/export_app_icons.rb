@@ -45,8 +45,8 @@ module AppIcons
   def self.render_apple
     require_relative 'native_job'
     require_relative 'xcode_build_paths'
-    # Legacy app tasks intentionally select Xcode 16.4; the composer is a
-    # separate installed producer and must not inherit that older selection.
+    # Hosted CI selects Xcode 16.4; the composer is a separate installed
+    # producer and must not inherit that older selection.
     developer = ENV['ICON_COMPOSER_DEVELOPER_DIR'] || XcodeBuildPaths::IPHONE_16E_DEVELOPER
     tool = File.expand_path('../Applications/Icon Composer.app/Contents/Executables/ictool', developer)
     raise 'Icon Composer is required from the installed Xcode 26.3' unless File.executable?(tool)

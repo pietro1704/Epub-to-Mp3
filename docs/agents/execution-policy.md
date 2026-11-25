@@ -143,9 +143,10 @@ the host. Without it, record the SE1 part as a question for Pietro and accept
 on macOS meanwhile. The Arch host, the Galaxy A8 and the Galaxy tablet (SM_X620)
 stay powered with the Mac. Use them freely for Android, tablet, Linux and
 Windows checks; adb reaches them from the Arch host outside ai-jail. Keep only the
-iOS 15.2 and 26.2 runtimes. macOS builds may retain Xcode 16.4 through
-`DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`; preserve that installed
-toolchain without changing the global selection.
+iOS 15.2 and 26.2 runtimes. Local macOS and iOS builds default to Xcode 26.3
+through `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`. Hosted CI stays on
+Xcode 16.4, which its prebuilt artifact receipts require. Preserve any installed
+Xcode 16.4 and do not change the global selection.
 
 The system Command Line Tools selection uses Xcode 26.3 for terminal and
 Homebrew compatibility. Preserve that selection. `DEVELOPER_DIR` overrides it

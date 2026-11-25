@@ -135,8 +135,8 @@ wrote an error result bundle and exited in under two seconds, and was reported
 as compiling for 22 minutes. The same
 command repeated later failed with `xcodebuild: error: Unable to find a
 destination`: `mise exec` replaces a `DEVELOPER_DIR` set in front of it with the
-Xcode 16.4 path. Select Xcode 26.3 for iOS with `IOS_DEVICE_ID`, as the
-execution policy says.
+path from `scripts/xcode_build_paths.rb` (Xcode 16.4 on that date). Since
+2026-11-24 that local default is Xcode 26.3, as the execution policy says.
 
 After the run, read the last lines of the recorder file. Reference readings on
 this host for one serial iOS `build-for-testing` (Xcode 26.3, `-jobs 1`, five
