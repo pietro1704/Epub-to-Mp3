@@ -21,7 +21,8 @@ pub unsafe extern "C" fn converter_session_open(path: *const c_char) -> *mut Con
                 session,
                 platform_tts: None,
             })),
-            Err(error) => fail(error.to_string()),
+            // The additive code lets clients explain an image-only PDF page.
+            Err(error) => fail(error.message_with_code()),
         }
     })
 }

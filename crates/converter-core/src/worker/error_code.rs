@@ -26,7 +26,8 @@ impl WorkerError {
             return "language_model_unavailable";
         }
         match self {
-            Self::BookInput(_) | Self::Epub(_) => "input_unreadable",
+            Self::BookInput(error) => book_input_code(error),
+            Self::Epub(_) => "input_unreadable",
             Self::Job(_) => "job_state",
             Self::Cache(_) => "storage",
             Self::Audio(_) => "audio_output",
@@ -56,6 +57,21 @@ impl WorkerError {
     /// The message followed by the additive error-code marker.
     pub fn message_with_code(&self) -> String {
         format!("{self} {ERROR_CODE_OPEN}{}{ERROR_CODE_CLOSE}", self.code())
+    }
+}
+
+/// The code of a book that could not be parsed, shared by worker failures and
+/// `EmbeddedConversionSession::open`, which Apple clients reach first.
+pub(crate) fn book_input_code(error: &crate::book_input::BookInputError) -> &'static str {
+    match error {
+        // A text-less page with drawn content (often an image cover) needs
+        // OCR; clients explain that instead of a generic unreadable input.
+        // The integration test `pdf_image_only_page_failure_carries_the_ocr_required_code`
+        // pins this to the real ingestion message.
+        crate::book_input::BookInputError::Pdf(
+            crate::ingestion::IngestionError::InvalidInput { message },
+        ) if message.contains("OCR is required") => "pdf_ocr_required",
+        _ => "input_unreadable",
     }
 }
 

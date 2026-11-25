@@ -101,3 +101,40 @@ fn pdf_ffi_failure_clears_on_next_valid_open_without_reusing_old_metadata() {
         assert_eq!(value["chapters"][2]["name"], "Page 1");
     }
 }
+
+/// PDF-COVER-BLOCKS-CONVERSION: Apple clients open the book through
+/// `converter_session_open`, so an image-only page must carry its error code
+/// there too, or the Converter falls back to the generic failure.
+#[test]
+fn pdf_ffi_open_of_an_image_only_page_carries_the_ocr_required_code() {
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("cover.pdf");
+    let source = pdf_fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
+        let image = objects.len() + 1;
+        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
+        objects[2] = objects[2].replace(
+            "/Resources <<",
+            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+        );
+        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
+        objects[3] = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+    });
+    std::fs::write(&input, source).unwrap();
+    let path = CString::new(input.to_str().unwrap()).unwrap();
+    unsafe {
+        assert!(converter_session_open(path.as_ptr()).is_null());
+        let error = converter_last_error();
+        assert!(!error.is_null());
+        let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+        converter_string_free(error);
+        assert!(message.contains("OCR is required"), "{message}");
+        assert!(
+            message.ends_with(" [[error_code_v1]]pdf_ocr_required[[/error_code_v1]]"),
+            "{message}"
+        );
+        assert_eq!(message.matches("[[error_code_v1]]").count(), 1, "{message}");
+    }
+}

@@ -330,6 +330,7 @@ pub(crate) use conversion_input_policy::persisted_request_path;
 mod conversion_schedule;
 mod edge_synthesis_execution;
 mod error_code;
+pub(crate) use error_code::book_input_code;
 pub use error_code::{ERROR_CODE_CLOSE, ERROR_CODE_OPEN};
 pub mod background_pacing;
 mod heading_pauses;

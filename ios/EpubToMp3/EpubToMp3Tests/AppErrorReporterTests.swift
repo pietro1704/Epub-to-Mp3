@@ -63,6 +63,25 @@ final class AppErrorReporterTests: XCTestCase {
                        L10n.string("error.conversionFailed"))
     }
 
+    /// PDF-COVER-BLOCKS-CONVERSION: an image-only page (often the cover) must
+    /// tell the listener why the PDF cannot be narrated, not the generic failure.
+    func testImageOnlyPDFPageShowsTheLocalizedOCRMessage() throws {
+        let reason = "PDF page 1 contains graphics without selectable text; OCR is required before narration "
+            + "[[error_code_v1]]pdf_ocr_required[[/error_code_v1]]"
+        let error = EmbeddedConverterError.conversionFailed(reason)
+        XCTAssertEqual(error.errorDescription, L10n.string("error.pdfOcrRequired"))
+        XCTAssertNotEqual(L10n.string("error.pdfOcrRequired"), "error.pdfOcrRequired")
+        let pipe = Pipe()
+        _ = AppErrorReporter.message(error, context: "Manual conversion", destination: pipe.fileHandleForWriting)
+        try pipe.fileHandleForWriting.close()
+        let diagnostic = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTAssertTrue(diagnostic.contains("PDF page 1"), "the technical reason stays in the log")
+        // Other unreadable input keeps the generic message.
+        XCTAssertEqual(EmbeddedConverterError.conversionFailed(
+            "bad pdf [[error_code_v1]]input_unreadable[[/error_code_v1]]").errorDescription,
+            L10n.string("error.conversionFailed"))
+    }
+
     func testEdgeWithoutOnlineConsentShowsALocalizedActionableMessage() throws {
         let reasons = [
             "unsupported input: Online Edge fallback requires explicit permission "

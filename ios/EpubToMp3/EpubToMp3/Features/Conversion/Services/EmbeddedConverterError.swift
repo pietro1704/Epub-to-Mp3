@@ -29,6 +29,9 @@ extension EmbeddedConverterError {
             }
             if EdgeConsentRequired.decode(self) != nil { return L10n.string("error.edgeConsentRequired") }
             if BookLanguageUncertain.decode(self) != nil { return L10n.string("error.bookLanguageUncertain") }
+            if reason.contains("[[error_code_v1]]pdf_ocr_required[[/error_code_v1]]") {
+                return L10n.string("error.pdfOcrRequired")
+            }
             if reason.contains("Language is unavailable") { return L10n.string("error.voiceLanguage") }
             if reason.contains("Unsupported TTS engine") { return L10n.string("error.unsupportedEngine") }
             if reason == L10n.string("convert.error.invalidChapterRange") { return reason }

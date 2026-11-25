@@ -74,6 +74,22 @@ pub enum EmbeddedConversionError {
     Conversion(#[from] WorkerError),
 }
 
+impl EmbeddedConversionError {
+    /// The message followed by the additive `[[error_code_v1]]` marker when the
+    /// failure has a stable code; a missing input file keeps its plain message.
+    pub fn message_with_code(&self) -> String {
+        match self {
+            Self::ReadInput { .. } => self.to_string(),
+            Self::ParseInput { source, .. } => {
+                use crate::worker::{ERROR_CODE_CLOSE, ERROR_CODE_OPEN};
+                let code = crate::worker::book_input_code(source);
+                format!("{self} {ERROR_CODE_OPEN}{code}{ERROR_CODE_CLOSE}")
+            }
+            Self::Conversion(error) => error.message_with_code(),
+        }
+    }
+}
+
 /// A local-file conversion session independent of HTTP or server types.
 #[derive(Debug, Clone)]
 pub struct EmbeddedConversionSession {
