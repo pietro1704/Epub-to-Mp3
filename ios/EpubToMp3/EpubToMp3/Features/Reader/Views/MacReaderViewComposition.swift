@@ -176,7 +176,7 @@ final class MacReaderViewComposition {
             statusLabel.topAnchor.constraint(equalTo: chapterTitleLabel.bottomAnchor, constant: 8),
             contentScrollView.leadingAnchor.constraint(equalTo: chapterTitleLabel.leadingAnchor),
             contentScrollView.trailingAnchor.constraint(equalTo: chapterTitleLabel.trailingAnchor),
-            contentScrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            contentScrollView.topAnchor.constraint(equalTo: chromeBackground.bottomAnchor),
             contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
         loading.configure(in: view, toolbar: toolbar, target: target, retryAction: actions.retryLoading)
