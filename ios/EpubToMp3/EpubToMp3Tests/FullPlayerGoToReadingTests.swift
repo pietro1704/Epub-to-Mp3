@@ -20,7 +20,7 @@ final class FullPlayerGoToReadingTests: XCTestCase {
             jobId: "job", state: "running", bookTitle: "Book", bookAuthor: nil, coverUrl: nil, coverMimeType: nil,
             engine: nil, voice: nil, language: nil, progressPercent: nil, chaptersTotal: 1, chaptersCompleted: nil,
             chapterProgress: [], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil))
-        let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
+        let controller = FullPlayerScreenController(player: player,
             library: LibraryStore(defaults: defaults, defaultsKey: "library.books.v1"), playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {})
         controller.loadViewIfNeeded()
