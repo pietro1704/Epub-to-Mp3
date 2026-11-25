@@ -372,6 +372,13 @@ class AudioPlayerService extends AudioPlayerInterface
   }
 
   @override
+  bool _isQueuedStreamDead(int playerIndex) {
+    if (playerIndex < 0 || playerIndex >= _player.sequence.length) return false;
+    final source = _player.sequence[playerIndex];
+    return source is GrowingChapterAudioSource && source.hasFailed;
+  }
+
+  @override
   Future<void> _waitForChapterSeek(int playerIndex) async {
     if (playerIndex < 0 || playerIndex >= _player.sequence.length) return;
     final source = _player.sequence[playerIndex];

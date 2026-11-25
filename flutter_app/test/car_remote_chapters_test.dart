@@ -125,6 +125,48 @@ void main() {
     expect(await ready, isTrue);
   });
 
+  test('previous to a chapter whose stream was cancelled synthesizes it again', () async {
+    // Linux MPRIS 2026-11-25: next to chapter 3 cancelled chapter 2's live stream, which stayed
+    // queued. Previous then opened the dead stream (proxy HTTP 500) and playback fell to index 0.
+    player.sourceChapterIndices = const [1, 2, 3];
+    final cancelled = GrowingChapterAudioSource('/request-2');
+    player.registerGrowingChapter(2, cancelled);
+    ChapterProgress running(int index, GrowingChapterAudioSource source) => ChapterProgress(
+      index: index,
+      name: 'Chapter $index',
+      status: 'running',
+      downloadUrl: Uri(scheme: 'growing', path: source.requestId).toString(),
+    );
+    await player.setQueue([_completed(1), running(2, cancelled), _completed(3)]);
+    await player.raw.load();
+    await player.seek(const Duration(seconds: 9), index: 2);
+    cancelled.fail(StateError('Chapter stream cancelled'));
+
+    final preparation = ChapterPreparation();
+    final restarted = GrowingChapterAudioSource('/request-2b');
+    final prepared = <(int, bool)>[];
+    player.onPrepareSourceChapter = (chapter, {required seekable}) {
+      prepared.add((chapter, seekable));
+      final ready = preparation.start(chapter, seekable: seekable);
+      unawaited(
+        Future<void>(() async {
+          player.registerGrowingChapter(chapter, restarted);
+          final queue = [_completed(1), running(chapter, restarted), _completed(3)];
+          await player.setQueue(queue);
+          preparation.queueUpdated(queue);
+        }),
+      );
+      return ready;
+    };
+
+    await handler.skipToPrevious();
+    await _eventually(
+      () => currentSource() == 2 && player.raw.sequence[player.currentIndexValue!] == restarted,
+      'previous did not reach a live chapter 2 (current: ${currentSource()}, prepared: $prepared)',
+    );
+    expect(prepared, [(2, false)]);
+  });
+
   test('previous from the middle of a chapter lands on the start of the previous chapter', () async {
     player.sourceChapterIndices = const [0, 1, 2];
     await player.setQueue([_completed(0), _completed(1), _completed(2)]);

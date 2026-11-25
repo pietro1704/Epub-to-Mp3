@@ -10,6 +10,9 @@ mixin _AudioPlayerNavigation on AudioPlayerInterface {
   /// The chapter's audio is still being synthesized, so it cannot be sought.
   bool _isChapterStillGrowing(int sourceChapter);
 
+  /// The queued item is a live stream whose synthesis was cancelled: opening it only fails.
+  bool _isQueuedStreamDead(int playerIndex);
+
   /// Repeated skip taps accumulate into one navigation instead of replacing
   /// each other; it runs once the taps pause.
   static const _skipAccumulationWindow = Duration(milliseconds: 250);
@@ -73,7 +76,9 @@ mixin _AudioPlayerNavigation on AudioPlayerInterface {
 
   int? _queuedIndex(int source) {
     for (var index = 0; index < _player.sequence.length; index++) {
-      if (_sourceAt(index) == source) return index;
+      if (_sourceAt(index) == source && !_isQueuedStreamDead(index)) {
+        return index;
+      }
     }
     return null;
   }
