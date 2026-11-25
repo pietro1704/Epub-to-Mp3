@@ -123,13 +123,18 @@ class RustPlaybackConversionService {
       if (!windowChanged.isCompleted) windowChanged.complete();
       await cancelActiveConversion();
     };
+    // Set once the job is loaded: whether a chapter still has no audio.
+    bool Function(int chapter) isPending = (_) => false;
     final subscription = playbackChapterChanges.listen(
       (index) {
         currentChapter = index;
         _currentChapter = index;
         schedule?.moveTo(index);
+        // A seek is served first (#1433): a later chapter in progress yields to
+        // an unconverted target and is converted again after it.
         if (activeNativeChapter != null &&
-            !permits(activeNativeChapter)) {
+            (!permits(activeNativeChapter) ||
+                (activeNativeChapter > index && isPending(index)))) {
           navigationEpoch++;
           unawaited(cancelActiveConversion());
         }
@@ -212,6 +217,8 @@ class RustPlaybackConversionService {
         }
       }
 
+      isPending = (index) => job.chapters
+          .any((chapter) => chapter.index == index && chapter.status == 'pending');
       while (isActive() && !streamClosed && !cancelledByOwner) {
         final nextWindowChange = windowChanged.future;
         final pending = coordinator.pendingChapterIndices(job);

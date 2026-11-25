@@ -186,4 +186,76 @@ void registerRustPlaybackWindowCases() {
       await root.delete(recursive: true);
     }
   });
+
+  // Mirror of Apple/Rust #1433 (STREAM-SEEK-PRIORITY): a seek back to an unconverted
+  // chapter is served first; the later chapter in progress yields and resumes after it.
+  test('seek back to an unconverted chapter preempts the later chapter in progress', () async {
+    final converter = _BlockingThreeConverter();
+    final changes = StreamController<int>.broadcast();
+    final coordinator = await _coordinator();
+    final root = await Directory.systemTemp.createTemp('rust-playback-seek-');
+    final convertedOne = Completer<void>();
+    final convertedThree = Completer<void>();
+    final jobFuture = RustPlaybackConversionService(
+      converter: converter,
+      coordinator: coordinator,
+      window: const PlaybackChapterWindow(chaptersAhead: 2),
+    ).convert(
+      bookId: 'book-seek',
+      jobId: 'listen-seek',
+      inputPath: '/book.epub',
+      outputDirectory: root.path,
+      chapters: _chapters(),
+      initialChapterIndex: 3,
+      playbackChapterChanges: changes.stream,
+      isActive: () => true,
+      onChapterCompleted: (chapter, outputPath, updatedJob) async {
+        if (chapter.index == 1) convertedOne.complete();
+        if (chapter.index == 3 && !convertedThree.isCompleted) convertedThree.complete();
+      },
+    );
+    try {
+      await converter.threeStarted.future.timeout(const Duration(seconds: 2));
+      changes.add(1);
+      await convertedOne.future.timeout(const Duration(seconds: 2));
+      expect(convertedThree.isCompleted, isFalse);
+      await convertedThree.future.timeout(const Duration(seconds: 2));
+      expect(converter.requested.indexOf(1), lessThan(converter.requested.lastIndexOf(3)));
+      await changes.close();
+      await jobFuture.timeout(const Duration(seconds: 2));
+    } finally {
+      await changes.close();
+      await root.delete(recursive: true);
+    }
+  });
+}
+
+class _BlockingThreeConverter extends FakeRustConverter
+    implements CancellableEmbeddedConverter {
+  final threeStarted = Completer<void>();
+  Completer<ConvertedChapterAudio>? _blocked;
+
+  @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+    String? optionsJson,
+  }) {
+    if (chapterIndex == 3 && !threeStarted.isCompleted) {
+      requested.add(chapterIndex);
+      threeStarted.complete();
+      return (_blocked = Completer<ConvertedChapterAudio>()).future;
+    }
+    return super.convertChapter(inputPath: inputPath, outputPath: outputPath,
+        chapterIndex: chapterIndex, optionsJson: optionsJson);
+  }
+
+  @override
+  Future<void> cancelConversion({String? inputPath, String? outputPath}) async {
+    final blocked = _blocked;
+    if (blocked != null && !blocked.isCompleted) {
+      blocked.completeError(EmbeddedConversionFailure('CANCELLED', 'Conversion cancelled'));
+    }
+  }
 }
