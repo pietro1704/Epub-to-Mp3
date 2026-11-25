@@ -81,6 +81,19 @@ final class GlobalVoiceMigrationTests: XCTestCase {
         XCTAssertEqual(preferences.secondaryTtsSelection, .systemDefault)
     }
 
+    /// A store that never ran either migration goes through both on one load.
+    func testLegacyEngineStoreRunsBothMigrations() throws {
+        let suite = "global-voice-migration-\(UUID().uuidString)"
+        suites.append(suite)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.set("system", forKey: SpeechPreferenceMigration.Key.legacyPrimaryEngine)
+        defaults.set("piper", forKey: SpeechPreferenceMigration.Key.legacySecondaryEngine)
+        let preferences = load(defaults)
+        XCTAssertEqual(preferences.languageModelChoices, ["pt": .systemDefault, "en": .systemDefault])
+        XCTAssertEqual(preferences.primaryTtsSelection, .defaultPiper)
+        XCTAssertEqual(preferences.secondaryTtsSelection, .systemDefault)
+    }
+
     func testMigrationRunsOnce() throws {
         let defaults = try seeded(primary: .defaultPiper)
         load(defaults).selectPrimaryNarration(.systemDefault)

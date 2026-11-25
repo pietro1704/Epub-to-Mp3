@@ -76,6 +76,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("edge", forKey: "audioEngine")
         defaults.set(true, forKey: "allowOnlineAudioFallback")   // without the consent Edge now moves to Piper
+        defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)  // v1 rules only
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.primaryTtsSelection, .edgeDefault)
         XCTAssertNil(settings.secondaryTtsSelection)
@@ -107,6 +108,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         defaults.set("system", forKey: "audioEngine")
         defaults.set("system", forKey: "secondaryAudioEngine")
 
+        defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)  // v1 rules only
         let settings = AppSettings(defaults: defaults)
 
         XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
