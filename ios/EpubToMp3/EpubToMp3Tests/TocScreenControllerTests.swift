@@ -4,6 +4,41 @@ import XCTest
 
 final class TocScreenControllerTests: XCTestCase {
     @MainActor
+    func testChapterSelectionPolicyLeavesItsDownloadAccessoryIndependent() throws {
+        var selected: [Int] = []
+        var downloads: [Int] = []
+        let rows = [
+            ReaderTocRow(title: "Missing audio", level: 0, chapterIndex: 1),
+            ReaderTocRow(title: "Playable audio", level: 0, chapterIndex: 4)
+        ]
+        let controller = TocScreenController(fulltext: nil, snapshot: snapshot(),
+            currentChapterIndex: -1, readingChapterIndex: nil,
+            onJump: { selected.append($0) }, onDownload: { downloads.append($0) },
+            onDownloadAll: nil, onCancelDownloads: nil, onClearDownloads: nil,
+            sourceRows: rows, downloadBookID: "selection-fixture",
+            canSelectChapter: { $0 == 4 })
+        controller.loadViewIfNeeded()
+        let table = try XCTUnwrap(controller.tableView)
+        let unavailable = IndexPath(row: 0, section: 0)
+        let playable = IndexPath(row: 1, section: 0)
+
+        XCTAssertNil(controller.tableView(table, willSelectRowAt: unavailable))
+        controller.tableView(table, didSelectRowAt: unavailable)
+        XCTAssertTrue(selected.isEmpty)
+        let cell = controller.tableView(table, cellForRowAt: unavailable)
+        XCTAssertEqual(cell.accessibilityValue, L10n.string("toc.textOnly"))
+        let download = try XCTUnwrap(cell.accessoryView as? UIButton)
+        XCTAssertEqual(download.accessibilityIdentifier, "reader.toc.download.1")
+        XCTAssertTrue(download.isEnabled)
+        download.sendActions(for: .touchUpInside)
+        XCTAssertEqual(downloads, [1])
+
+        XCTAssertEqual(controller.tableView(table, willSelectRowAt: playable), playable)
+        controller.tableView(table, didSelectRowAt: playable)
+        XCTAssertEqual(selected, [4])
+    }
+
+    @MainActor
     func testAvailableChapterUsesDirectDownloadAccessoryAction() {
         var requestedChapter: Int?
         let controller = TocScreenController(

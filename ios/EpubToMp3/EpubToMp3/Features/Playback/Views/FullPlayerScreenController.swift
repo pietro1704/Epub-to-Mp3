@@ -27,6 +27,7 @@ final class FullPlayerScreenController: UIViewController {
     private var renderedRate: PlaybackRate?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var contentsAvailability: AnyCancellable?
     private var isScrubbing = false
     private var currentBookID: String? {
         UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
@@ -335,14 +336,15 @@ final class FullPlayerScreenController: UIViewController {
         let owner = await RetainedAudioOwner.resolve(snapshot)
         guard player.snapshot?.jobId == snapshot.jobId, presentedViewController == nil,
               viewIfLoaded?.window != nil else { return }
+        let jobID = snapshot.jobId
         let playableChapters = snapshot.playableChapters
         let playingEpubIndex = playableChapters.indices.contains(player.currentChapterIndex)
             ? playableChapters[player.currentChapterIndex].index
             : -1
         let select: (Int) -> Void = { [weak self] index in
-            guard let self, self.player.snapshot?.jobId == snapshot.jobId,
-                  let playable = playableChapters.firstIndex(where: { $0.index == index }) else { return }
-            self.player.play(snapshot: snapshot, startingAt: playable)
+            guard let self, let current = self.player.snapshot, current.jobId == jobID,
+                  let playable = current.playableChapters.firstIndex(where: { $0.index == index }) else { return }
+            self.player.play(snapshot: current, startingAt: playable)
         }
         if let owner, owner.indexBase == 0, let bookID = currentBookID, owner.bookID == bookID,
            let book = library.books.first(where: { $0.id == bookID }) {
@@ -354,7 +356,22 @@ final class FullPlayerScreenController: UIViewController {
                     ReaderTocFlattener.rows(toc: fulltext.toc, chapters: fulltext.chapters), fulltext: fulltext)
                 let sheet = ReaderContentsPresentation.makeSheet(book: book, rows: rows, library: library,
                     settings: settings, snapshot: snapshot, playingIndex: playingEpubIndex,
-                    readingIndex: nil, onSelect: select)
+                    readingIndex: nil, canSelectChapter: { [weak self] index in
+                        guard let self, self.currentBookID == bookID,
+                              let current = self.player.snapshot, current.jobId == jobID else { return false }
+                        return current.playableChapters.contains { $0.index == index }
+                    }, onSelect: select)
+                contentsAvailability = player.$snapshot
+                    .map { current -> Set<Int> in
+                        guard let current, current.jobId == jobID else { return [] }
+                        return Set(current.playableChapters.map(\.index))
+                    }
+                    .removeDuplicates()
+                    .dropFirst()
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak sheet] _ in
+                        (sheet?.topViewController as? TocScreenController)?.tableView.reloadData()
+                    }
                 present(sheet, animated: true)
                 return
             }
