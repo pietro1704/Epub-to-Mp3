@@ -15,6 +15,32 @@ final class AppIsolationTests: XCTestCase {
         XCTAssertFalse(AppIsolation.isActive)
     }
 
+    /// An isolated launch sees an empty throwaway library, while iOS keeps the real files. That index must never
+    /// be used to decide which book data is orphaned.
+    @MainActor
+    func testIsolatedLaunchNeverPrunesBookDataAgainstItsThrowawayIndex() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("isolation-prune-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        AppIsolation.activate(temporaryDirectory: temporary, redirectHome: false)
+        let suite = "isolation-prune-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = LibraryStore(defaults: defaults)
+        XCTAssertTrue(library.hasLoadedSuccessfully)
+        let bookmarks = BookmarkStore(defaults: defaults, storageKey: "bookmarks")
+        bookmarks.addBookmark(bookId: "real-book", chapterIndex: 0, chapterTitle: "Chapter")
+        var pruned: [Set<String>] = []
+
+        EpubToMp3App.pruneLibraryOrphans(library: library, bookmarkStore: bookmarks) { validIDs in
+            pruned.append(validIDs)
+            return 0
+        }
+
+        XCTAssertEqual(pruned, [], "The parsed-text cache was pruned against the throwaway index")
+        XCTAssertEqual(bookmarks.bookmarks.map(\.bookId), ["real-book"])
+    }
+
     #if os(macOS)
     private func isUnder(_ url: URL, _ root: URL) -> Bool {
         url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/")

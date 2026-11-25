@@ -396,7 +396,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         bookmarkStore: BookmarkStore,
         pruneFulltext: (Set<String>) -> Int = { LocalFulltextCache.pruneOrphans(validBookIds: $0) }
     ) {
-        guard library.hasLoadedSuccessfully else { return }
+        // An isolated launch has a throwaway index, while iOS keeps the real book files.
+        guard !AppIsolation.isActive, library.hasLoadedSuccessfully else { return }
         let validBookIDs = Set(library.books.map(\.id))
         AppStartupTiming.shared.measure(.bookmarksPrune) {
             _ = bookmarkStore.pruneOrphans(validBookIds: validBookIDs)
