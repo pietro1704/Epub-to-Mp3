@@ -64,7 +64,11 @@ final class MacReaderLoadingPresentation {
             equalTo: loadingOverlay.widthAnchor,
             multiplier: 0.28
         )
-        preferredCoverWidth.priority = .defaultHigh
+        // Below .windowSizeStayPut: a preference this strong (it stays active
+        // while the overlay is hidden) made Auto Layout shrink the window until
+        // 28% of the reader width fit the 240 pt cap, so the reader never grew
+        // past ~1138 pt, even in full screen (MAC-WINDOW-ADAPT).
+        preferredCoverWidth.priority = .windowSizeStayPut - 1
         NSLayoutConstraint.activate([
             loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
