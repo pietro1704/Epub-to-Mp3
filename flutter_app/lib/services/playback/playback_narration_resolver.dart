@@ -269,6 +269,33 @@ Future<List<String>> missingProfileLanguages({
       bookId: bookId,
       path: bookPath,
     );
+    // Rust's plan already says which languages deserve a notice (significant ones without a
+    // voice); a converter without it, or a plan that fails, keeps the per-language check below.
+    if (converter is NarrationPlanCapable &&
+        (converter as NarrationPlanCapable).supportsNarrationPlan) {
+      try {
+        final plan = await (converter as NarrationPlanCapable).bookNarrationPlan(
+          NarrationPlanRequest(
+            analysis: analysis,
+            declared: analysis.declared,
+            userCorrection: correctedLanguage,
+            perLanguageChoices: choices.byLanguage,
+            primary: configured.primary.representsSameRequest(TtsSelection.automaticPiper)
+                ? null
+                : configured.primary,
+            allowOnlineFallback: configured.allowOnlineFallback,
+            allowAutomaticSystemVoiceFallback: configured.policyVersion == 2,
+            installedModelIds: (await installedModelIds()).toList()..sort(),
+            systemVoices: await systemVoices(),
+            platform: platform,
+            androidApi: androidApi,
+          ),
+        );
+        return [for (final notice in plan.notifyMissing) notice.language];
+      } on Object catch (error) {
+        debugPrint('Narration plan unavailable for the notice, checking by language: $error');
+      }
+    }
     final profile = analysis.profile;
     if (profile == null ||
         profile.classification == BookLanguageClass.monolingual) {
@@ -312,5 +339,43 @@ Future<List<String>> missingProfileLanguages({
     // The warning is an enhancement: never block listening because it failed.
     debugPrint('Missing language models check skipped: $error');
     return const [];
+  }
+}
+
+
+/// Which missing languages a book has already been told about: the notice shows once per book and
+/// language, not at every playback start. Stored as `bookId` to the notified base tags.
+class BookLanguageNotices {
+  BookLanguageNotices(this._prefs);
+
+  static const preferenceKey = 'bookLanguageNotices.v1';
+
+  final SharedPreferences _prefs;
+
+  Map<String, dynamic> _all() {
+    try {
+      final decoded = jsonDecode(_prefs.getString(preferenceKey) ?? '{}');
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : {};
+    } on FormatException {
+      return {};
+    }
+  }
+
+  /// The languages of [languages] this book has not been told about yet; they are marked told.
+  Future<List<String>> unseen(String bookId, List<String> languages) async {
+    final all = _all();
+    final told = {for (final tag in (all[bookId] as List? ?? const [])) '$tag'};
+    final fresh = [
+      for (final language in languages)
+        if (!told.contains(LanguageModelChoices.baseLanguage(language))) language,
+    ];
+    if (fresh.isNotEmpty) {
+      all[bookId] = [
+        ...told,
+        for (final language in fresh) LanguageModelChoices.baseLanguage(language),
+      ];
+      await _prefs.setString(preferenceKey, jsonEncode(all));
+    }
+    return fresh;
   }
 }
