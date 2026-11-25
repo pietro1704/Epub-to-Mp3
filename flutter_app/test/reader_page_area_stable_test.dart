@@ -3,12 +3,14 @@
 // the top bar's height and the text jumped).
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/models/app_settings.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/screens/library_screen.dart' show libraryStoreProvider;
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/instant_reader_view.dart';
 import 'package:flutter_app/views/mini_player_bar.dart';
+import 'package:flutter_app/views/reader_theme_colors.dart';
 import 'package:flutter_app/views/reader_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +68,44 @@ void main() {
     expect((tester.getTopLeft(area), tester.getSize(area)), shown);
   });
 
+  // A8: with the chrome hidden the strip left by the top bar showed the grey
+  // scaffold instead of the reader page colour.
+  testWidgets('the space of the hidden top bar keeps the reader background', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated', 'readerTheme': 'sepia'});
+    final prefs = await SharedPreferences.getInstance();
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(backgroundColor: const Color(0xFFF2F2F7), body: InstantReaderView(fulltext: _book())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final area = find.byType(ReaderView);
+    tester.widget<ReaderView>(area).onCenterTap!.call();
+    await tester.pumpAndSettle();
+
+    final hiddenBar = find.byWidgetPredicate((w) => w is Visibility && !w.visible && w.maintainSize);
+    expect(hiddenBar, findsOneWidget);
+    final strip = tester.getRect(hiddenBar);
+    final bg = ReaderThemeColors.background(ReaderTheme.sepia);
+    // A painted (not hidden) box in the reader colour must cover the strip.
+    final painted = find.byWidgetPredicate((w) => (w is ColoredBox && w.color == bg) || (w is Container && w.color == bg));
+    final covering = painted.evaluate().where((e) {
+      if (e.findAncestorWidgetOfExactType<Visibility>()?.visible == false) return false;
+      final box = e.renderObject! as RenderBox;
+      final rect = box.localToGlobal(Offset.zero) & box.size;
+      return rect.contains(strip.topLeft) && rect.contains(strip.bottomRight - const Offset(1, 1));
+    });
+    expect(covering, isNotEmpty, reason: 'the hidden bar strip shows the reader background, not the scaffold grey');
+  });
+
   testWidgets('hiding the chrome keeps the space of the mini player (root shell)', (tester) async {
     SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
     final prefs = await SharedPreferences.getInstance();
@@ -103,5 +143,9 @@ void main() {
       matching: find.byWidgetPredicate((w) => w is Visibility && !w.visible && w.maintainSize),
     );
     expect(reserved, findsOneWidget, reason: 'the mini player hides without giving its space to the page');
+    final settings = container.read(readerSettingsProvider(book.id));
+    final bg = ReaderThemeColors.background(settings.readerTheme, custom: settings.readerCustomColors);
+    final strip = find.ancestor(of: reserved, matching: find.byType(ColoredBox)).first;
+    expect(tester.widget<ColoredBox>(strip).color, bg, reason: 'the hidden mini player strip shows the reader background');
   });
 }

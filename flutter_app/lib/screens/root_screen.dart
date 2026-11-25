@@ -6,6 +6,7 @@ import '../design_system/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/providers.dart';
 import '../views/mini_player_bar.dart';
+import '../views/reader_theme_colors.dart';
 import 'library_screen.dart';
 import 'reader_tab.dart';
 import 'settings_screen.dart';
@@ -29,6 +30,10 @@ class RootScreen extends ConsumerWidget {
     final book = ref.watch(currentlyReadingBookIdProvider);
     final reader = destination == AppDestination.reader && book != null;
     final chromeVisible = !reader || ref.watch(readerChromeVisibleProvider);
+    final readerSettings = reader ? ref.watch(readerSettingsProvider(book)) : null;
+    final readerBackground = readerSettings == null
+        ? null
+        : ReaderThemeColors.background(readerSettings.readerTheme, custom: readerSettings.readerCustomColors);
     ref.watch(playbackResumePersistenceProvider);
     ref.watch(playbackRecencyProvider);
     ref.watch(backgroundPacingProvider);
@@ -65,12 +70,16 @@ class RootScreen extends ConsumerWidget {
         ),
         // Hidden with the reader chrome, but its space stays reserved so the
         // page area never moves or resizes.
-        Visibility(
-          visible: chromeVisible,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: const MiniPlayerBar(),
+        // The reserved space shows the page colour, not the scaffold.
+        ColoredBox(
+          color: chromeVisible ? Colors.transparent : readerBackground ?? Colors.transparent,
+          child: Visibility(
+            visible: chromeVisible,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: const MiniPlayerBar(),
+          ),
         ),
       ],
     );
