@@ -25,7 +25,7 @@ final class ReaderHtmlRenderingWiringTests: XCTestCase {
         let url = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: "cache-directory-contract"))
         XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "ReaderFulltext-v2")
         XCTAssertEqual(url.pathExtension, "plist")
-        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        let support = ApplicationSupportRoot.url()
         XCTAssertTrue(url.path.hasPrefix(support.path + "/"))
     }
 }

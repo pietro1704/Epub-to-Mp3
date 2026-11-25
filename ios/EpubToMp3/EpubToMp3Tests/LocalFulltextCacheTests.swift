@@ -355,12 +355,9 @@ final class LocalFulltextCacheTests: XCTestCase {
         defer { LocalFulltextCache.evict(bookId: id) }
 
         let url = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
-        let applicationSupport = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        )
+        // Under XCTest the shared root is a temporary folder; in the app it is
+        // Application Support (AppLaunchEnvironmentTests covers that branch).
+        let applicationSupport = ApplicationSupportRoot.url()
 
         XCTAssertTrue(
             url.standardizedFileURL.path.hasPrefix(applicationSupport.standardizedFileURL.path + "/"),

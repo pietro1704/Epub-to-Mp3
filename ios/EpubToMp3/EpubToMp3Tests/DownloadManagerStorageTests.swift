@@ -5,8 +5,7 @@ final class DownloadManagerStorageTests: XCTestCase {
     func testMacOSAudiobookCacheIsInsideApplicationSupport() {
         #if os(macOS)
         let root = AudiobookDownloadStorage.audiobooksRoot().standardizedFileURL.path
-        let applicationSupport = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let applicationSupport = ApplicationSupportRoot.url()
             .standardizedFileURL
             .path
         let documents = FileManager.default

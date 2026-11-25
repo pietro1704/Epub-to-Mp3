@@ -15,8 +15,7 @@ actor RustConversionOutputStore {
     }
     static let shared = RustConversionOutputStore()
     nonisolated static let willRemoveAudio = Notification.Name("epub2mp3.rustConversionWillRemoveAudio")
-    nonisolated static let defaultRoot = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    nonisolated static let defaultRoot = ApplicationSupportRoot.url()
         .resolvingSymlinksInPath()
         .appendingPathComponent("EpubToMp3/RustConversions", isDirectory: true)
 
