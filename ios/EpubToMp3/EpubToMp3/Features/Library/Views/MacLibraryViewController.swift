@@ -74,6 +74,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         bindStore()
         reload()
         view.setAccessibilityElement(false)
+        // Covers stored before the upright PDF renderer would otherwise stay
+        // mirrored until the book is opened again.
+        Task { [library] in await library.refreshLegacyPdfCovers() }
     }
 
     override func viewDidLayout() {

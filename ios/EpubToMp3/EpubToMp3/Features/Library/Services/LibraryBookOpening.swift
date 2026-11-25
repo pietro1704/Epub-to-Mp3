@@ -50,6 +50,20 @@ enum LibraryBookOpening {
                         refreshedCover: refreshCover(book, at: source))
     }
 
+    #if os(macOS)
+    /// Renders a current-revision cover for a legacy PDF in place: no copy into
+    /// the app library, no bookmark change. Nil when the entry is current, the
+    /// source is unavailable or rendering fails; a later attempt may retry.
+    static func refreshedLegacyCover(for book: BookEntity) -> Data? {
+        guard book.fileType == .pdf, !book.bookmark.isEmpty,
+              (book.pdfCoverVersion ?? 0) < PdfMetadataReader.coverVersion,
+              let source = try? LibraryBookmarkAccess.resolveBookBookmark(book.bookmark).url else { return nil }
+        let started = source.startAccessingSecurityScopedResource()
+        defer { if started { source.stopAccessingSecurityScopedResource() } }
+        return refreshCover(book, at: source)
+    }
+    #endif
+
     private static func refreshCover(_ book: BookEntity, at url: URL) -> Data? {
         #if os(macOS)
         guard book.fileType == .pdf,
