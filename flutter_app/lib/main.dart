@@ -199,6 +199,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
     });
     ref.watch(linuxMprisProvider);
     ref.watch(remoteButtonModeSyncProvider);
+    ref.watch(remotePlayStartSyncProvider);
     return MaterialApp(
       onGenerateTitle: (ctx) {
         // Untitled chapters are named in the app language (models carry no context).

@@ -95,8 +95,19 @@ class BackgroundAudioHandler extends BaseAudioHandler {
     _publishState(duration: metadata.duration);
   }
 
+  /// Starts the narration of the current book when nothing is queued yet, like the mini
+  /// player's Play. Remote Play (car, headphones, lock screen, MPRIS) otherwise has nothing to
+  /// resume and would be ignored.
+  Future<void> Function()? startNarration;
+
   @override
   Future<void> play() async {
+    final start = startNarration;
+    if (!player.hasQueuedAudio && start != null) {
+      await start();
+      _publishState();
+      return;
+    }
     await player.play();
     _publishState();
   }

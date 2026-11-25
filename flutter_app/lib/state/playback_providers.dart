@@ -125,6 +125,25 @@ final remoteButtonModeSyncProvider = Provider<void>((ref) {
   });
 });
 
+/// Remote Play with nothing queued starts the narration through the same request as the mini
+/// player (begin/finish the initial audio request around it). Watched by the app root.
+final remotePlayStartSyncProvider = Provider<void>((ref) {
+  final handler = ref.watch(backgroundAudioHandlerProvider);
+  if (handler == null) return;
+  handler.startNarration = () async {
+    final request = ref.read(playbackRequestProvider);
+    if (request == null) return;
+    final coordinator = ref.read(playbackCoordinatorProvider);
+    coordinator.beginInitialAudioRequest();
+    try {
+      await request();
+    } finally {
+      coordinator.finishInitialAudioRequest();
+    }
+  };
+  ref.onDispose(() => handler.startNarration = null);
+});
+
 /// Linux desktop transport (MPRIS): the same handler as the Android MediaSession, attached so the
 /// mini player publishes its metadata, plus the session-bus service `playerctl` talks to.
 final linuxMprisProvider = Provider<MprisService?>((ref) {
