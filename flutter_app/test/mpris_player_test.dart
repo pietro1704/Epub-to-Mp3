@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dbus/dbus.dart';
 import 'package:flutter_app/models/app_settings.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
@@ -72,6 +74,53 @@ void main() {
     expect(requests, 0);
   });
 
+  // Linux run 2026-11-25: `busctl call ... Play` timed out although the narration started.
+  // just_audio's play() completes only when playback stops, so the D-Bus reply never came.
+  test('Play and PlayPause reply while the audio keeps playing', () async {
+    final playing = _PlayUntilStopped();
+    await playing.setQueue([
+      ChapterProgress(
+        index: 0,
+        name: 'Chapter 0',
+        status: 'completed',
+        downloadUrl: 'file:///fixture/0.mp3',
+      ),
+    ]);
+    final remote = BackgroundAudioHandler(playing);
+    addTearDown(remote.dispose);
+    final mpris = MprisPlayerObject(remote);
+    final reply = await _call(
+      mpris,
+      'Play',
+    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('Play never replied'));
+    expect(reply, isA<DBusMethodSuccessResponse>());
+    expect(playing.isPlaying, isTrue);
+    await _call(mpris, 'Pause');
+    final toggled = await _call(
+      mpris,
+      'PlayPause',
+    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('PlayPause never replied'));
+    expect(toggled, isA<DBusMethodSuccessResponse>());
+    expect(playing.isPlaying, isTrue);
+  });
+
+  test('Play with nothing queued replies while the narration is still being prepared', () async {
+    final empty = FakeAudioPlayerService();
+    final remote = BackgroundAudioHandler(empty);
+    addTearDown(remote.dispose);
+    var requests = 0;
+    remote.startNarration = () {
+      requests++;
+      return Completer<void>().future;
+    };
+    final reply = await _call(
+      MprisPlayerObject(remote),
+      'Play',
+    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('Play never replied'));
+    expect(reply, isA<DBusMethodSuccessResponse>());
+    expect(requests, 1);
+  });
+
   test('Next and Previous move between chapters', () async {
     expect(await _call(object, 'Next'), isA<DBusMethodSuccessResponse>());
     expect(player.currentIndexValue, 1);
@@ -143,4 +192,13 @@ void main() {
       DBusString('EpubToMp3'),
     );
   });
+}
+
+/// Like just_audio: play() starts the audio and completes only once playback stops.
+class _PlayUntilStopped extends FakeAudioPlayerService {
+  @override
+  Future<void> play() {
+    super.play();
+    return Completer<void>().future;
+  }
 }
