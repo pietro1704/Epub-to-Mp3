@@ -22,6 +22,11 @@ iOS/macOS lead product development. Android/tablet and Linux/Windows (Flutter)
 must match Apple behavior and UI, each presented with its own platform's
 guidelines (Material on Android, native desktop conventions on Linux/Windows).
 
+The iPhone 16e app is the reference for every client: macOS, Flutter and web
+mirror its behavior, content and organization (for example speech models grouped
+by language, with per-language defaults). On a divergence, change the other
+client. For the macOS settings and tabs layout, follow the Linux app.
+
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
 available. This fallback is a user setting, on by default; when the user turns
