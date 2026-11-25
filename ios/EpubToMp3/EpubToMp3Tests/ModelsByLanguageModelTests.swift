@@ -133,6 +133,53 @@ final class ModelsByLanguageModelTests: XCTestCase {
 
     private func settle() async { for _ in 0..<20 { await Task.yield() } }
 
+    /// Holds the Portuguese snapshot back, like a cold scan of a long catalogue.
+    final class GatedSource: FakeSource, @unchecked Sendable {
+        private let gate = AsyncStream<Void>.makeStream()
+        private let orderLock = NSLock()
+        private var order: [String] = []
+        var requested: [String] { orderLock.lock(); defer { orderLock.unlock() }; return order }
+
+        override func catalogLanguages() async throws -> [CatalogLanguage] {
+            [CatalogLanguage(tag: "en", modelCount: 1), CatalogLanguage(tag: "pt", modelCount: 2)]
+        }
+        override func snapshot(language: String) async throws -> SpeechModelSnapshot {
+            note(language)
+            if language == "pt" { for await _ in gate.stream { break } }
+            return try await super.snapshot(language: language)
+        }
+        private func note(_ language: String) { orderLock.lock(); order.append(language); orderLock.unlock() }
+        func release() { gate.continuation.yield(()) }
+    }
+
+    /// IOS-MODELS-ROOT-STALE: while a language's catalogue is still loading, the root must not claim it has
+    /// no voice; the screen's own language is also loaded first.
+    func testRootDoesNotWarnForALanguageThatIsStillLoading() async throws {
+        let source = GatedSource()
+        let (model, _, defaults, name) = try make(source)
+        defer { defaults.removePersistentDomain(forName: name) }
+        model.priorityLanguage = "pt"
+        let load = Task { await model.load() }
+        for _ in 0..<500 where !source.requested.contains("pt") { try await Task.sleep(nanoseconds: 2_000_000) }
+        let resolve: (LanguageModelResolutionRequest) -> LanguageModelResolution? = { request in
+            LanguageModelResolution(bookLanguage: request.bookLanguage,
+                                    status: request.installedModelIDs.isEmpty ? .missingModel : .systemFallback,
+                                    selection: nil, source: nil, reasons: [], missing: nil)
+        }
+        let loading = try XCTUnwrap(model.rootItems(systemLanguages: ["pt"], bookLanguages: ["pt"], resolve: resolve)
+            .first { $0.language == "pt" })
+        let firstRequested = source.requested.first
+        source.release()
+        await load.value
+        let loaded = try XCTUnwrap(model.rootItems(systemLanguages: ["pt"], bookLanguages: ["pt"], resolve: resolve)
+            .first { $0.language == "pt" })
+        XCTAssertFalse(loading.needsVoice, "No warning before the language was inspected.")
+        XCTAssertNotEqual(loading.detail, L10n.string("models.root.noVoice"))
+        XCTAssertEqual(firstRequested, "pt", "The screen's language loads first.")
+        XCTAssertFalse(loaded.needsVoice)
+        XCTAssertEqual(model.state.sections.count, 2)
+    }
+
     func testLoadBuildsOneSectionPerCatalogLanguage() async throws {
         let (model, _, defaults, name) = try make(FakeSource())
         defer { defaults.removePersistentDomain(forName: name) }
