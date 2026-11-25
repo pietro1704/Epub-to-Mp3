@@ -28,8 +28,29 @@ class _FakeSpeechAdapter implements SpeechPlatformAdapter {
   Future<void> stop() async => calls.add('stop');
 }
 
+/// Android TextToSpeech initialises asynchronously: the first isAvailable() reports false.
+class _SlowInitAdapter extends _FakeSpeechAdapter {
+  _SlowInitAdapter() : super(locales: const ['pt-BR']);
+  int checks = 0;
+
+  @override
+  Future<bool> isAvailable() async => ++checks > 2;
+}
+
 void main() {
   group('AndroidSpeechFallback', () {
+    // A8 2026-11-25: Google TTS had pt-BR, but the voice list was read before the engine
+    // finished initialising, came back empty and the book asked for a Piper model instead
+    // of narrating with the system voice.
+    test('lists voices once the engine finishes initialising', () async {
+      final engine = AndroidSpeechFallback(
+        adapter: _SlowInitAdapter(),
+        initPollInterval: Duration.zero,
+
+      );
+      expect((await engine.listVoices()).map((v) => v.locale), ['pt-BR']);
+    });
+
     test('uses offline engine only after primary audio is unavailable', () {
       expect(
         selectPlaybackEngine(hasAudio: true, offlineAvailable: true),

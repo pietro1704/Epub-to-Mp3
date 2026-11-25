@@ -44,17 +44,27 @@ PlaybackEngine selectPlaybackEngine({
 }
 
 class AndroidSpeechFallback implements SpeechEngine {
-  AndroidSpeechFallback({SpeechPlatformAdapter? adapter})
-    : _adapter = adapter ?? const _DefaultSpeechPlatformAdapter();
+  AndroidSpeechFallback({
+    SpeechPlatformAdapter? adapter,
+    this.initPollInterval = const Duration(milliseconds: 250),
+  }) : _adapter = adapter ?? const _DefaultSpeechPlatformAdapter();
 
   final SpeechPlatformAdapter _adapter;
+
+  /// Android TextToSpeech initialises asynchronously, so the first availability check reports
+  /// false; the voice list waits for it (bounded) instead of reading an empty list.
+  final Duration initPollInterval;
+  static const _initPolls = 20;
 
   @override
   Future<bool> isAvailable() => _adapter.isAvailable();
 
   @override
   Future<List<SpeechVoice>> listVoices() async {
-    if (!await isAvailable()) return const [];
+    for (var poll = 0; !await isAvailable(); poll++) {
+      if (poll >= _initPolls) return const [];
+      await Future<void>.delayed(initPollInterval);
+    }
     return _adapter.listVoices();
   }
 
