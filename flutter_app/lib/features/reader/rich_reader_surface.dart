@@ -79,6 +79,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   Object? _textGeometry;
   int? _restoreSource;
   double _height = 0;
+  static const _verticalPadding = 16.0;
   bool _measurementPending = false;
   final NarrationPairing _pairing = NarrationPairing();
   bool? _publishedPairing;
@@ -325,6 +326,21 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         _restoreSource = _geometry?.sourceOffsetAt(_offset);
       }
       _textGeometry = textGeometry;
+      // Whole device pixels: a half-pixel viewport edge lets the top of the next line
+      // leak under the guard as a faint sliver.
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+      _height =
+          ((constraints.maxHeight -
+                      (widget.settings.readerShowPageNumbers && _paginated
+                          ? 28
+                          : 0)) *
+                  pixelRatio)
+              .floorToDouble() /
+          pixelRatio;
+      // Like the 16e, an image taller than a page is capped to the usable page height.
+      final maxImageHeight = _paginated
+          ? math.max(0.0, _height - 2 * _verticalPadding)
+          : null;
       final documentSignature = (
         widget.chapter.html,
         widget.chapter.css,
@@ -333,6 +349,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         widget.settings.readerOverrideFontSize,
         widget.settings.readerOverrideLineSpacing,
         widget.settings.readerOverrideAlignment,
+        maxImageHeight,
       );
       if (_documentSignature != documentSignature) {
         _documentSignature = documentSignature;
@@ -344,6 +361,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
           fg: widget.foreground,
           bodyStyle: widget.bodyStyle,
           headingStyle: widget.headingStyle,
+          maxImageHeight: maxImageHeight,
         );
       }
       final signature = (
@@ -358,17 +376,6 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         _signature = signature;
         _measure();
       }
-      // Whole device pixels: a half-pixel viewport edge lets the top of the next line
-      // leak under the guard as a faint sliver.
-      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-      _height =
-          ((constraints.maxHeight -
-                      (widget.settings.readerShowPageNumbers && _paginated
-                          ? 28
-                          : 0)) *
-                  pixelRatio)
-              .floorToDouble() /
-          pixelRatio;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _followNarration();
       });
@@ -463,7 +470,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                                     key: _content,
                                     padding: EdgeInsets.symmetric(
                                       horizontal: widget.settings.readerMargin + gutter,
-                                      vertical: 16,
+                                      vertical: _verticalPadding,
                                     ),
                                     child: _selectableDocument(),
                                   ),
