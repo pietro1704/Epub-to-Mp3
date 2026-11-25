@@ -265,13 +265,13 @@ $tracePath = Join-Path $evidencePath 'ui-trace.jsonl'
 Remove-Item -LiteralPath $tracePath -ErrorAction SilentlyContinue
 $env:EPUB2MP3_UI_TRACE = $tracePath
 
-function Wait-ForTraceEvent([string]$Description, [string]$Event, [scriptblock]$Match, [int]$TimeoutSeconds = 35) {
+function Wait-ForTraceEvent([string]$Description, [string]$Event, [scriptblock]$Predicate, [int]$TimeoutSeconds = 35) {
   Wait-ForReaderUi $Description {
     if (Test-Path -LiteralPath $tracePath) {
       foreach ($line in Get-Content -LiteralPath $tracePath -Encoding UTF8) {
         $item = $null
         try { $item = $line | ConvertFrom-Json } catch { continue }
-        if ($item.event -eq $Event -and (& $Match $item)) { return $item }
+        if ($item.event -eq $Event -and (& $Predicate $item)) { return $item }
       }
     }
   } -TimeoutSeconds $TimeoutSeconds

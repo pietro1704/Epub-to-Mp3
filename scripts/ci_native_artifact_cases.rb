@@ -19,6 +19,7 @@ class CiRuntimeScopeTest
     script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
     assert_includes script, '$env:EPUB2MP3_UI_TRACE = $tracePath'
     assert_operator script.index('$env:EPUB2MP3_UI_TRACE'), :<, script.index('Start-Process -FilePath $executable')
+    refute_match(/\[scriptblock\]\$Match\b/i, script, 'a parameter named Match is shadowed by the $match variable of Wait-ForReaderUi')
     assert_match(/Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter'/, script)
     assert_match(/Wait-ForTraceEvent 'the second chapter passage' 'reader.chapter'/, script)
     refute_match(/Find-AppText 'a neblina cobria a colina'/, script)
