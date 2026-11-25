@@ -184,6 +184,72 @@ abstract class AppLocalizations {
   /// **'Paginated'**
   String get readerLayoutPaginated;
 
+  /// No description provided for @readerThemeAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get readerThemeAuto;
+
+  /// No description provided for @readerThemeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get readerThemeLight;
+
+  /// No description provided for @readerThemeSepia.
+  ///
+  /// In en, this message translates to:
+  /// **'Sepia'**
+  String get readerThemeSepia;
+
+  /// No description provided for @readerThemeParchment.
+  ///
+  /// In en, this message translates to:
+  /// **'Parchment'**
+  String get readerThemeParchment;
+
+  /// No description provided for @readerThemePaper.
+  ///
+  /// In en, this message translates to:
+  /// **'Paper'**
+  String get readerThemePaper;
+
+  /// No description provided for @readerThemeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get readerThemeDark;
+
+  /// No description provided for @readerThemeBlack.
+  ///
+  /// In en, this message translates to:
+  /// **'Black'**
+  String get readerThemeBlack;
+
+  /// No description provided for @readerThemeCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get readerThemeCustom;
+
+  /// No description provided for @readerFontSerif.
+  ///
+  /// In en, this message translates to:
+  /// **'Serif'**
+  String get readerFontSerif;
+
+  /// No description provided for @readerFontSans.
+  ///
+  /// In en, this message translates to:
+  /// **'Sans'**
+  String get readerFontSans;
+
+  /// No description provided for @readerFontMono.
+  ///
+  /// In en, this message translates to:
+  /// **'Mono'**
+  String get readerFontMono;
+
   /// No description provided for @fontSizeLabel.
   ///
   /// In en, this message translates to:
