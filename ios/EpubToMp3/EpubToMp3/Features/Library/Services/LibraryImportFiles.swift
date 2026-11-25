@@ -58,6 +58,13 @@ enum LibraryImportFiles {
         if let baseDirectory {
             return baseDirectory
         }
+        // Unit tests run inside the app host: a store built without an explicit
+        // directory must never copy fixtures into the listener's library.
+        if EpubToMp3App.isRunningUnderXCTest() {
+            return fileManager.temporaryDirectory
+                .appendingPathComponent("\(applicationSupportFolderName)-XCTest", isDirectory: true)
+                .appendingPathComponent("ImportedBooks", isDirectory: true)
+        }
         let support = try fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

@@ -119,13 +119,14 @@ extension LibraryStoreTests {
 
         let book = try store.importBook(from: source)
         let resolved = try store.openBookFile(id: book.id).standardizedFileURL
-        let applicationSupport = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // Under XCTest the default library root is a temporary directory, never
+        // the listener's Application Support library.
+        let libraryRoot = try LibraryImportFiles.importedBooksDirectory(fileManager: .default, baseDirectory: nil)
             .standardizedFileURL
             .path
 
         XCTAssertTrue(
-            resolved.path.hasPrefix(applicationSupport + "/EpubToMp3/ImportedBooks/"),
+            resolved.path.hasPrefix(libraryRoot + "/"),
             "macOS library access must resolve to an app-owned copy instead of the picked Documents/external URL"
         )
         XCTAssertNotEqual(resolved, source.standardizedFileURL)
