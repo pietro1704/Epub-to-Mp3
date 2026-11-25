@@ -166,6 +166,14 @@ private final class ProgressiveListeningFixture {
         XCTFail("Native progressive-listening condition timed out")
     }
 
+    /// A replaced session never records its job, so wait for the executor to return and let the
+    /// completion path run before asserting that nothing changed.
+    func completeReplacedSession() async throws {
+        release.finish()
+        try await wait { finished }
+        try await Task.sleep(nanoseconds: 200_000_000)
+    }
+
     func complete() async throws {
         release.finish()
         try await wait { library.books.first(where: { $0.id == book.id })?.lastJobId == job }
@@ -259,7 +267,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let accepted = await Task.detached { chunk(1, 0, data) }.value
         XCTAssertFalse(accepted)
         try f.emit(1)
-        try await f.complete()
+        try await f.completeReplacedSession()
         XCTAssertEqual(f.player.snapshot, foreign)
         XCTAssertNil(f.player.pendingNavigation)
         XCTAssertFalse(f.player.isPlaying)
@@ -441,7 +449,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
             filename: "ch1.wav", audioPath: f.root.appendingPathComponent("ch1.wav"), textChars: 100).snapshot(chapters: [])
         f.player.stop(); f.player.setSnapshot(foreign)
         let converting = f.player.isConverting
-        try f.emit(1); try await f.complete()
+        try f.emit(1); try await f.completeReplacedSession()
         XCTAssertEqual(f.player.snapshot, foreign); XCTAssertFalse(f.player.isPlaying)
         XCTAssertEqual(f.player.isConverting, converting, "An old job must not change the replacement session's conversion state")
     }
