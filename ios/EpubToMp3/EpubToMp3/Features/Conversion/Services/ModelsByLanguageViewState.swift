@@ -151,3 +151,18 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         return a != b ? a < b : first.title < second.title
     }
 }
+
+extension ModelsByLanguageViewState {
+    /// The engines of the language page, in the order it lists them.
+    enum EngineGroup: CaseIterable, Sendable, Equatable { case system, piper, edge }
+
+    struct EngineSection: Sendable, Equatable {
+        let engine: EngineGroup
+        let rows: [Row]
+    }
+}
+
+extension ModelsByLanguageViewState.Section {
+    /// Stub (red): the grouping is not implemented yet.
+    var engineSections: [ModelsByLanguageViewState.EngineSection] { [] }
+}
