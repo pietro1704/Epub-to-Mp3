@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show kLongPressTimeout, kPrimaryButton, kTouchSlop;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kDoubleTapTimeout, kLongPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
@@ -86,6 +87,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   bool? _publishedPairing;
   bool _forceFollow = false;
   (Offset, Duration)? _tapDown;
+  Timer? _mouseTap;
 
   /// The chapter text made selectable, with "Play from here" on a selection.
   Widget? _selectableDocument() {
@@ -218,6 +220,24 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
             : widget.chapter.text.substring(0, utf16).runes.length,
       );
     });
+  }
+
+  /// A single tap on the page: the centre toggles the chrome, the sides turn the page.
+  void _tapAt(Offset position, double width) {
+    if (!_paginated) {
+      widget.onCenterTap?.call();
+      return;
+    }
+    final x = position.dx / width;
+    // The edge overlays below turn the page themselves.
+    if (x < .18 || x > .82) return;
+    if (position.dx < width * .2) {
+      _turn(false);
+    } else if (position.dx > width * .8) {
+      _turn(true);
+    } else {
+      widget.onCenterTap?.call();
+    }
   }
 
   void _turn(bool forward) {
@@ -420,9 +440,13 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                 // A raw pointer tap: the SelectionArea below wins the tap gesture
                 // arena, so a GestureDetector tap never fired on touch (A8 2026-11-25).
                 child: Listener(
-                  onPointerDown: (event) => _tapDown = event.buttons == kPrimaryButton
-                      ? (event.localPosition, event.timeStamp)
-                      : null,
+                  onPointerDown: (event) {
+                    // A second click of a double-click selects a word; the first one must not tap.
+                    _mouseTap?.cancel();
+                    _tapDown = event.buttons == kPrimaryButton
+                        ? (event.localPosition, event.timeStamp)
+                        : null;
+                  },
                   onPointerCancel: (_) => _tapDown = null,
                   onPointerUp: (event) {
                     final down = _tapDown;
@@ -432,24 +456,22 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                         event.timeStamp - down.$2 >= kLongPressTimeout) {
                       return;
                     }
-                    if (!_paginated) {
-                      widget.onCenterTap?.call();
-                      return;
-                    }
-                    final x = event.localPosition.dx / constraints.maxWidth;
-                    // The edge overlays below turn the page themselves.
-                    if (x < .18 || x > .82) return;
-                    if (event.localPosition.dx < constraints.maxWidth * .2) {
-                      _turn(false);
-                    } else if (event.localPosition.dx >
-                        constraints.maxWidth * .8) {
-                      _turn(true);
+                    if (event.kind == PointerDeviceKind.mouse) {
+                      final position = event.localPosition;
+                      _mouseTap = Timer(kDoubleTapTimeout, () => _tapAt(position, constraints.maxWidth));
                     } else {
-                      widget.onCenterTap?.call();
+                      _tapAt(event.localPosition, constraints.maxWidth);
                     }
                   },
+                  // A swipe turns the page; a mouse drag selects text instead, as on macOS.
                   child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
+                  supportedDevices: const {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.stylus,
+                    PointerDeviceKind.invertedStylus,
+                    PointerDeviceKind.trackpad,
+                  },
                   onHorizontalDragEnd: _paginated
                       ? (details) {
                           final velocity = details.primaryVelocity ?? 0;
@@ -579,6 +601,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
 
   @override
   void dispose() {
+    _mouseTap?.cancel();
     _selection.dispose();
     _scroll.dispose();
     _focus.dispose();

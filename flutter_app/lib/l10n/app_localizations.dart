@@ -1276,6 +1276,12 @@ abstract class AppLocalizations {
   /// **'Play from here'**
   String get readerPlayFromHere;
 
+  /// No description provided for @errorPdfOcrRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'This PDF has a page with only an image and no selectable text (often the cover). It cannot be narrated until that text is recognized (OCR).'**
+  String get errorPdfOcrRequired;
+
   /// No description provided for @errorNoReadableText.
   ///
   /// In en, this message translates to:
