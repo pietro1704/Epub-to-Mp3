@@ -543,4 +543,41 @@ extension ModelsByLanguageModel {
         }
         return ModelsRootRows.rows(input)
     }
+
+    /// A root row as the screens draw it.
+    struct RootItem: Equatable, Identifiable {
+        let language: String
+        let title: String
+        /// The voice that reads the language now, or why none does.
+        let detail: String
+        let needsVoice: Bool
+        var id: String { language }
+    }
+
+    /// The root rows ready to draw; the language the screen was opened for comes first.
+    func rootItems(
+        systemLanguages: [String] = Locale.preferredLanguages, bookLanguages: [String],
+        priority: String? = nil, uiLocale: Locale = .current,
+        resolve: ((LanguageModelResolutionRequest) -> LanguageModelResolution?)? = nil
+    ) -> [RootItem] {
+        var items = rootRows(systemLanguages: systemLanguages, bookLanguages: bookLanguages, resolve: resolve).map { row in
+            let name = ModelLanguageOrder.displayName(row.language, in: uiLocale)
+            return RootItem(language: row.language, title: name.prefix(1).uppercased() + name.dropFirst(),
+                            detail: rootDetail(row), needsVoice: row.needsVoice)
+        }
+        if let focus = priority.map(SpeechPreferences.languageKey),
+           let index = items.firstIndex(where: { $0.language == focus }) {
+            items.insert(items.remove(at: index), at: 0)
+        }
+        return items
+    }
+
+    private func rootDetail(_ row: ModelsRootRows.Row) -> String {
+        guard let resolution = row.resolution else { return "" }
+        switch resolution.status {
+        case .missingModel: return L10n.string("models.root.noVoice")
+        case .systemFallback: return L10n.string("models.engine.system")
+        case .selected: return resolution.selection.map(title(for:)) ?? ""
+        }
+    }
 }

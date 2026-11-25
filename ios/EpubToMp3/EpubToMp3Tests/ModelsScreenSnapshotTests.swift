@@ -20,8 +20,10 @@ final class ModelsScreenSnapshotTests: XCTestCase {
             defer { defaults.removePersistentDomain(forName: suite) }
             let settings = AppSettings(defaults: defaults)
             settings.selectLanguageModel(TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil), for: "pt")
-            let controller = MacModelsViewController(settings: settings, source: source,
-                                                     termsAcceptance: SpeechModelTermsAcceptanceStore(defaults: defaults))
+            let model = ModelsByLanguageModel(source: source, settings: settings,
+                                              terms: SpeechModelTermsAcceptanceStore(defaults: defaults))
+            await model.load()
+            let controller = MacModelsViewController(sharing: model, onlyLanguage: "pt")
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
                                   styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

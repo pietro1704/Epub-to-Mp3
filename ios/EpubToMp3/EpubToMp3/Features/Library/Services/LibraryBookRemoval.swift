@@ -34,6 +34,7 @@ struct LibraryBookRemoval {
     var preparedRenderings = PreparedChapterArchiveStore()
     var pronunciations = BookPronunciationStore()
     var languageCorrections = BookLanguageCorrections()
+    var languageSummaries = BookLanguageSummaries()
 
     /// `legacyJobID` is the entity's `lastJobId` as the caller read it.
     func remove(bookID: String, legacyJobID: String?) async throws {
@@ -54,6 +55,7 @@ struct LibraryBookRemoval {
         try? await preparedRenderings.removeAll(bookID: bookID)
         pronunciations.remove(bookID: bookID)
         try? languageCorrections.remove(bookID: bookID)
+        languageSummaries.remove(bookID: bookID)
         if let legacyJobID { FulltextStore.evict(jobId: legacyJobID) }
         library.remove(id: bookID)
     }
