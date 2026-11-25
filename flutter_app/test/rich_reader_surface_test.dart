@@ -275,4 +275,73 @@ void main() {
     expect(find.byType(SelectableRegion), findsNothing);
   });
 
+
+  // Mirror of Apple #1391 (PAGE-TAP): a paginated chapter that falls back to scrolling
+  // (a fragment taller than the page) turns one screen per edge tap; only at either
+  // end does the tap go to the neighbouring chapter.
+  testWidgets('edge taps scroll one screen in a chapter that fell back to scrolling', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    final paragraphs = [
+      ...List.generate(20, (i) => 'Paragraph $i before.'),
+      'TALL',
+      ...List.generate(20, (i) => 'Paragraph $i after.'),
+    ];
+    final html = paragraphs
+        .map((p) => p == 'TALL'
+            ? '<p style="font-size:500px">T</p>'
+            : '<p>$p</p>')
+        .join();
+    var next = 0, previous = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: paragraphs.join('\n'), html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onNextChapter: () { next++; return false; },
+              onPreviousChapter: () { previous++; return false; },
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final scroll = tester
+        .widget<SingleChildScrollView>(find.byKey(const ValueKey('rich-reader-viewport')))
+        .controller!;
+    expect(scroll.position.maxScrollExtent, greaterThan(800));
+
+    await tester.tapAt(const Offset(110, 180));
+    await tester.pumpAndSettle();
+    expect(previous, 1, reason: 'at the start a back tap goes to the previous chapter');
+
+    await tester.tapAt(const Offset(650, 180));
+    await tester.pumpAndSettle();
+    expect(next, 0);
+    expect(scroll.offset, inInclusiveRange(300, 400));
+
+    await tester.tapAt(const Offset(110, 180));
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+    expect(previous, 1);
+
+    for (var i = 0; i < 40 && next == 0; i++) {
+      await tester.tapAt(const Offset(650, 180));
+      await tester.pumpAndSettle();
+    }
+    expect(scroll.offset, scroll.position.maxScrollExtent);
+    expect(next, 1);
+    expect(tester.takeException(), isNull);
+  });
 }

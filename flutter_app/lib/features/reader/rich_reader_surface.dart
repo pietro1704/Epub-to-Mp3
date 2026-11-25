@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
@@ -214,6 +216,30 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   void _turn(bool forward) {
     _pairing.suspendAfterManualTurn();
     final pages = _pages;
+    if (pages.isEmpty && _scroll.hasClients) {
+      // Fell back to scrolling (a fragment taller than the page, Apple #1391):
+      // an edge tap moves one screen with a line of overlap; only at either
+      // end does it go to the neighbouring chapter.
+      final position = _scroll.position;
+      final line = (widget.bodyStyle.fontSize ?? 18) *
+          (widget.bodyStyle.height ?? 1.5);
+      final step = math.max(_height - line, _height / 2);
+      final atEnd = forward
+          ? _scroll.offset >= position.maxScrollExtent - 0.5
+          : _scroll.offset <= position.minScrollExtent + 0.5;
+      if (atEnd) {
+        if (forward) {
+          widget.onNextChapter?.call();
+        } else {
+          widget.onPreviousChapter?.call();
+        }
+      } else {
+        _scroll.jumpTo((_scroll.offset + (forward ? step : -step))
+            .clamp(position.minScrollExtent, position.maxScrollExtent));
+      }
+      widget.onAutoHideChrome?.call();
+      return;
+    }
     final target = forward
         ? pages.where((offset) => offset > _offset + 0.5).firstOrNull
         : pages.reversed.where((offset) => offset < _offset - 0.5).firstOrNull;
