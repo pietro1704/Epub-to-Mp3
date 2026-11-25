@@ -37,6 +37,24 @@ enum BookLanguagePicker {
             navigation.presentationController?.delegate = chooser
         }
         #elseif os(macOS)
+        let (alert, popup, choices) = makeMacAlert(allowsAutomatic: allowsAutomatic, selectedLanguage: selectedLanguage,
+                                                   explanation: explanation, tags: tags)
+        let observer = BookLanguagePopupObserver { index in alert.buttons[0].isEnabled = choices[index] != nil }
+        popup.target = observer
+        popup.action = #selector(BookLanguagePopupObserver.changed(_:))
+        let response = withExtendedLifetime(observer) { alert.runModal() }
+        let result: String? = response == .alertFirstButtonReturn ? choices[popup.indexOfSelectedItem] : nil
+        #else
+        let result: String? = nil
+        #endif
+        guard !Task.isCancelled, isCurrent() else { return nil }
+        return result
+    }
+
+    #if os(macOS)
+    /// The macOS sheet, built apart from `runModal` so its visual evidence can be rendered.
+    static func makeMacAlert(allowsAutomatic: Bool, selectedLanguage: String?, explanation: String,
+                             tags: [String]) -> (NSAlert, NSPopUpButton, [String?]) {
         let alert = NSAlert()
         alert.messageText = L10n.string("language.chooseTitle")
         alert.informativeText = explanation
@@ -55,17 +73,9 @@ enum BookLanguagePicker {
         alert.addButton(withTitle: L10n.string("common.save"))
         alert.addButton(withTitle: L10n.string("common.cancel"))
         alert.buttons[0].isEnabled = choices[popup.indexOfSelectedItem] != nil
-        let observer = BookLanguagePopupObserver { index in alert.buttons[0].isEnabled = choices[index] != nil }
-        popup.target = observer
-        popup.action = #selector(BookLanguagePopupObserver.changed(_:))
-        let response = withExtendedLifetime(observer) { alert.runModal() }
-        let result: String? = response == .alertFirstButtonReturn ? choices[popup.indexOfSelectedItem] : nil
-        #else
-        let result: String? = nil
-        #endif
-        guard !Task.isCancelled, isCurrent() else { return nil }
-        return result
+        return (alert, popup, choices)
     }
+    #endif
 
     /// `analysis` is given for a whole-book choice: the sheet then says what was detected.
     static func edit(bookID: String, passage: PassageLanguageCorrection? = nil,
