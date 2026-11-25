@@ -267,9 +267,10 @@ final class MacReaderViewController: NSViewController {
         alert.beginSheetModal(for: window)
     }
     @objc private func showVoiceModels(_ sender: NSView) { onVoiceModels(self, sender) }
+    /// MAC-READER-TOOLBAR-VISIBLE: on macOS the reader header ("Aa", contents,
+    /// bookmarks, voice) stays visible; a page click only toggles the player bar.
     private func toggleChrome() {
         chromeHidden.toggle()
-        composition.setChromeHidden(chromeHidden)
         onChromeChanged(chromeHidden)
     }
 
