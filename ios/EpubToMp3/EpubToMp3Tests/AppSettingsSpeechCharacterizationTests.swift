@@ -142,6 +142,8 @@ final class AppSettingsSpeechCharacterizationTests: XCTestCase {
     func testSavedUnconsentedEdgeSecondaryIsExposedButNeverSent() throws {
         let defaults = try makeDefaults()
         SpeechPreferenceMigration.runIfNeeded(defaults)
+        // A store the global voice migration already finished; that migration would return the reserve to the system voice.
+        defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)
         defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: Key.secondarySelection)
 
         let settings = AppSettings(defaults: defaults)

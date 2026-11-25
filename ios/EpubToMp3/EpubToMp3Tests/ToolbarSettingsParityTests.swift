@@ -48,7 +48,9 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(AppSettings(defaults: defaults).primaryTtsSelection, .defaultPiper)
     }
 
-    func testLoadingConsentedEdgeFallbackAdoptsNativeRecoveryWithoutChangingSelections() {
+    /// A4B-SAVED-RESERVE-VOICE: the consent survives, but the saved Edge reserve returns to the system voice because
+    /// no menu shows the reserve any more.
+    func testLoadingConsentedEdgeFallbackKeepsConsentAndReturnsTheReserveToTheSystemVoice() {
         let suite = "ConsentedLegacySpeech.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -59,11 +61,11 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
 
         XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
-        XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
+        XCTAssertEqual(settings.secondaryTtsSelection, .systemDefault)
         XCTAssertTrue(settings.ttsPreferences.allowOnlineFallback)
-        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary?.engine, "edge")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .edgeDefault)
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .systemDefault)
         XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"), "The migrated engine key is retired.")
         XCTAssertNil(defaults.object(forKey: "ttsPreferencesVersion"))
         let restored = AppSettings(defaults: defaults)
