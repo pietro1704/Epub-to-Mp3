@@ -93,7 +93,10 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: ElevatedButton(onPressed: () {}, child: const Text('Add a book')),
+            child: Column(children: [
+              ElevatedButton(onPressed: () {}, child: const Text('Add a book')),
+              IconButton(onPressed: () {}, tooltip: 'Show menu', icon: const Icon(Icons.more_vert)),
+            ]),
           ),
         ),
       ),
@@ -105,6 +108,8 @@ void main() {
     final nodes = (events.last['nodes'] as List).cast<Map>();
     final add = nodes.singleWhere((n) => n['label'] == 'Add a book');
     expect(add['button'], isTrue);
+    expect(nodes.where((n) => n['label'] == 'Show menu' && n['button'] == true), hasLength(1),
+        reason: 'an icon button is found by its tooltip');
     expect(add['width'] as num, greaterThan(20));
     expect(add['height'] as num, greaterThan(20));
     expect(add['left'] as num, greaterThan(0), reason: 'a place in logical pixels, from the window origin');
