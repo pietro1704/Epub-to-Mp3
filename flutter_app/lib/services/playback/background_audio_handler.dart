@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../models/app_settings.dart' show RemoteButtonMode;
 import 'audio_player_service.dart';
@@ -103,12 +104,17 @@ class BackgroundAudioHandler extends BaseAudioHandler {
   @override
   Future<void> play() async {
     final start = startNarration;
-    if (!player.hasQueuedAudio && start != null) {
-      await start();
-      _publishState();
-      return;
-    }
-    await player.play();
+    // Starting the narration takes a whole synthesis and the player's play() completes only when
+    // playback stops: a remote command (MPRIS reply, MediaSession) must not wait for either.
+    // State changes republish on their own.
+    final started = !player.hasQueuedAudio && start != null
+        ? start()
+        : player.play();
+    unawaited(
+      started.catchError((Object error) {
+        debugPrint('Remote play failed: $error');
+      }),
+    );
     _publishState();
   }
 
