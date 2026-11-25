@@ -207,6 +207,17 @@ final class ReaderVoiceChangeTests: XCTestCase {
         XCTAssertNotEqual(player.snapshot?.engine, "retired")
     }
 
+    /// When the book's language is unknown the reader lists the general catalog. That list must not offer an online
+    /// voice without consent: choosing it would save Edge as the primary voice.
+    func testTheCatalogVoiceListOffersNoOnlineVoiceWithoutConsent() {
+        let picker = ReaderVoicePicker(selection: .systemDefault, resolvedTitle: nil) { _ in }
+
+        let choices = picker.choices(from: SpeechModelLibraryViewState(snapshot: nil))
+
+        XCTAssertTrue(choices.contains { $0.selection == .systemDefault })
+        XCTAssertFalse(choices.contains { $0.selection.isEdge })
+    }
+
     func testMacReaderMoreShowsMarkedVoiceChoicesImmediately() async throws {
         let suite = "mac-reader-voice-picker-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
