@@ -151,3 +151,38 @@ struct ModelsByLanguageViewState: Sendable, Equatable {
         return a != b ? a < b : first.title < second.title
     }
 }
+
+extension ModelsByLanguageViewState {
+    /// The engines of the language page, in the order it lists them.
+    enum EngineGroup: CaseIterable, Sendable, Equatable {
+        case system, piper, edge
+
+        var title: String {
+            switch self {
+            case .system: return L10n.string("models.engine.system")
+            case .piper: return L10n.string("models.page.piper")
+            case .edge: return L10n.string("models.page.edge")
+            }
+        }
+
+        /// Every local model engine other than the system one is listed with Piper.
+        init(_ selection: TtsSelection) {
+            self = selection.isSystem ? .system : (selection.isEdge ? .edge : .piper)
+        }
+    }
+
+    struct EngineSection: Sendable, Equatable {
+        let engine: EngineGroup
+        let rows: [Row]
+    }
+}
+
+extension ModelsByLanguageViewState.Section {
+    /// System, then Piper, then Edge; the rows keep their order and an engine without voices has no section.
+    var engineSections: [ModelsByLanguageViewState.EngineSection] {
+        ModelsByLanguageViewState.EngineGroup.allCases.compactMap { group in
+            let grouped = rows.filter { ModelsByLanguageViewState.EngineGroup($0.selection) == group }
+            return grouped.isEmpty ? nil : .init(engine: group, rows: grouped)
+        }
+    }
+}

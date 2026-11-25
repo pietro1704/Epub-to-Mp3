@@ -595,6 +595,9 @@
 "models.engine.systemDetail" = "Luciana cuando esté disponible";
 "models.engine.noPiperVoice" = "Ningún modelo Piper descargado";
 "models.automatic" = "Automático: se usa el mejor modelo descargado para este idioma.";
+"models.page.automatic" = "Automática";
+"models.page.piper" = "Piper · En este dispositivo";
+"models.page.edge" = "Edge · En línea";
 "models.inUse" = "En uso para este idioma";
 "models.download" = "Toca para descargar · %@";
 "models.downloading" = "Descargando %d%%";
