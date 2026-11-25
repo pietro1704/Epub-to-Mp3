@@ -58,7 +58,8 @@ enum ReaderVoicePickerPresentation {
             : nil
         let alert = UIAlertController(title: L10n.string("models.title"), message: message, preferredStyle: .actionSheet)
         alert.view.accessibilityIdentifier = "reader.voicePicker"
-        for choice in content?.choices ?? picker.choices(from: catalog) {
+        for choice in content?.choices
+                ?? picker.choices(from: catalog, allowOnlineFallback: settings.allowOnlineAudioFallback) {
             let title = choice.selected ? "✓ \(choice.title)" : choice.title
             let action = UIAlertAction(title: title, style: .default) { _ in
                 if let content { content.choose(choice.selection, picker: picker, settings: settings) }
@@ -137,7 +138,8 @@ private final class ReaderVoicePickerPresentation: NSObject {
         self.picker = picker
         self.content = content
         self.settings = settings
-        self.choices = content?.choices ?? picker.choices(from: catalog)
+        self.choices = content?.choices
+            ?? picker.choices(from: catalog, allowOnlineFallback: settings.allowOnlineAudioFallback)
         self.downloads = downloads
         super.init()
         menu.autoenablesItems = false

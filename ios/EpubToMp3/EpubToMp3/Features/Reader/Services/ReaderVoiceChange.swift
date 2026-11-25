@@ -20,8 +20,10 @@ struct ReaderVoicePicker {
         let available: Bool
     }
 
-    func choices(from catalog: SpeechModelLibraryViewState) -> [Choice] {
-        var choices = catalog.primaryNarrationChoices.map {
+    /// The general catalog, listed when the book's language is unknown. An online voice appears only with the
+    /// online consent: choosing it here saves it as the primary voice.
+    func choices(from catalog: SpeechModelLibraryViewState, allowOnlineFallback: Bool = false) -> [Choice] {
+        var choices = catalog.primaryNarrationChoices.filter { allowOnlineFallback || !$0.selection.isEdge }.map {
             Choice(selection: $0.selection, title: $0.title, selected: marks($0.selection), available: true)
         }
         if !choices.contains(where: \.selected) {
