@@ -589,8 +589,15 @@ try {
   $chapterOne = (Wait-ForTraceEvent 'the opening chapter passage' 'reader.chapter' { param($item) $item.head -match 'a neblina cobria a colina' }).head
   Save-ReaderFrame 'chapter-1'
 
+  # The Add a book sheet can stay open over the reader after the import; dismiss it first.
+  $stale = Find-AppText '^Cancel$'
+  if ($null -ne $stale -and $null -ne (Find-AppText '^Add a book$')) {
+    Click-FlutterElement $stale
+    Start-Sleep -Milliseconds 800
+  }
+
   # The reader chrome shows the recent tool beside More; Contents lives in the menu.
-  $more = Wait-ForReaderUi 'the reader More menu' { Find-AppText '^Show menu$' }
+  $more =Wait-ForReaderUi 'the reader More menu' { Find-AppText '^Show menu$' }
   Click-FlutterElement $more
   $contents = Wait-ForReaderUi 'the reader Table of contents menu item' { Find-AppText '^Table of contents$' }
   Click-FlutterElement $contents
