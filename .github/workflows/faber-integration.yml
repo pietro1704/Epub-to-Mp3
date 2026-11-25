@@ -554,6 +554,7 @@ jobs:
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
             -only-testing:EpubToMp3Tests/MacSpeechModelProductActionsTests
             -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests
+            -only-testing:EpubToMp3Tests/MacScrollableStackWindowTests
             -only-testing:EpubToMp3Tests/FaberNativeInferenceTests
           )
           mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild build-for-testing "${test_arguments[@]}" \

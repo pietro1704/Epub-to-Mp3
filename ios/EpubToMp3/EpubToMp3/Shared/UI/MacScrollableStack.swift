@@ -22,7 +22,8 @@ enum MacScrollableStack {
         document.addSubview(stack)
         host.addSubview(scroll)
         let preferredWidth = stack.widthAnchor.constraint(equalTo: document.widthAnchor, constant: -48)
-        preferredWidth.priority = .defaultHigh
+        // Below windowSizeStayPut: a stronger wish for the capped width resizes the window itself.
+        preferredWidth.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: host.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: host.trailingAnchor),
