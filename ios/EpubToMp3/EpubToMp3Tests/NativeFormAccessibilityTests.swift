@@ -41,11 +41,11 @@ final class NativeFormAccessibilityTests: XCTestCase {
             controller.tableView.layoutIfNeeded()
             let cell = try XCTUnwrap(controller.tableView.cellForRow(at: index))
             if index.section == 0 || (index.section == 1 && index.row == 0) {
-                XCTAssertTrue(descendants(cell).compactMap { $0 as? CompactSlider }.isEmpty,
+                XCTAssertTrue(descendants(cell).compactMap { $0 as? PointPresetSlider }.isEmpty,
                               "A reused non-slider row must not retain the previous control.")
                 continue
             }
-            let slider = try XCTUnwrap(descendants(cell).compactMap { $0 as? CompactSlider }.first)
+            let slider = try XCTUnwrap(descendants(cell).compactMap { $0 as? PointPresetSlider }.first)
             let sliderFrame = slider.convert(slider.bounds, to: cell.contentView)
             XCTAssertGreaterThanOrEqual(sliderFrame.minY, 0)
             XCTAssertLessThanOrEqual(sliderFrame.maxY, cell.contentView.bounds.height + 1)
@@ -65,7 +65,7 @@ final class NativeFormAccessibilityTests: XCTestCase {
         controller.tableView.scrollToRow(at: margin, at: .middle, animated: false)
         controller.tableView.layoutIfNeeded()
         let cell = try XCTUnwrap(controller.tableView.cellForRow(at: margin))
-        XCTAssertEqual(descendants(cell).compactMap { $0 as? CompactSlider }.count, 1,
+        XCTAssertEqual(descendants(cell).compactMap { $0 as? PointPresetSlider }.count, 1,
                        "Changing reading mode must keep exactly one margin control.")
     }
 
