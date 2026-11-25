@@ -27,6 +27,7 @@ class RichReaderSurface extends StatefulWidget {
     this.onCenterTap,
     this.onAutoHideChrome,
     this.onNextChapter,
+    this.maxColumnWidth,
     this.onPreviousChapter,
     this.onVisibleTextOffset,
     this.onPlayFromHere,
@@ -43,6 +44,9 @@ class RichReaderSurface extends StatefulWidget {
   final TextStyle bodyStyle, headingStyle;
   final VoidCallback? onCenterTap, onAutoHideChrome;
   final bool Function()? onNextChapter, onPreviousChapter;
+
+  /// Width of the centered text column; the page and its edge zones keep the full width.
+  final double? maxColumnWidth;
   final ValueChanged<int?>? onVisibleTextOffset;
 
   /// Offered as "Play from here" on selected text, with the source UTF-16
@@ -302,6 +306,10 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final media = MediaQuery.of(context);
+      final column = widget.maxColumnWidth;
+      final gutter = column == null || constraints.maxWidth <= column
+          ? 0.0
+          : (constraints.maxWidth - column) / 2;
       final textGeometry = (
         constraints.maxWidth,
         widget.bodyStyle.fontSize,
@@ -454,7 +462,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                                   child: Padding(
                                     key: _content,
                                     padding: EdgeInsets.symmetric(
-                                      horizontal: widget.settings.readerMargin,
+                                      horizontal: widget.settings.readerMargin + gutter,
                                       vertical: 16,
                                     ),
                                     child: _selectableDocument(),

@@ -279,6 +279,41 @@ void main() {
   // Mirror of Apple #1391 (PAGE-TAP): a paginated chapter that falls back to scrolling
   // (a fragment taller than the page) turns one screen per edge tap; only at either
   // end does the tap go to the neighbouring chapter.
+  // Linux run 2026-11-25: on a maximized window the text sits in a centered column and a click
+  // near the window edge did nothing. Like the iPhone, the edge zones span the whole reader.
+  testWidgets('with a narrower text column the window edges still turn the chapter', (tester) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    var next = 0, previous = 0;
+    await tester.binding.setSurfaceSize(const Size(1400, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: RichReaderSurface(
+          chapter: FulltextChapter(index: 0, text: 'Title\nAuthor', html: '<h1>Title</h1><p>Author</p>'),
+          settings: settings,
+          maxColumnWidth: 600,
+          background: Colors.white,
+          foreground: Colors.black,
+          bodyStyle: const TextStyle(fontSize: 20),
+          headingStyle: const TextStyle(fontSize: 24),
+          onNextChapter: () { next++; return true; },
+          onPreviousChapter: () { previous++; return true; },
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('Title')).dx, greaterThan(400),
+        reason: 'the text stays in the centered column');
+
+    await tester.tapAt(const Offset(1350, 300));
+    await tester.pumpAndSettle();
+    expect(next, 1);
+    await tester.tapAt(const Offset(50, 300));
+    await tester.pumpAndSettle();
+    expect(previous, 1);
+  });
+
   testWidgets('edge taps scroll one screen in a chapter that fell back to scrolling', (
     tester,
   ) async {

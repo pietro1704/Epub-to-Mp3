@@ -241,11 +241,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
     if (widget.chapter.html?.trim().isNotEmpty == true) {
       return SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: settings.readerColumnWidth),
-            child: RichReaderSurface(
+        child: RichReaderSurface(
               chapter: widget.chapter,
+              maxColumnWidth: settings.readerColumnWidth,
               highlight: _richHighlight(),
               initialSourceOffset: widget.initialSourceOffset,
               settings: settings,
@@ -264,8 +262,6 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               onPairedChanged: (paired) =>
                   ref.read(readerNarrationPairedProvider.notifier).state =
                       paired,
-            ),
-          ),
         ),
       );
     }
