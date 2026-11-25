@@ -3,6 +3,7 @@ import XCTest
 
 /// Book HTML may quote attributes either way. Both forms must become bounded inline attachments, which the
 /// reader can fit to the page.
+@MainActor
 final class InlineImageQuotingTests: XCTestCase {
     private let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhWMjWwAAAABJRU5ErkJggg=="
 
