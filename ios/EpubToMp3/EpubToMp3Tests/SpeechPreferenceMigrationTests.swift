@@ -294,6 +294,8 @@ final class SpeechPreferenceMigrationTests: XCTestCase {
                     (Key.primarySelection, primary), (Key.secondarySelection, secondary),
                 ]
                 for case let (key, .value(value)) in seeds { defaults.set(value, forKey: key) }
+                // This grid covers the v1 rules; GlobalVoiceMigrationTests covers the later one.
+                defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)
                 let seeded = snapshot(defaults, suite: suite)
                 let label = "\(seeded)"
                 let expected = Self.afterTheEdgePrimaryDecision(legacyEffective(defaults))

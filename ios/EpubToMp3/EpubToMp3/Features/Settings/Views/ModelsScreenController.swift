@@ -89,11 +89,10 @@ final class ModelsScreenController: UITableViewController {
 
     // MARK: data source
 
-    /// Section 0 holds the narration settings the old voice-models screen carried
-    /// (default voice, reserve voice, system-voice fallback, online consent); on the
-    /// root one section with the voice for each language follows. On the language page
+    /// Section 0 of the root holds the fallback switches, the quality filter and the
+    /// language list entry; one section with the voice for each language follows. On the language page
     /// section 0 holds the Automatic row and the voice groups follow.
-    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback, showLowQuality, languages }
+    private enum NarrationRow: Int, CaseIterable { case automaticSystemFallback, onlineFallback, showLowQuality, languages }
 
     override func numberOfSections(in tableView: UITableView) -> Int { onlyLanguage == nil ? 2 : groups.count + 1 }
 
@@ -103,12 +102,12 @@ final class ModelsScreenController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        if section == 0 { return onlyLanguage == nil ? L10n.string("settings.audioEngine") : nil }
+        if section == 0 { return nil }
         return onlyLanguage == nil ? L10n.string("models.root.header") : groups[section - 1].title
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 { return L10n.string(onlyLanguage == nil ? "settings.audioEngineFooter" : "models.automatic") }
+        if section == 0, onlyLanguage != nil { return L10n.string("models.automatic") }
         return nil
     }
 
@@ -202,39 +201,6 @@ final class ModelsScreenController: UITableViewController {
 
     private func narrationCell(_ row: NarrationRow, at indexPath: IndexPath) -> UITableViewCell {
         switch row {
-        case .primary, .secondary:
-            let secondary = row == .secondary
-            let cell = tableView.dequeueReusableCell(withIdentifier: "Narration", for: indexPath)
-            let selection = secondary ? model.secondarySelection : model.primarySelection
-            var content = cell.defaultContentConfiguration()
-            // The headline is the engine; the voice or model inside it is the detail.
-            content.text = model.engineTitle(for: selection)
-            content.secondaryText = model.voiceTitle(for: selection)
-            content.image = UIImage(systemName: "waveform")
-            cell.contentConfiguration = content
-            cell.accessoryView = UIImageView(image: UIImage(systemName: "chevron.up.chevron.down"))
-            cell.accessoryView?.tintColor = .secondaryLabel
-            cell.selectionStyle = .none
-            cell.isAccessibilityElement = false
-            // A transparent button over the cell opens the menu: it runs the choice the instant an option is
-            // tapped (an action sheet only runs it after its dismissal animation ends).
-            let tag = 4242
-            let button = (cell.contentView.viewWithTag(tag) as? UIButton) ?? {
-                let created = UIButton(type: .custom)
-                created.tag = tag
-                created.frame = cell.contentView.bounds
-                created.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                cell.contentView.addSubview(created)
-                return created
-            }()
-            button.showsMenuAsPrimaryAction = true
-            button.menu = narrationMenu(secondary: secondary)
-            button.isAccessibilityElement = true
-            button.accessibilityIdentifier = secondary ? "settings.tts.secondary" : "settings.tts.primary"
-            button.accessibilityLabel = L10n.string(secondary ? "settings.secondaryVoice" : "settings.audioEngineChoice")
-            button.accessibilityValue = [content.text, content.secondaryText].compactMap { $0 }.joined(separator: ", ")
-            button.accessibilityTraits = .button
-            return cell
         case .automaticSystemFallback:
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
             cell.configure(title: L10n.string("settings.automaticSystemFallback"),
@@ -270,44 +236,6 @@ final class ModelsScreenController: UITableViewController {
             cell.accessibilityTraits = .button
             return cell
         }
-    }
-
-    /// Engine first (System, Piper, Edge); inside Piper its downloaded models. Every leaf applies at once.
-    func narrationMenu(secondary: Bool) -> UIMenu {
-        let spec = model.narrationMenu(secondary: secondary)
-        var children: [UIMenuElement] = []
-        if spec.showsNone {
-            children.append(UIAction(title: L10n.string("settings.noSecondary"), state: spec.noneIsSelected ? .on : .off) { [weak self] _ in
-                self?.applyNarration(nil, secondary: true)
-            })
-        }
-        for engine in spec.engines {
-            if engine.hasVoiceList {
-                let voices: [UIMenuElement] = engine.voices.isEmpty
-                    ? [UIAction(title: engine.hint ?? engine.title, attributes: .disabled) { _ in }]
-                    : engine.voices.map { voice in
-                        UIAction(title: voice.title, state: voice.isSelected ? .on : .off) { [weak self] _ in
-                            self?.applyNarration(voice.selection, secondary: secondary)
-                        }
-                    }
-                children.append(UIMenu(title: engine.title, image: engine.isSelected ? UIImage(systemName: "checkmark") : nil,
-                                       children: voices))
-            } else {
-                children.append(UIAction(title: engine.title, subtitle: engine.isEnabled ? nil : engine.hint,
-                                         attributes: engine.isEnabled ? [] : .disabled,
-                                         state: engine.isSelected ? .on : .off) { [weak self] _ in
-                    self?.applyNarration(engine.direct, secondary: secondary)
-                })
-            }
-        }
-        return UIMenu(children: children)
-    }
-
-    /// Applies the choice and refreshes both narration rows in the same turn as the tap.
-    private func applyNarration(_ selection: TtsSelection?, secondary: Bool) {
-        if secondary { model.selectSecondary(selection) } else if let selection { model.selectPrimary(selection) }
-        tableView.reloadRows(at: [IndexPath(row: NarrationRow.primary.rawValue, section: 0),
-                                  IndexPath(row: NarrationRow.secondary.rawValue, section: 0)], with: .none)
     }
 
     // MARK: actions

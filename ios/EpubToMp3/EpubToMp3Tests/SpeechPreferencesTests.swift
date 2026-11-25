@@ -25,11 +25,17 @@ final class SpeechPreferencesTests: XCTestCase {
         return try XCTUnwrap(UserDefaults(suiteName: suite))
     }
 
+    /// These cases cover the load rules alone; GlobalVoiceMigrationTests covers the one that moves the primary.
+    private func markGlobalVoiceMigrationDone(_ defaults: UserDefaults) {
+        defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)
+    }
+
     func testLoadingRunsTheMigrationAndReadsTheSavedChoices() throws {
         let defaults = try makeDefaults()
         defaults.set("edge", forKey: Key.legacyPrimaryEngine)
         defaults.set(true, forKey: Key.onlineFallbackConsent)
         defaults.set(false, forKey: SpeechPreferences.automaticSystemFallbackKey)
+        markGlobalVoiceMigrationDone(defaults)
 
         let speech = SpeechPreferences(defaults: defaults)
         XCTAssertEqual(speech.primaryTtsSelection, .edgeDefault)
@@ -101,10 +107,12 @@ final class SpeechPreferencesTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
         defaults.set(true, forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
+        markGlobalVoiceMigrationDone(defaults)
         XCTAssertEqual(SpeechPreferences(defaults: defaults).primaryTtsSelection.engine, "edge")
         let (system, systemName) = try defaultsSuite()
         defer { system.removePersistentDomain(forName: systemName) }
         system.set(try JSONEncoder().encode(TtsSelection.systemDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
+        markGlobalVoiceMigrationDone(system)
         XCTAssertEqual(SpeechPreferences(defaults: system).primaryTtsSelection.engine, "system")
     }
 

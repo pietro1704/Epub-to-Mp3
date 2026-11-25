@@ -190,6 +190,7 @@ final class AppSettingsSpeechCharacterizationTests: XCTestCase {
         defaults.set("system", forKey: Key.legacyPrimaryEngine)
         defaults.set("piper", forKey: Key.legacySecondaryEngine)
 
+        defaults.set(GlobalVoiceMigration.currentVersion, forKey: GlobalVoiceMigration.versionKey)  // v1 rules only
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
         XCTAssertEqual(settings.secondaryTtsSelection, .defaultPiper)

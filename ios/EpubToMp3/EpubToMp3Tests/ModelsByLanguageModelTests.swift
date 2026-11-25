@@ -267,20 +267,8 @@ final class ModelsByLanguageModelTests: XCTestCase {
         let (model, settings, defaults, name) = try make(FakeSource())
         defer { defaults.removePersistentDomain(forName: name) }
         await model.load()
-        // Default voice and reserve choices: ready models of every language, the system voice and Edge.
-        let titles = model.narrationChoices.map(\.title)
-        XCTAssertTrue(titles.contains("pt_BR-faber-medium") && titles.contains(L10n.string("settings.systemTts")))
-        XCTAssertFalse(titles.contains("pt_BR-cadu-medium"), "A model that is not downloaded is not offered as the default voice.")
-        model.selectPrimary(.systemDefault)
-        XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
-        XCTAssertFalse(model.secondaryChoices.contains { $0.selection.engine == "edge" }, "Edge needs the online consent")
         model.allowOnlineFallback = true
         XCTAssertTrue(settings.allowOnlineAudioFallback)
-        XCTAssertTrue(model.secondaryChoices.contains { $0.selection.engine == "edge" })
-        model.selectSecondary(.edgeDefault)
-        XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
-        model.selectSecondary(nil)
-        XCTAssertNil(settings.secondaryTtsSelection)
         model.allowAutomaticSystemVoiceFallback = false
         XCTAssertFalse(settings.allowAutomaticSystemVoiceFallback)
         XCTAssertEqual(model.title(for: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil)), "pt_BR-faber-medium")
@@ -341,7 +329,6 @@ final class ModelsByLanguageModelTests: XCTestCase {
         guard case .downloadable = low.availability else { return XCTFail("Not downloaded: dimmed and downloadable") }
         XCTAssertEqual(model.state.sections.first { $0.language == "pt" }?.local.last?.selection.modelID, FakeSource.lowID,
                        "Low is ranked after the other voices")
-        XCTAssertFalse(model.narrationChoices.contains { $0.selection.modelID == FakeSource.lowID })
         await model.setShowLowQuality(false)
         XCTAssertNil(lowRow(model), "Hiding the filter hides the voice again")
     }
@@ -413,50 +400,5 @@ final class ModelsByLanguageModelTests: XCTestCase {
         try await model.remove(try XCTUnwrap(lowRow(model)), in: "pt")
         XCTAssertEqual(source.explicitRemovals, [FakeSource.lowID])
         guard case .downloadable = try XCTUnwrap(lowRow(model)).availability else { return XCTFail("Removed: downloadable again") }
-    }
-
-    // MARK: engine-first narration menu
-
-    func testPrimaryMenuIsEngineFirstWithPiperModelsInsideAndEdgeNeedingConsent() async throws {
-        let (model, settings, defaults, name) = try make(FakeSource())
-        defer { defaults.removePersistentDomain(forName: name) }
-        await model.load()
-        let menu = model.narrationMenu(secondary: false)
-        XCTAssertEqual(menu.engines.map(\.engine), ["system", "piper", "edge"])
-        XCTAssertFalse(menu.showsNone)
-        let piper = try XCTUnwrap(menu.engines.first { $0.engine == "piper" })
-        XCTAssertTrue(piper.hasVoiceList)
-        XCTAssertEqual(piper.voices.map(\.selection.modelID), ["pt_BR-faber-medium"], "Only downloaded models")
-        XCTAssertTrue(piper.isSelected, "Faber (Piper) is the default primary")
-        let edge = try XCTUnwrap(menu.engines.first { $0.engine == "edge" })
-        XCTAssertFalse(edge.isEnabled, "Edge stays disabled until the online permission is on")
-        XCTAssertNotNil(edge.hint)
-        settings.allowOnlineAudioFallback = true
-        XCTAssertTrue(try XCTUnwrap(model.narrationMenu(secondary: false).engines.first { $0.engine == "edge" }).isEnabled)
-    }
-
-    func testChoosingAnEngineOrVoiceAppliesAtOnceAndTheCellShowsEngineThenVoice() async throws {
-        let (model, settings, defaults, name) = try make(FakeSource())
-        defer { defaults.removePersistentDomain(forName: name) }
-        await model.load()
-        XCTAssertEqual(model.engineTitle(for: model.primarySelection), "Piper")
-        XCTAssertEqual(model.voiceTitle(for: model.primarySelection), "pt_BR-faber-medium")
-        let system = try XCTUnwrap(model.narrationMenu(secondary: false).engines.first { $0.engine == "system" }?.direct)
-        model.selectPrimary(system)   // synchronous: nothing waits for an animation
-        XCTAssertEqual(model.engineTitle(for: model.primarySelection), L10n.string("models.engine.system"))
-        XCTAssertEqual(model.voiceTitle(for: model.primarySelection), L10n.string("models.engine.systemDetail"))
-        XCTAssertTrue(try XCTUnwrap(model.narrationMenu(secondary: false).engines.first { $0.engine == "system" }).isSelected)
-        // The reserve menu starts with None, excludes the engine/voice that is already the primary.
-        let secondary = model.narrationMenu(secondary: true)
-        XCTAssertTrue(secondary.showsNone)
-        XCTAssertTrue(secondary.noneIsSelected || settings.secondaryTtsSelection != nil)
-        XCTAssertFalse(try XCTUnwrap(secondary.engines.first { $0.engine == "system" }).isEnabled,
-                       "The primary voice cannot repeat as the reserve")
-        let piperVoice = try XCTUnwrap(secondary.engines.first { $0.engine == "piper" }?.voices.first?.selection)
-        model.selectSecondary(piperVoice)
-        XCTAssertEqual(model.engineTitle(for: model.secondarySelection), "Piper")
-        model.selectSecondary(nil)
-        XCTAssertEqual(model.engineTitle(for: model.secondarySelection), L10n.string("settings.noSecondary"))
-        XCTAssertNil(model.voiceTitle(for: model.secondarySelection))
     }
 }

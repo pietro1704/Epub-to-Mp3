@@ -17,7 +17,7 @@ final class SpeechPreferences: ObservableObject {
     private var loadingPersistedValues = true
     private static let log = Logger(subsystem: "epub2mp3", category: "Settings")
 
-    init(defaults: UserDefaults) {
+    init(defaults: UserDefaults, preferredLanguages: [String] = Locale.preferredLanguages) {
         self.defaults = defaults
         SpeechPreferenceMigration.runIfNeeded(defaults)
         self.primaryTtsSelection = Self.storedSelection(defaults, key: SpeechPreferenceMigration.Key.primarySelection)
@@ -29,6 +29,7 @@ final class SpeechPreferences: ObservableObject {
         self.languageModelChoices = Self.storedLanguageChoices(defaults)
         loadingPersistedValues = false
         migrateUnconsentedEdgePrimary()
+        GlobalVoiceMigration.runIfNeeded(self, defaults: defaults, preferredLanguages: preferredLanguages)
     }
 
     /// Mirror of the Rust `TtsPreferences::migrate_unconsented_edge_primary` (the owner's decision): a saved Edge
