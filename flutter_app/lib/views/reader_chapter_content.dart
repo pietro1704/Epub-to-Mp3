@@ -102,6 +102,12 @@ class ReaderHtmlChapterContent extends StatelessWidget {
       data: bookCss == null ? html : '<style>$bookCss</style>$html',
       onLinkTap: (url, _, _) => onLinkTap?.call(url),
       extensions: [
+        // flutter_html converts `em` only for elements with children, so the empty `hr` kept
+        // its em margins and CssBoxWidget scaled them again on every layout (a page-high gap).
+        TagExtension(
+          tagsToExtend: {'hr'},
+          builder: (context) => _horizontalRule(context.style!, fg),
+        ),
         if (maxImageHeight case final height?)
           // Inline images take only the line width from the text layout, so the cap
           // goes on the image itself.
@@ -213,6 +219,26 @@ Widget _pageFittedImage(ExtensionContext context, double maxHeight) {
       height: double.tryParse(attributes['height'] ?? ''),
       fit: BoxFit.contain,
       errorBuilder: (_, _, _) => alt,
+    ),
+  );
+}
+
+/// A rule with the book's vertical margins (default 0.5em), resolved once against its font size.
+Widget _horizontalRule(Style style, Color fg) {
+  final em = style.fontSize?.value ?? 16;
+  double resolve(Margin? margin) => switch (margin?.unit) {
+    Unit.em || Unit.rem => margin!.value * em,
+    Unit.px => margin!.value,
+    _ => 0.5 * em,
+  };
+  return Padding(
+    padding: EdgeInsets.only(
+      top: resolve(style.margin?.top),
+      bottom: resolve(style.margin?.bottom),
+    ),
+    child: SizedBox(
+      width: double.infinity,
+      child: Divider(height: 1, thickness: 1, color: fg.withValues(alpha: 0.5)),
     ),
   );
 }
