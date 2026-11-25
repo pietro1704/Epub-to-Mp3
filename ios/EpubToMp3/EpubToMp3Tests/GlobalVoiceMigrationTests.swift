@@ -94,6 +94,41 @@ final class GlobalVoiceMigrationTests: XCTestCase {
         XCTAssertEqual(preferences.secondaryTtsSelection, .systemDefault)
     }
 
+    /// A4B-SAVED-RESERVE-VOICE: no menu shows the reserve any more, so a saved Piper or Edge reserve returns to the
+    /// system voice; only the two fallback switches remain.
+    func testSavedPiperOrEdgeReserveReturnsToTheSystemVoice() throws {
+        let piperReserve = load(try seeded(primary: .defaultPiper, secondary: englishPiper))
+        XCTAssertEqual(piperReserve.secondaryTtsSelection, .systemDefault)
+        let edgeReserve = try seeded(primary: .defaultPiper, secondary: .edgeDefault, consent: true)
+        XCTAssertEqual(load(edgeReserve).secondaryTtsSelection, .systemDefault)
+        XCTAssertEqual(load(edgeReserve).secondaryTtsSelection, .systemDefault, "The result is saved.")
+    }
+
+    /// The old Edge primary would become the reserve; it returns to the system voice as well.
+    func testOldEdgePrimaryDoesNotBecomeTheReserve() throws {
+        let preferences = load(try seeded(primary: .edgeDefault, secondary: .defaultPiper, consent: true))
+        XCTAssertEqual(preferences.languageModelChoices, ["pt": .edgeDefault, "en": .edgeDefault])
+        XCTAssertEqual(preferences.primaryTtsSelection, .defaultPiper)
+        XCTAssertEqual(preferences.secondaryTtsSelection, .systemDefault)
+    }
+
+    /// A system reserve (with or without a chosen voice) and an explicit "no reserve" are kept.
+    func testSystemOrMissingReserveIsKept() throws {
+        let luciana = TtsSelection.engineDefault("system", voice: "com.apple.voice.compact.pt-BR.Luciana")
+        XCTAssertEqual(load(try seeded(primary: .defaultPiper, secondary: luciana)).secondaryTtsSelection, luciana)
+        XCTAssertNil(load(try seeded(primary: .defaultPiper)).secondaryTtsSelection)
+    }
+
+    /// A store that already ran the first version only gets the reserve reset; its saved choices are not copied again.
+    func testStoreMigratedByTheFirstVersionOnlyResetsItsReserve() throws {
+        let defaults = try seeded(primary: englishPiper, secondary: .edgeDefault, consent: true)
+        defaults.set(1, forKey: GlobalVoiceMigration.versionKey)
+        let preferences = load(defaults)
+        XCTAssertEqual(preferences.secondaryTtsSelection, .systemDefault)
+        XCTAssertEqual(preferences.primaryTtsSelection, englishPiper)
+        XCTAssertEqual(preferences.languageModelChoices, [:])
+    }
+
     func testMigrationRunsOnce() throws {
         let defaults = try seeded(primary: .defaultPiper)
         load(defaults).selectPrimaryNarration(.systemDefault)
