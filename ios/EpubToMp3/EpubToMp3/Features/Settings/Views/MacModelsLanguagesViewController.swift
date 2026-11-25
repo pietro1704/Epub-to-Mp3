@@ -45,7 +45,8 @@ final class MacModelsLanguagesViewController: NSViewController, NSTableViewDataS
         table.target = self
         table.action = #selector(rowClicked)
         table.setAccessibilityIdentifier("models.languages.table")
-        let scroll = NSScrollView()
+        // A zero-sized root would shrink a hosting window and leave the table without rows.
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         view = scroll
