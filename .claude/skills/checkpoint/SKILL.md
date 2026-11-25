@@ -15,6 +15,6 @@ Sections, each short:
 - **In progress**: branch, worktree, exact running command or CI run ID.
 - **Next steps** in order, with the owner of each.
 - **Blockers**: what waits for Pietro, a device, CI or another pane.
-- **Background state** to restore after a restart (watchdog, monitors, farm loop).
+- **Background state** to restore after a restart (monitors, farm loop).
 
 Keep durable project facts in the repository docs, not in the checkpoint.
