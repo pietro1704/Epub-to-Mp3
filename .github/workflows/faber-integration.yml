@@ -531,6 +531,7 @@ jobs:
             "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
             -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests
             -only-testing:EpubToMp3Tests/AppStartupTimingTests
+            -only-testing:EpubToMp3Tests/AppWindowConfigurationTests
             -only-testing:EpubToMp3Tests/ConvertViewModelTests
             -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests
             -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests
@@ -540,6 +541,7 @@ jobs:
             -only-testing:EpubToMp3Tests/MacReaderPDFViewportTests
             -only-testing:EpubToMp3Tests/MacConverterOCRMessageTests
             -only-testing:EpubToMp3Tests/MacSettingsLinuxLayoutTests
+            -only-testing:EpubToMp3Tests/MacReaderTextLayoutTests
             -only-testing:EpubToMp3Tests/MacPlayerBarAccessibilityTests
             -only-testing:EpubToMp3Tests/ConversionCallbackBoundaryTests
             -only-testing:EpubToMp3Tests/LibraryBookOpeningTests

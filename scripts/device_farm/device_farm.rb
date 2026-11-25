@@ -109,15 +109,56 @@ module DeviceFarm
 
   def self.adb(serial, *args, timeout: 60)
     safe!(args)
+    capture(env, ['adb', '-s', resolve(serial), *args], timeout: timeout, label: "adb -s #{serial} #{args.join(' ')}")
+  end
+
+  # Runs argv in its own process group and kills the whole group at the deadline. Timeout around
+  # Open3.capture2e did not: its ensure joins the child, so a hung `adb install` ran for 1h34.
+  def self.capture(env, argv, timeout:, label: argv.join(' '))
+    reader, writer = IO.pipe
+    pid = Process.spawn(env, *argv, %i[out err] => writer, in: File::NULL, pgroup: true)
+    writer.close
     out = +''
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     status = nil
-    Timeout.timeout(timeout) do
-      out, status = Open3.capture2e(env, 'adb', '-s', resolve(serial), *args)
-      out = out.scrub
+    loop do
+      remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      break if remaining <= 0
+
+      if reader.closed?
+        _, status = Process.waitpid2(pid, Process::WNOHANG)
+        break if status
+
+        Kernel.sleep([remaining, 0.1].min)
+      elsif reader.wait_readable(remaining)
+        chunk = reader.read_nonblock(65_536, exception: false)
+        chunk.nil? ? reader.close : (out << chunk unless chunk == :wait_readable)
+      end
     end
-    [out, status.success?]
-  rescue Timeout::Error
-    ["timeout after #{timeout}s: adb -s #{serial} #{args.join(' ')}", false]
+    reader.close unless reader.closed?
+    return [out.scrub, status.success?] if status
+
+    kill_group(pid)
+    ["timeout after #{timeout}s: #{label}", false]
+  end
+
+  def self.kill_group(pid)
+    %w[TERM KILL].each do |signal|
+      Process.kill(signal, -pid)
+      10.times do
+        return if Process.waitpid(pid, Process::WNOHANG)
+
+        Kernel.sleep(0.2)
+      end
+    end
+  rescue Errno::ESRCH, Errno::ECHILD
+    nil
+  end
+
+  # A screen turned off on a phone with a PIN comes back on the PIN screen: the farm cannot
+  # unlock it and every later phase stalls. Only a reported non-secure keyguard may sleep.
+  def self.screen_off_safe?(window)
+    window.match?(/^\s*secure=false\b/)
   end
 
   # --- device health -------------------------------------------------------------------------
@@ -233,17 +274,20 @@ module DeviceFarm
     adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.MONKEY', '1', timeout: 30)
     sleep 8
     pid_before, = adb(serial, 'shell', 'pidof', PACKAGE, timeout: 20)
+    window, = adb(serial, 'shell', 'dumpsys', 'window', timeout: 20)
+    screen_off = screen_off_safe?(window)
     adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_HOME', timeout: 20)
-    adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_SLEEP', timeout: 20)
+    adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_SLEEP', timeout: 20) if screen_off
     sleep(minutes * 60)
-    adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP', timeout: 20)
+    adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP', timeout: 20) if screen_off
     pid_after, = adb(serial, 'shell', 'pidof', PACKAGE, timeout: 20)
     logcat, = adb(serial, 'logcat', '-d', '-t', '4000', timeout: 30)
     crashes = crash_lines(logcat)
     close_app(serial)
     survived = !pid_after.strip.empty? || pid_before.strip.empty?
     ok = crashes.empty? && survived
-    detail = ok ? "background survival #{minutes} min ok" : "background survival #{minutes} min: #{crashes.first.to_s.strip}#{' process gone' unless survived}"
+    coverage = screen_off ? '' : ' (screen-off not exercised: secure or unknown lock screen)'
+    detail = ok ? "background survival #{minutes} min ok#{coverage}" : "background survival #{minutes} min: #{crashes.first.to_s.strip}#{' process gone' unless survived}"
     Result.new(serial, 'soak', ok, detail, ok ? nil : "soak:#{signature(crashes)}#{'process-gone' unless survived}", ok ? '' : logcat.lines.last(300).join)
   end
 

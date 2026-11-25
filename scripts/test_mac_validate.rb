@@ -33,12 +33,15 @@ class MacValidateTest < Minitest::Test
           uname) echo x86_64 ;;
           xcrun) echo '{"devices":{}}' ;;
           pgrep) exit 1 ;;
+          codesign) if [ "$1" = -d ]; then cat "$MAC_VALIDATE_TEST_ENTITLEMENTS"; fi ;;
         esac
       SH
       File.chmod(0o755, File.join(@bin, name))
     end
+    @entitlements = File.join(@temporary, 'entitlements.plist')
+    write_entitlements(%w[com.apple.security.app-sandbox com.apple.security.network.client])
     @environment = { 'PATH' => "#{@bin}:/usr/bin:/bin", 'MAC_VALIDATE_TEST_TRACE' => @trace,
-                     'DEVELOPER_DIR' => nil }
+                     'MAC_VALIDATE_TEST_ENTITLEMENTS' => @entitlements, 'DEVELOPER_DIR' => nil }
   end
 
   def teardown
@@ -172,6 +175,47 @@ class MacValidateTest < Minitest::Test
     refute status.success?
     assert_includes error, 'identity unknown or changed'
     refute_includes File.read(@trace), 'open '
+  end
+
+  def write_entitlements(keys)
+    body = keys.map { |key| "<key>#{key}</key><true/>" }.join
+    File.write(@entitlements, %(<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>#{body}</dict></plist>))
+  end
+
+  # MAC-NO-NETWORK-ENTITLEMENT: a sandboxed app signed without outgoing network
+  # cannot resolve DNS (NSURLError -1003), so Piper models never download.
+  def test_sandboxed_app_without_network_client_is_refused_before_gui_launch
+    receipt
+    write_entitlements(%w[com.apple.security.app-sandbox com.apple.security.get-task-allow])
+    _out, error, status = invoke('gui')
+    refute status.success?
+    assert_includes error, 'com.apple.security.network.client'
+    refute_includes File.read(@trace), 'open '
+  end
+
+  def test_missing_entitlements_lists_network_client_only_for_sandboxed_apps
+    sandboxed = %(<plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>)
+    assert_equal ['com.apple.security.network.client'], MacValidate.missing_entitlements(sandboxed)
+    networked = sandboxed.sub('</dict>', '<key>com.apple.security.network.client</key><true/></dict>')
+    assert_empty MacValidate.missing_entitlements(networked)
+    assert_empty MacValidate.missing_entitlements('<plist version="1.0"><dict></dict></plist>')
+  end
+
+  def test_project_grants_outgoing_network_wherever_it_enables_the_mac_sandbox
+    project = File.read(File.expand_path('../ios/EpubToMp3/project.yml', __dir__))
+    assert_match(/"ENABLE_APP_SANDBOX\[sdk=macosx\*\]": YES/, project)
+    assert_match(/"ENABLE_OUTGOING_NETWORK_CONNECTIONS\[sdk=macosx\*\]": YES/, project)
+  end
+
+  # `mise run mac:build` with MAC_BUILD_CONFIG=Debug signs with the Debug file,
+  # so every sandboxed Mac app entitlements file must grant outgoing network.
+  def test_every_sandboxed_app_entitlements_file_grants_outgoing_network
+    resources = File.expand_path('../ios/EpubToMp3/EpubToMp3/Resources', __dir__)
+    files = Dir.glob(File.join(resources, 'EpubToMp3*.entitlements')).reject { |path| path.end_with?('-iOS.entitlements') }
+    assert_includes files.map { |path| File.basename(path) }, 'EpubToMp3-Debug.entitlements'
+    files.each do |path|
+      assert_empty MacValidate.missing_entitlements(File.read(path)), "#{File.basename(path)} lacks network.client"
+    end
   end
 
   def test_signature_failure_prevents_gui_launch

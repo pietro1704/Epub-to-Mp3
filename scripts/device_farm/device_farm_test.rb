@@ -184,4 +184,68 @@ class DeviceFarmTest < Minitest::Test
     assert DeviceFarm.uninstall_after_round?('192.168.0.178:5555'), 'either name of the A8'
     refute DeviceFarm.uninstall_after_round?('192.168.0.130:46183')
   end
+
+  # A8 2026-11-25: the soak sent KEYCODE_SLEEP; with a PIN, WAKEUP leaves the phone on the PIN screen
+  # and every later phase stalls until a person unlocks it.
+  def soak_calls(window)
+    calls = []
+    fakes = {
+      adb: lambda { |_serial, *args, **|
+        calls << args.join(' ')
+        [args.include?('window') ? window : '123', true]
+      },
+      sleep: ->(*) {},
+      close_app: ->(*) {}
+    }
+    singleton = DeviceFarm.singleton_class
+    originals = fakes.keys.to_h { |name| [name, DeviceFarm.method(name)] }
+    fakes.each { |name, fake| singleton.define_method(name, &fake) }
+    [calls, DeviceFarm.soak('serial', minutes: 0)]
+  ensure
+    originals&.each { |name, original| singleton.define_method(name, original) }
+  end
+
+  def test_the_soak_never_turns_off_the_screen_of_a_device_with_a_secure_lock
+    ["KeyguardServiceDelegate\n  secure=true\n", "no keyguard information\n"].each do |window|
+      calls, result = soak_calls(window)
+      refute(calls.any? { |call| call.include?('KEYCODE_SLEEP') }, window)
+      assert result.ok
+      assert_match(/screen-off not exercised/, result.detail)
+    end
+  end
+
+  def test_the_soak_turns_off_the_screen_of_a_device_without_a_secure_lock
+    calls, result = soak_calls("KeyguardServiceDelegate\n  secure=false\n")
+    assert(calls.any? { |call| call.include?('KEYCODE_SLEEP') })
+    assert(calls.any? { |call| call.include?('KEYCODE_WAKEUP') })
+    refute_match(/not exercised/, result.detail)
+  end
+
+  # A8 2026-11-25: `adb install` hung for 1h34 although adb() has a 300 s timeout: Timeout only
+  # interrupted the Ruby thread and the adb process kept running and holding the device.
+  def test_a_command_past_its_timeout_is_killed_with_its_children
+    Dir.mktmpdir do |dir|
+      pids = File.join(dir, 'pids')
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      out, ok = DeviceFarm.capture({}, ['sh', '-c', "sleep 30 & echo $$ $! > #{pids}; wait"], timeout: 1)
+      refute ok
+      assert_match(/timeout after 1s/, out)
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+      File.read(pids).split.map(&:to_i).each do |pid|
+        alive = 20.times.all? do
+          Process.kill(0, pid)
+          !Kernel.sleep(0.1)
+        rescue Errno::ESRCH
+          false
+        end
+        refute alive, "process #{pid} still alive"
+      end
+    end
+  end
+
+  def test_a_command_within_its_timeout_returns_its_output
+    out, ok = DeviceFarm.capture({}, ['sh', '-c', 'echo hello'], timeout: 5)
+    assert ok
+    assert_equal "hello\n", out
+  end
 end
