@@ -61,7 +61,7 @@ final class RemoteButtonModeRowTests: XCTestCase {
         let table = UITableView()
         table.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         let rows = PlaybackSettingsRows(tableView: table, settings: settings)
-        XCTAssertEqual(SettingsSection.playback.rowCount(speechModels: .empty), 3)
+        XCTAssertEqual(SettingsSection.playback.rowCount, 3)
 
         let cell = rows.cell(for: IndexPath(row: 2, section: 0))
         XCTAssertEqual(cell.accessibilityIdentifier, "settings.remoteButtons")
