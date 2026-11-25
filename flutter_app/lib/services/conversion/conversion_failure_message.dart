@@ -52,6 +52,8 @@ String? localizedConversionFailure(AppLocalizations t, Object error) {
       return prefixed(t.bookLanguageUncertain);
     case 'edge_consent_required':
       return prefixed(t.errorEdgeConsentRequired);
+    case 'pdf_ocr_required':
+      return prefixed(t.errorPdfOcrRequired);
     case 'no_readable_text':
       return prefixed(t.errorNoReadableText);
     case 'engine_unavailable':

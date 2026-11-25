@@ -126,7 +126,7 @@ class MainActivity : AudioServiceActivity() {
 
     internal fun conversionOptions(raw: String?): String = NativeTtsOptions.prepare(applicationContext, raw)
 
-    external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean): String?
+    external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean, textOffset: Int): String?
     external fun nativePiperSynthesizeWithOptions(text: String, output: String, optionsJson: String): Boolean
     external fun nativeParse(inputPath: String): String?
     external fun nativeLibraryMetadata(inputPath: String): String?

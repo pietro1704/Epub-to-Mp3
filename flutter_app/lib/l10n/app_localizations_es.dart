@@ -658,6 +658,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get readerPlayFromHere => 'Reproducir desde aquí';
 
   @override
+  String get errorPdfOcrRequired =>
+      'Este PDF tiene una página que solo contiene una imagen, sin texto seleccionable (a menudo la portada). No se puede narrar hasta que ese texto se reconozca (OCR).';
+
+  @override
   String get errorNoReadableText =>
       'No se pudo extraer texto legible de este libro.';
 

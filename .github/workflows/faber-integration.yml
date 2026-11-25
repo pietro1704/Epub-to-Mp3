@@ -543,7 +543,10 @@ jobs:
             -only-testing:EpubToMp3Tests/MacConverterOCRMessageTests
             -only-testing:EpubToMp3Tests/MacSettingsLinuxLayoutTests
             -only-testing:EpubToMp3Tests/MacReaderToolbarVisibilityTests
+            -only-testing:EpubToMp3Tests/MacReaderColumnsTests
             -only-testing:EpubToMp3Tests/MacReaderTextLayoutTests
+            -only-testing:EpubToMp3Tests/MacReaderHeaderClearanceTests
+            -only-testing:EpubToMp3Tests/InlineImageQuotingTests
             -only-testing:EpubToMp3Tests/MacPlayerBarAccessibilityTests
             -only-testing:EpubToMp3Tests/ConversionCallbackBoundaryTests
             -only-testing:EpubToMp3Tests/LibraryBookOpeningTests
@@ -552,6 +555,7 @@ jobs:
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
             -only-testing:EpubToMp3Tests/MacSpeechModelProductActionsTests
             -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests
+            -only-testing:EpubToMp3Tests/MacScrollableStackWindowTests
             -only-testing:EpubToMp3Tests/FaberNativeInferenceTests
           )
           mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild build-for-testing "${test_arguments[@]}" \

@@ -4,10 +4,9 @@ extension RustConversionCoordinator {
     /// Restore durable Rust output without reopening or synthesizing the book.
     static func persistedSnapshot(jobID: String, fileManager: FileManager = .default) -> JobSnapshot? {
         guard !jobID.isEmpty, jobID != ".", jobID != "..",
-              !jobID.contains("/"), !jobID.contains("\\"), !jobID.contains("\0"),
-              let root = try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                             appropriateFor: nil, create: false) else { return nil }
-        let directory = root.appendingPathComponent("EpubToMp3", isDirectory: true)
+              !jobID.contains("/"), !jobID.contains("\\"), !jobID.contains("\0") else { return nil }
+        let directory = ApplicationSupportRoot.url(fileManager: fileManager)
+            .appendingPathComponent("EpubToMp3", isDirectory: true)
             .appendingPathComponent("RustConversions", isDirectory: true)
             .appendingPathComponent(jobID, isDirectory: true)
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("manifest.json")),

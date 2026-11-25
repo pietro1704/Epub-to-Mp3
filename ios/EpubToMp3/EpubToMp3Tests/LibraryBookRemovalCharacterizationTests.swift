@@ -178,8 +178,7 @@ final class LibraryBookRemovalCharacterizationTests: XCTestCase {
         _ = try writeFile(legacyAudiobook.appendingPathComponent("chapters/0.mp3"), bytes: [9])
         let legacyFulltext = try writeFile(try XCTUnwrap(FulltextStore.fulltextURL(for: jobID)), bytes: [8])
         let readerFulltext = try writeFile(try XCTUnwrap(LocalFulltextCache.storageURL(bookId: bookID)), bytes: [7])
-        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                  appropriateFor: nil, create: true)
+        let support = ApplicationSupportRoot.url()
         let readerFonts = support.appendingPathComponent("EpubToMp3/ReaderFonts-v1/\(bookID)", isDirectory: true)
         _ = try writeFile(readerFonts.appendingPathComponent("font.ttf"), bytes: [6])
         ReaderProgressStore.save(bookId: bookID, chapterIndex: 2, offsetFraction: 0.5)

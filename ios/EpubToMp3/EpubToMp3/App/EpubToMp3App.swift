@@ -410,10 +410,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         classLookup: (String) -> AnyClass? = NSClassFromString
     ) -> Bool {
-        environment.keys.contains("XCTestConfigurationFilePath")
-            || environment.keys.contains("XCTestSessionIdentifier")
-            || environment.keys.contains("XCTestBundlePath")
-            || classLookup("XCTest.XCTestCase") != nil
-            || classLookup("XCTestCase") != nil
+        ApplicationSupportRoot.isRunningUnderXCTest(environment: environment, classLookup: classLookup)
     }
 }

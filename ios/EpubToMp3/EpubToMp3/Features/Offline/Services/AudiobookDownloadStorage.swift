@@ -29,11 +29,7 @@ enum AudiobookDownloadStorage {
         // App-owned audio must stay inside the sandbox. Reading the user's
         // Documents directory on every launch triggers a macOS privacy prompt
         // even though the user only selected a book once in the file picker.
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0]
-        base = support.appendingPathComponent(applicationSupportFolderName, isDirectory: true)
+        base = ApplicationSupportRoot.url().appendingPathComponent(applicationSupportFolderName, isDirectory: true)
         #else
         base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         #endif

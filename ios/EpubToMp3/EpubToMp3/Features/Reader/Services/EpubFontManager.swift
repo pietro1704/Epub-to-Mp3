@@ -112,13 +112,8 @@ enum EpubFontManager {
         return registered
     }
 
-    private static func persistentDirectory(bookID: String) -> URL? {
-        guard let applicationSupport = try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ) else { return nil }
+    static func persistentDirectory(bookID: String) -> URL? {
+        let applicationSupport = ApplicationSupportRoot.url()
         let safeBookID = bookID.unicodeScalars
             .filter { CharacterSet.alphanumerics.contains($0) }
             .map(String.init)

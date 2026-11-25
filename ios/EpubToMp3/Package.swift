@@ -61,6 +61,7 @@ let production = [
     "Shared/Configuration/BookVoiceOverrides.swift",
     "Shared/Configuration/SpeechPreferences.swift",
     "Shared/Configuration/AppIsolation.swift",
+    "Shared/Configuration/ApplicationSupportRoot.swift",
     "Shared/Configuration/SettingsDefaultsSource.swift",
     "Features/Conversion/Models/SessionRecord.swift",
     "Features/Conversion/Services/ConversionHistoryReader.swift",

@@ -44,4 +44,26 @@ void main() {
       expect(result['bookTitle'], 'Book');
     },
   );
+  test('an <img> with single-quoted src is embedded like a double-quoted one', () async {
+    final directory = await Directory.systemTemp.createTemp('reader-resources-sq-');
+    addTearDown(() => directory.delete(recursive: true));
+    final archive = Archive();
+    void add(String name, List<int> bytes) => archive.addFile(ArchiveFile(name, bytes.length, bytes));
+    add(
+      'OPS/chapter.xhtml',
+      utf8.encode("<html><body><p>Text.</p><img src='images/a.png' alt='sq'/><img src=\"images/a.png\" alt=\"dq\"/></body></html>"),
+    );
+    add('OPS/images/a.png', [1, 2, 3]);
+    final path = '${directory.path}/book.epub';
+    File(path).writeAsBytesSync(ZipEncoder().encode(archive));
+    final result = await EpubReaderResources.enrich({
+      'title': 'Book',
+      'chapters': [
+        {'index': 0, 'sourcePath': 'OPS/chapter.xhtml', 'text': 'Text.', 'textChars': 5},
+      ],
+    }, path);
+    final html = ((result['chapters'] as List).single as Map)['html'] as String;
+    expect(RegExp('data:image/png;base64,AQID').allMatches(html).length, 2);
+    expect(html, isNot(contains('images/a.png')));
+  });
 }
