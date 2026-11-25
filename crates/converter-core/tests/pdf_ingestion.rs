@@ -242,6 +242,36 @@ fn pdf_does_not_silently_drop_an_image_page_from_a_mixed_document() {
     assert!(message.contains("2"), "{message}");
 }
 
+/// PDF-COVER-BLOCKS-CONVERSION: clients localize an image-only page instead of
+/// showing the generic failure, so the worker failure carries its own code.
+#[test]
+fn pdf_image_only_page_failure_carries_the_ocr_required_code() {
+    let source = fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
+        let image = objects.len() + 1;
+        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
+        objects[2] = objects[2].replace(
+            "/Resources <<",
+            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+        );
+        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
+        objects[3] = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+    });
+    let error = converter_core::book_input::parse_book_source_with_cancel(
+        std::path::Path::new("cover.pdf"),
+        &source,
+        &|| false,
+    )
+    .unwrap_err();
+    let worker = converter_core::worker::WorkerError::from(error);
+    assert_eq!(worker.code(), "pdf_ocr_required", "{worker}");
+    assert!(worker
+        .message_with_code()
+        .ends_with("[[error_code_v1]]pdf_ocr_required[[/error_code_v1]]"));
+}
+
 #[test]
 fn pdf_rejects_non_monotonic_outline_order_instead_of_silently_reordering_it() {
     let source = fixture::pdf_with(true, &["First", "Second", "Third"], |objects| {
