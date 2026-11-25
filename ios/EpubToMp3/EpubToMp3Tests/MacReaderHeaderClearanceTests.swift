@@ -96,7 +96,10 @@ final class MacReaderHeaderClearanceTests: XCTestCase {
 
     private func descendant<T: NSView>(of view: NSView, matching: (NSView) -> T?) -> T? {
         if let match = matching(view) { return match }
-        return view.subviews.lazy.compactMap { self.descendant(of: $0, matching: matching) }.first
+        for subview in view.subviews {
+            if let match = descendant(of: subview, matching: matching) { return match }
+        }
+        return nil
     }
 }
 #endif
