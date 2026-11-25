@@ -151,11 +151,20 @@ fn chapter_metadata_json(
     value
 }
 
+fn toc_entry_json(entry: &converter_core::embedded::EmbeddedTocEntry) -> serde_json::Value {
+    json!({
+        "title": entry.title,
+        "level": entry.level,
+        "chapterIndex": entry.chapter_index,
+        "children": entry.children.iter().map(toc_entry_json).collect::<Vec<_>>(),
+    })
+}
+
 fn metadata_json(
     metadata: &EmbeddedBookMetadata,
     structure: &converter_core::structure::StructureVerification,
 ) -> String {
-    json!({
+    let mut value = json!({
         "title": metadata.title,
         "author": metadata.author,
         "language": metadata.language,
@@ -171,8 +180,12 @@ fn metadata_json(
                 "message": warning.message,
             })).collect::<Vec<_>>(),
         },
-    })
-    .to_string()
+    });
+    // Additive: a book without a contents list keeps the previous shape.
+    if !metadata.toc.is_empty() {
+        value["toc"] = metadata.toc.iter().map(toc_entry_json).collect();
+    }
+    value.to_string()
 }
 
 mod platform_speech_boundary;

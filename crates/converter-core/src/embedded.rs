@@ -43,6 +43,44 @@ pub struct EmbeddedBookMetadata {
     pub author: String,
     pub language: Option<String>,
     pub chapters: Vec<EmbeddedChapterMetadata>,
+    /// The book's own contents list (nav/NCX); empty when the book has none.
+    pub toc: Vec<EmbeddedTocEntry>,
+}
+
+/// One contents entry with the 1-based position of the chapter it opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedTocEntry {
+    pub title: String,
+    pub level: u32,
+    pub chapter_index: Option<usize>,
+    pub children: Vec<EmbeddedTocEntry>,
+}
+
+fn toc_entries(
+    items: &[crate::toc::TocItem],
+    chapters: &[crate::epub::Chapter],
+) -> Vec<EmbeddedTocEntry> {
+    items
+        .iter()
+        .map(|item| {
+            let file = item.href.split('#').next().unwrap_or_default();
+            let chapter_index = (!file.is_empty())
+                .then(|| {
+                    chapters.iter().position(|chapter| {
+                        chapter.source_path == file
+                            || chapter.source_path.ends_with(&format!("/{file}"))
+                    })
+                })
+                .flatten()
+                .map(|position| position + 1);
+            EmbeddedTocEntry {
+                title: item.title.clone(),
+                level: item.level,
+                chapter_index,
+                children: toc_entries(&item.children, chapters),
+            }
+        })
+        .collect()
 }
 
 /// Metadata for one parsed chapter.
@@ -299,6 +337,7 @@ fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {
                 footnotes: chapter.footnotes.clone(),
             })
             .collect(),
+        toc: toc_entries(&book.toc, &book.chapters),
     }
 }
 

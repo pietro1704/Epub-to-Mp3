@@ -203,6 +203,7 @@ fn book(chapters: &[(&str, &str)]) -> EmbeddedBookMetadata {
                 footnotes: Vec::new(),
             })
             .collect(),
+        toc: Vec::new(),
     }
 }
 
