@@ -230,7 +230,13 @@ private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
             let range = (textView.string as NSString).range(of: query, options: .caseInsensitive)
             guard range.location != NSNotFound else { continue }
             textView.setSelectedRange(range)
-            textView.scrollRangeToVisible(range)
+            if MacReaderTextLayout.showsColumns(textView),
+               let height = textView.enclosingScrollView?.contentView.bounds.height,
+               let line = MacReaderTextLayout.lineRect(forCharacterAt: range.location, in: textView) {
+                textView.scroll(NSPoint(x: 0, y: (line.minY / height).rounded(.down) * height))
+            } else {
+                textView.scrollRangeToVisible(range)
+            }
             return
         }
         let alert = NSAlert()

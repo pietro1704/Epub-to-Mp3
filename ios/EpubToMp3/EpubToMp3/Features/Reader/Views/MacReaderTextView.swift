@@ -38,6 +38,25 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
     var onPageTap: ((Bool) -> Bool)?
     var onBuildSelectionMenu: ((NSRange) -> [NSMenuItem])?
     var onLinkClick: ((URL, String) -> Bool)?
+    /// Linked views drawing the other columns; they live inside this view.
+    var columnViews: [MacReaderTextView] = []
+    private weak var columnHost: MacReaderTextView?
+
+    func makeColumn(frame: NSRect, container: NSTextContainer) -> MacReaderTextView {
+        let column = MacReaderTextView(frame: frame, textContainer: container)
+        column.columnHost = self
+        column.textContainerInset = .zero
+        column.isVerticallyResizable = false
+        column.isHorizontallyResizable = false
+        column.drawsBackground = false
+        column.selectedTextAttributes = selectedTextAttributes
+        column.onToggleChrome = onToggleChrome
+        column.onKeyDown = onKeyDown
+        column.onPageTap = onPageTap
+        column.onBuildSelectionMenu = onBuildSelectionMenu
+        column.onLinkClick = onLinkClick
+        return column
+    }
 
     convenience init() {
         self.init(frame: .zero, textContainer: nil)
@@ -77,12 +96,15 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
             super.mouseUp(with: event)
             return
         }
-        let visible = visibleRect
-        if visible.insetBy(dx: visible.width / 3, dy: 0).contains(location) {
+        // Tap zones belong to the whole page, not to one column of it.
+        let page = columnHost ?? self
+        let pageLocation = page.convert(location, from: self)
+        let visible = page.visibleRect
+        if visible.insetBy(dx: visible.width / 3, dy: 0).contains(pageLocation) {
             onToggleChrome?()
             return
         }
-        let forward = location.x >= bounds.midX
+        let forward = pageLocation.x >= page.bounds.midX
         if onPageTap?(forward) != true { super.mouseUp(with: event) }
     }
 
