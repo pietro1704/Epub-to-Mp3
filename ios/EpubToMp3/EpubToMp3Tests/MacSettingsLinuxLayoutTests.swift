@@ -56,6 +56,27 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         XCTAssertFalse(disclosure.isHiddenOrHasHiddenAncestor)
     }
 
+    func testManageDownloadsUsesTheSingularForOneDownloadedChapter() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("downloads-singular-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        L10n.bundleOverrideForTesting = try XCTUnwrap(L10n.localizationBundle("pt-BR"))
+        defer { L10n.bundleOverrideForTesting = nil }
+        let store = LocalAudioArtifactStore(root: root)
+        _ = try LocalAudioArtifactFixture.seed(
+            root: root, bookID: "book-id", bookTitle: "Book", author: "Author",
+            chapters: [.init(index: 0, title: "Chapter", audio: Data(repeating: 0xB2, count: 64))])
+        try await store.promote(bookID: "book-id", chapterIndex: 0)
+        let controller = MacLocalAudioDownloadsViewController(
+            library: LibraryStore(defaults: defaults, defaultsKey: "library"), artifactStore: store,
+            retainedRoot: root.appendingPathComponent("retained", isDirectory: true))
+        controller.loadViewIfNeeded()
+        await controller.refreshDownloadedBooks()
+
+        let texts = labels(in: controller.view).map(\.stringValue)
+        XCTAssertTrue(texts.contains { $0.contains("1 capítulo baixado •") }, "\(texts)")
+    }
+
     func testReaderAndPlaybackRowsChangeTheSharedSettings() throws {
         let settings = AppSettings(defaults: defaults)
         settings.readerAutoScroll = true
