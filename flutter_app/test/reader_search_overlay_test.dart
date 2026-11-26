@@ -34,6 +34,25 @@ final _chapters = [
 
 void main() {
   group('ReaderSearchOverlay', () {
+    testWidgets('results start at the current chapter and wrap, like the 16e', (tester) async {
+      await tester.pumpWidget(_wrap(
+        ReaderSearchOverlay(
+          chapters: _chapters,
+          startAtChapter: 1,
+          onJumpToChapter: (_) {},
+          onClose: () {},
+        ),
+      ));
+      await tester.enterText(find.byType(TextField), 'fox');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      final titles = tester
+          .widgetList<Text>(find.byWidgetPredicate((w) => w is Text && (w.data == 'Prologue' || w.data == 'Chapter 2')))
+          .map((w) => w.data)
+          .toList();
+      expect(titles, ['Chapter 2', 'Prologue']);
+    });
+
     testWidgets('shows search field and Done button', (tester) async {
       await tester.pumpWidget(_wrap(
         ReaderSearchOverlay(
