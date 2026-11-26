@@ -12,6 +12,7 @@ IOSMainReaderControllerTests
 InlineImageQuotingTests
 LanguageModelPlaybackTests
 LocalAudioSettingsScreenControllerTests
+ModelsByLanguageModelTests
 ModelsByLanguageTests
 ModelsLanguagePageTests
 ModelsLanguagesScreenIOSTests

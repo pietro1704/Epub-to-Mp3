@@ -142,15 +142,33 @@ final class ModelsByLanguageModel: ObservableObject {
             catalogLanguages = languages
             snapshots = []
             lowLanguages = []
-            for language in languages {
-                let includeLow = showLowQuality || hasExplicitLowChoice(in: language.tag)
-                snapshots.append((language.tag, try await fetch(language.tag, includeLow: includeLow)))
+            let catalogOrder = languages.map(\.tag)
+            for tag in loadOrder(catalogOrder) {
+                let includeLow = showLowQuality || hasExplicitLowChoice(in: tag)
+                snapshots.append((tag, try await fetch(tag, includeLow: includeLow)))
+                // Fetch order follows what the listener looks at; the list keeps catalog order.
+                snapshots.sort { (catalogOrder.firstIndex(of: $0.tag) ?? 0) < (catalogOrder.firstIndex(of: $1.tag) ?? 0) }
                 // Show languages as they arrive instead of waiting for the whole catalog.
                 rebuild()
             }
         } catch {
             loadFailure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// The screen's language, the chosen ones and the system ones load before the rest of the catalog.
+    private func loadOrder(_ tags: [String]) -> [String] {
+        let preferred = ([priorityLanguage].compactMap { $0 } + settings.languageModelChoices.keys.sorted()
+            + Locale.preferredLanguages).map(SpeechPreferences.languageKey)
+        let first = preferred.compactMap { key in tags.first { SpeechPreferences.languageKey($0) == key } }
+        var seen = Set<String>()
+        return (first + tags).filter { seen.insert($0).inserted }
+    }
+
+    /// The catalog load has not reached `language` yet, so nothing can be said about its voices.
+    func isAwaiting(_ language: String) -> Bool {
+        let key = SpeechPreferences.languageKey(language)
+        return isLoading && !snapshots.contains { SpeechPreferences.languageKey($0.tag) == key }
     }
 
     /// Picks `row` for its language. Only a ready row can be chosen: a dimmed row
@@ -445,8 +463,10 @@ extension ModelsByLanguageModel {
     ) -> [RootItem] {
         var items = rootRows(systemLanguages: systemLanguages, bookLanguages: bookLanguages, resolve: resolve).map { row in
             let name = ModelLanguageOrder.displayName(row.language, in: uiLocale)
+            let awaiting = isAwaiting(row.language)
             return RootItem(language: row.language, title: name.prefix(1).uppercased() + name.dropFirst(),
-                            detail: rootDetail(row), needsVoice: row.needsVoice)
+                            detail: awaiting ? L10n.string("models.loading") : rootDetail(row),
+                            needsVoice: !awaiting && row.needsVoice)
         }
         if let focus = priority.map(SpeechPreferences.languageKey),
            let index = items.firstIndex(where: { $0.language == focus }) {
