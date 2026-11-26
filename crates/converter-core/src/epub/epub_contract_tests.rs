@@ -92,3 +92,32 @@ fn rejects_epub_with_different_local_and_central_resource_names() {
         );
     }
 }
+
+fn language_book(declared: &str, titlepage_lang: &str, chapter_lang: &str) -> Vec<u8> {
+    let opf = format!("<package><metadata><title>Idioma</title>{declared}</metadata><manifest><item id=\"cover\" href=\"titlepage.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"chapter\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"cover\"/><itemref idref=\"chapter\"/></spine></package>");
+    let titlepage = format!("<html xml:lang=\"{titlepage_lang}\"><head><title>Cover</title></head><body><div>Cover</div></body></html>");
+    let chapter =
+        format!("<html{chapter_lang}><body><p>Texto sintético do capítulo.</p></body></html>");
+    epub_fixture::epub_bytes([
+        ("META-INF/container.xml", br#"<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#.as_slice()),
+        ("OPS/package.opf", opf.as_bytes()),
+        ("OPS/titlepage.xhtml", titlepage.as_bytes()),
+        ("OPS/chapter.xhtml", chapter.as_bytes()),
+    ], SimpleFileOptions::default())
+}
+
+#[test]
+fn the_declared_package_language_wins_over_markup() {
+    let bytes = language_book("<language>pt-BR</language>", "en", " lang=\"en\"");
+    let book = parse_epub(Cursor::new(bytes)).unwrap();
+    assert_eq!(book.language.as_deref(), Some("pt-BR"));
+}
+
+#[test]
+fn markup_language_fills_a_missing_or_invalid_declaration_and_skips_the_titlepage() {
+    for declared in ["", "<language>Portuguese</language>"] {
+        let bytes = language_book(declared, "en", " xml:lang=\"es\"");
+        let book = parse_epub(Cursor::new(bytes)).unwrap();
+        assert_eq!(book.language.as_deref(), Some("es"), "{declared}");
+    }
+}

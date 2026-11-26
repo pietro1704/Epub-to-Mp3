@@ -68,6 +68,10 @@ pub(super) fn first_heading(html: &str) -> Option<String> {
             Event::Text(event) if heading => {
                 text.push_str(&String::from_utf8_lossy(event.as_ref()))
             }
+            Event::CData(event) if heading => {
+                text.push_str(&String::from_utf8_lossy(event.as_ref()))
+            }
+            Event::GeneralRef(event) if heading => push_reference(&mut text, &event),
             Event::End(event) if heading && is_heading(event.name().as_ref()) => {
                 let value = text.split_whitespace().collect::<Vec<_>>().join(" ");
                 return (!value.is_empty()).then_some(value);
@@ -82,6 +86,26 @@ fn is_heading(name: &[u8]) -> bool {
     let name = local_name(name);
     name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
+/// Append the character an XML reference stands for: the five predefined entities,
+/// numeric references and `&nbsp;`. Any other name becomes a space so the words
+/// around it are never joined.
+fn push_reference(out: &mut String, reference: &quick_xml::events::BytesRef<'_>) {
+    if let Ok(Some(character)) = reference.resolve_char_ref() {
+        out.push(character);
+        return;
+    }
+    let name = String::from_utf8_lossy(reference.as_ref());
+    out.push_str(quick_xml::escape::resolve_predefined_entity(&name).unwrap_or(" "));
+}
+
+/// Elements that separate words without ending a paragraph.
+fn is_word_separator(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"body" | b"caption" | b"figcaption" | b"img" | b"option"
+    )
+}
+
 /// Raw (unnormalized) projection plus the marks the note positions are derived from.
 struct RawProjection {
     out: String,
@@ -151,6 +175,9 @@ fn project_raw(html: &str) -> RawProjection {
                             open_ref = Some((start, fragment, open.len()));
                         }
                     }
+                    if is_word_separator(name) {
+                        out.push(' ');
+                    }
                     if is_block_element(name) || is_heading(name) {
                         paragraph_boundaries.push(out.len());
                         out.push(' ');
@@ -189,21 +216,28 @@ fn project_raw(html: &str) -> RawProjection {
                         paragraph_boundaries.push(out.len());
                         out.push(' ');
                     }
+                    if is_word_separator(name) {
+                        out.push(' ');
+                    }
                 }
             }
             Ok(Event::Empty(event)) if skip_depth == 0 => {
-                if is_block_element(local_name(event.name().as_ref())) {
+                let name = event.name();
+                let name = local_name(name.as_ref());
+                if is_block_element(name) {
                     paragraph_boundaries.push(out.len());
+                    out.push(' ');
+                } else if is_word_separator(name) {
+                    out.push(' ');
                 }
             }
             Ok(Event::Text(event)) if skip_depth == 0 => {
                 out.push_str(&String::from_utf8_lossy(event.as_ref()));
-                out.push(' ');
             }
             Ok(Event::CData(event)) if skip_depth == 0 => {
                 out.push_str(&String::from_utf8_lossy(event.as_ref()));
-                out.push(' ');
             }
+            Ok(Event::GeneralRef(event)) if skip_depth == 0 => push_reference(&mut out, &event),
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -240,7 +274,7 @@ pub(super) fn note_positions(html: &str) -> Vec<NoteRef> {
     if raw.ref_marks.is_empty() {
         return Vec::new();
     }
-    // Token table: (raw start, scalar start, scalar end) of the normalized words.
+    // Token table: (raw start, scalar start, raw end) of the normalized words.
     let mut tokens = Vec::new();
     let mut cursor = 0;
     let mut scalars = 0;
@@ -250,7 +284,7 @@ pub(super) fn note_positions(html: &str) -> Vec<NoteRef> {
             scalars += 1;
         }
         let width = token.chars().count();
-        tokens.push((start, scalars, scalars + width));
+        tokens.push((start, scalars, start + token.len()));
         scalars += width;
         cursor = start + token.len();
     }
@@ -265,7 +299,13 @@ pub(super) fn note_positions(html: &str) -> Vec<NoteRef> {
             .iter()
             .rev()
             .find(|token| token.0 < mark)
-            .map_or(0, |token| token.2)
+            .map_or(0, |token| {
+                token.1
+                    + raw.out[token.0..mark.min(token.2)]
+                        .trim_end()
+                        .chars()
+                        .count()
+            })
     };
     let mut refs = Vec::new();
     for (_, end, fragment, same_document) in &raw.ref_marks {
@@ -443,10 +483,10 @@ mod note_position_tests {
     fn note_references_and_same_document_bodies_are_positioned_on_the_text_axis() {
         let html = "<p>Texto antes<a href=\"#n1\" epub:type=\"noteref\">1</a> e depois.</p><aside id=\"n1\" epub:type=\"footnote\"><p>Corpo da nota.</p></aside>";
         let (text, _, _) = html_to_text_projection(html);
-        assert_eq!(text, "Texto antes 1 e depois. Corpo da nota.");
+        assert_eq!(text, "Texto antes1 e depois. Corpo da nota.");
         let notes = note_positions(html);
-        let after_label = "Texto antes 1".chars().count();
-        let body_start = "Texto antes 1 e depois. ".chars().count();
+        let after_label = "Texto antes1".chars().count();
+        let body_start = "Texto antes1 e depois. ".chars().count();
         assert_eq!(
             notes,
             vec![NoteRef {
@@ -473,5 +513,50 @@ mod note_position_tests {
             "<p>Veja <a href=\"cap2.xhtml\">aqui</a> e <a href=\"#topo\">topo</a>.</p>",
         );
         assert!(notes.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod text_node_tests {
+    use super::*;
+
+    #[test]
+    fn predefined_and_numeric_references_are_resolved() {
+        let html = "<h1>Tom &amp; Jerry</h1><p>if (a &lt; b &amp;&amp; b &gt; c) &quot;ok&quot; d&apos;&#193;gua &#x2014; fim&nbsp;aqui</p>";
+        assert_eq!(
+            html_to_text_projection(html).0,
+            "Tom & Jerry if (a < b && b > c) \"ok\" d'Água — fim aqui"
+        );
+        assert_eq!(first_heading(html).as_deref(), Some("Tom & Jerry"));
+    }
+
+    #[test]
+    fn an_unknown_named_reference_never_joins_words() {
+        assert_eq!(html_to_text_projection("<p>um&bogus;dois</p>").0, "um dois");
+    }
+
+    #[test]
+    fn inline_markup_never_splits_words() {
+        let html = "<p><span class=\"dropcap\">N</span>ADA do <em>Fluminense</em>, nem<!-- c --> isso.</p>";
+        assert_eq!(
+            html_to_text_projection(html).0,
+            "NADA do Fluminense, nem isso."
+        );
+    }
+
+    #[test]
+    fn block_and_break_boundaries_still_separate_words() {
+        let html = "<body><div>um</div><p>dois<br/>três<br />quatro<hr/>cinco</p><table><caption>seis</caption><tr><td>sete</td><td>oito</td></tr></table><figure><img src=\"a\"/><figcaption>nove</figcaption>dez</figure></body>";
+        assert_eq!(
+            html_to_text_projection(html).0,
+            "um dois três quatro cinco seis sete oito nove dez"
+        );
+    }
+
+    #[test]
+    fn a_glued_note_reference_ends_at_its_label() {
+        let html = "<p>Texto<a href=\"notes.xhtml#n1\">1</a>. Depois.</p>";
+        assert_eq!(html_to_text_projection(html).0, "Texto1. Depois.");
+        assert_eq!(note_positions(html)[0].end, "Texto1".chars().count());
     }
 }
