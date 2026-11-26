@@ -1,7 +1,7 @@
 //! Text-layer PDF ingestion. OCR is a separate, explicit capability.
 use super::IngestionError;
 use crate::epub::{Book, Chapter};
-use pdf_extract::{decode_text_string, Document, PlainTextOutput};
+use pdf_extract::{decode_text_string, Document, Object, PlainTextOutput};
 use std::path::Path;
 
 pub(crate) const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
@@ -41,6 +41,7 @@ impl PdfTextIngestion {
             doc.decrypt("")
                 .map_err(|_| invalid("This PDF requires a password before its text can be read"))?;
         }
+        repair_cmap_names(&mut doc);
         let pages = doc.get_pages();
         if pages.is_empty() || pages.len() > 20_000 {
             return Err(invalid(
@@ -50,6 +51,8 @@ impl PdfTextIngestion {
         let labels = super::pdf_page_labels::labels(&doc, pages.len())?;
         let mut text = Vec::new();
         let mut total = 0usize;
+        let mut skipped_pages = 0usize;
+        let mut drawn_without_text = false;
         for (number, page_id) in &pages {
             if cancelled() {
                 return Err(IngestionError::Cancelled);
@@ -59,8 +62,10 @@ impl PdfTextIngestion {
             pdf_extract::output_doc_page(&doc, &mut PlainTextOutput::new(&mut page), *number)
                 .map_err(extraction_error)?;
             page = page.trim().replace('\0', "");
-            if page.is_empty() && has_drawn_content(&doc, *page_id)? {
-                return Err(invalid(&format!("PDF page {number} contains graphics without selectable text; OCR is required before narration")));
+            // Covers, figures and blank pages have nothing to narrate: skip and count them.
+            if page.trim().is_empty() {
+                skipped_pages += 1;
+                drawn_without_text |= has_drawn_content(&doc, *page_id)?;
             }
             total = total.saturating_add(page.len());
             if total > 32 * 1024 * 1024 {
@@ -68,7 +73,12 @@ impl PdfTextIngestion {
             }
             text.push(page);
         }
-        if text.iter().all(|page| page.trim().is_empty()) {
+        if skipped_pages == text.len() {
+            if drawn_without_text {
+                return Err(invalid(
+                    "No PDF page has selectable text; OCR is required before narration",
+                ));
+            }
             return Err(IngestionError::NoReadableText);
         }
         if cancelled() {
@@ -118,11 +128,56 @@ impl PdfTextIngestion {
             toc,
             cover: None,
             cover_mime: None,
+            skipped_pages,
         })
     }
 }
-// Empty text on an XObject/inline-image page is not a known blank page.
-// Refuse partial narration instead of silently skipping potentially scanned text.
+// calibre writes `/CMapName Font-cmap def` without the slash on the value. The CMap lexer
+// used by `pdf_extract` silently stops at that hyphen, so every glyph decodes to nothing.
+// The name does not take part in decoding: drop the malformed line.
+fn repair_cmap_names(doc: &mut Document) {
+    // Fonts may be objects of their own or inline in a resource dictionary.
+    let mut pending: Vec<&Object> = doc.objects.values().collect();
+    let mut maps = Vec::new();
+    while let Some(object) = pending.pop() {
+        match object {
+            Object::Dictionary(dictionary) => {
+                if let Ok(id) = dictionary.get(b"ToUnicode").and_then(Object::as_reference) {
+                    maps.push(id);
+                }
+                pending.extend(dictionary.iter().map(|(_, value)| value));
+            }
+            Object::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+    for id in maps {
+        let Ok(stream) = doc
+            .get_object_mut(id)
+            .and_then(|object| object.as_stream_mut())
+        else {
+            continue;
+        };
+        let content = stream
+            .decompressed_content()
+            .unwrap_or_else(|_| stream.content.clone());
+        let malformed = |line: &[u8]| {
+            line.trim_ascii()
+                .strip_prefix(b"/CMapName")
+                .is_some_and(|value| !value.trim_ascii_start().starts_with(b"/"))
+        };
+        let is_break = |byte: &u8| matches!(byte, b'\r' | b'\n');
+        if content.split(is_break).any(malformed) {
+            let kept: Vec<&[u8]> = content
+                .split(is_break)
+                .filter(|line| !malformed(line))
+                .collect();
+            stream.set_plain_content(kept.join(&b'\n'));
+        }
+    }
+}
+
+// Distinguishes a scanned book (OCR would help) from a PDF with only blank pages.
 fn has_drawn_content(doc: &Document, page: pdf_extract::ObjectId) -> Result<bool, IngestionError> {
     let bytes = doc.get_page_content(page).map_err(extraction_error)?;
     let content = pdf_extract::content::Content::decode(&bytes).map_err(extraction_error)?;

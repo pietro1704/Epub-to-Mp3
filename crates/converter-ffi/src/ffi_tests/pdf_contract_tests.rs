@@ -102,27 +102,55 @@ fn pdf_ffi_failure_clears_on_next_valid_open_without_reusing_old_metadata() {
     }
 }
 
-/// PDF-COVER-BLOCKS-CONVERSION: Apple clients open the book through
-/// `converter_session_open`, so an image-only page must carry its error code
-/// there too, or the Converter falls back to the generic failure.
-#[test]
-fn pdf_ffi_open_of_an_image_only_page_carries_the_ocr_required_code() {
-    let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("cover.pdf");
-    let source = pdf_fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
+fn pdf_with_image_pages(texts: &[&str], positions: &[usize]) -> Vec<u8> {
+    pdf_fixture::pdf_with(false, texts, |objects| {
         let image = objects.len() + 1;
         objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
-        objects[2] = objects[2].replace(
-            "/Resources <<",
-            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
-        );
-        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
-        objects[3] = format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
-        );
-    });
+        for position in positions {
+            let page = 2 + position * 2;
+            objects[page] = objects[page].replace(
+                "/Resources <<",
+                &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+            );
+            let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
+            objects[page + 1] = format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            );
+        }
+    })
+}
+
+/// PDF-COVER-BLOCKS-CONVERSION: clients open the book through
+/// `converter_session_open`; skipped pages are reported there so they can warn.
+#[test]
+fn pdf_ffi_metadata_reports_the_skipped_pages() {
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("cover.pdf");
+    let source = pdf_with_image_pages(&["", "Readable", "", "Last readable page"], &[0]);
     std::fs::write(&input, source).unwrap();
+    let path = CString::new(input.to_str().unwrap()).unwrap();
+    unsafe {
+        let session = converter_session_open(path.as_ptr());
+        assert!(
+            !session.is_null(),
+            "an image cover must not reject the book"
+        );
+        let metadata = converter_session_metadata_json(session);
+        let value: serde_json::Value =
+            serde_json::from_slice(CStr::from_ptr(metadata).to_bytes()).unwrap();
+        converter_string_free(metadata);
+        converter_session_free(session);
+        assert_eq!(value["skipped_pages"], 2, "{value}");
+    }
+}
+
+/// A scanned book carries its error code through the same entry point.
+#[test]
+fn pdf_ffi_open_of_a_scanned_book_carries_the_ocr_required_code() {
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("scanned.pdf");
+    std::fs::write(&input, pdf_with_image_pages(&["", "", ""], &[0, 1, 2])).unwrap();
     let path = CString::new(input.to_str().unwrap()).unwrap();
     unsafe {
         assert!(converter_session_open(path.as_ptr()).is_null());

@@ -105,6 +105,13 @@ pub(super) fn normalized_name(value: &str) -> String {
         .collect()
 }
 
+/// PDF pages without selectable text are left out of narration; say how many.
+pub(super) fn report_skipped_pages(count: usize) {
+    if count > 0 {
+        eprintln!("Warning: skipped {count} PDF page(s) without selectable text.");
+    }
+}
+
 pub(super) fn show_structure(inputs: &[String]) -> Result<i32, String> {
     let config = cli_config();
     for input in inputs {
@@ -123,6 +130,7 @@ pub(super) fn show_structure(inputs: &[String]) -> Result<i32, String> {
         for chapter in &metadata.chapters {
             println!("{} {}", chapter.index, chapter.name);
         }
+        report_skipped_pages(metadata.skipped_pages);
     }
     Ok(0)
 }

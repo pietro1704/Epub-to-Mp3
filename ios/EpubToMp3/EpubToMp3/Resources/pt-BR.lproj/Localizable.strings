@@ -470,7 +470,9 @@
 "error.unsupportedEngine" = "O mecanismo de voz selecionado não é compatível.";
 "error.conversionFailed" = "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.";
 "error.bookLanguageUncertain" = "Não foi possível identificar com segurança o idioma deste texto. Escolha o idioma e tente novamente.";
-"error.pdfOcrRequired" = "Este PDF tem uma página só com imagem, sem texto selecionável (muitas vezes a capa). Ele só pode ser narrado depois que esse texto for reconhecido (OCR).";
+"error.pdfOcrRequired" = "Este PDF não tem texto selecionável em nenhuma página (parece digitalizado). Ele só pode ser narrado depois que o texto for reconhecido (OCR).";
+"convert.pdfPagesSkipped.one" = "Pulamos 1 página do PDF sem texto selecionável (capa, imagem ou página em branco). Narramos o restante do livro.";
+"convert.pdfPagesSkipped.many" = "Pulamos %d páginas do PDF sem texto selecionável (capa, imagens ou páginas em branco). Narramos o restante do livro.";
 "error.edgeConsentRequired" = "As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.";
 "tts.recovery.title" = "Escolher um modelo compatível";
 "tts.recovery.message" = "O modelo atual não suporta %@. Modelo sugerido: %@. A troca vale somente para esta conversão.";

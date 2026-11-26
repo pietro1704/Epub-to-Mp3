@@ -45,6 +45,8 @@ pub struct EmbeddedBookMetadata {
     pub chapters: Vec<EmbeddedChapterMetadata>,
     /// The book's own contents list (nav/NCX); empty when the book has none.
     pub toc: Vec<EmbeddedTocEntry>,
+    /// Source pages without selectable text, left out of narration (PDF only).
+    pub skipped_pages: usize,
 }
 
 /// One contents entry with the 1-based position of the chapter it opens.
@@ -321,6 +323,7 @@ impl EmbeddedConversionSession {
 
 fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {
     EmbeddedBookMetadata {
+        skipped_pages: book.skipped_pages,
         title: book.title.clone(),
         author: book.author.clone(),
         language: book.language.clone(),
