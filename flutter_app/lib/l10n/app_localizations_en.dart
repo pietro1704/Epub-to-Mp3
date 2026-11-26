@@ -253,6 +253,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerShowPageNumbers => 'Show page numbers';
 
   @override
+  String get readerPageTurnStyle => 'Page turn';
+
+  @override
+  String get pageTurnFlip => 'Flip';
+
+  @override
+  String get pageTurnSlide => 'Slide';
+
+  @override
+  String get pageTurnNone => 'Normal';
+
+  @override
   String get readerAlignmentLabel => 'Alignment';
 
   @override
