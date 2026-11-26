@@ -60,6 +60,18 @@ class DeviceFarmTest < Minitest::Test
     ].each { |args| assert_equal args, DeviceFarm.safe!(args) }
   end
 
+  MDNS = <<~LIST
+    List of discovered mdns services
+    adb-RXGLA00Y4NL-R37H85\t_adb-tls-connect._tcp\t192.168.0.130:35429
+    adb-OTHER-XYZ\t_adb-tls-connect._tcp\t192.168.0.9:41000
+  LIST
+
+  def test_a_wireless_device_is_found_by_its_mdns_name_whatever_its_port
+    assert_equal '192.168.0.130:35429', DeviceFarm.pick_mdns('mdns:adb-RXGLA00Y4NL-R37H85', MDNS)
+    assert_nil DeviceFarm.pick_mdns('mdns:adb-MISSING', MDNS)
+    assert_nil DeviceFarm.pick_mdns('192.168.0.130:46183', MDNS), 'only mdns: names are looked up'
+  end
+
   def test_the_farm_yields_the_lock_to_manual_use
     farm = DeviceFarm::Lock.new
     assert farm.try_acquire

@@ -30,7 +30,7 @@ require 'timeout'
 module DeviceFarm
   PACKAGE = ENV.fetch('DEVICE_FARM_PACKAGE', 'com.pietrocode.epubtomp3.flutter_app.verification')
   ADB_PORT = ENV.fetch('ANDROID_ADB_SERVER_PORT', '5073')
-  SERIALS = (ENV['DEVICE_FARM_SERIALS'] || '52008714b40355ad,192.168.0.130:46183').split(',')
+  SERIALS = (ENV['DEVICE_FARM_SERIALS'] || '52008714b40355ad,mdns:adb-RXGLA00Y4NL-R37H85').split(',')
   # One physical device can have several adb names (USB serial and Wi-Fi address). Each group is
   # a list of names of the same device; the farm addresses a device by whichever name is attached.
   ALIAS_GROUPS = (ENV['DEVICE_FARM_ALIASES'] || '52008714b40355ad=192.168.0.178:5555')
@@ -89,7 +89,21 @@ module DeviceFarm
   end
 
   # USB serial or Wi-Fi address, whichever is attached; reconnects a dropped Wi-Fi name first.
+  # `mdns:<service name>` addresses a wireless device whose port changes: the current host:port
+  # comes from `adb mdns services`.
+  def self.pick_mdns(serial, listing)
+    return nil unless serial.start_with?('mdns:')
+    name = serial.delete_prefix('mdns:')
+    listing.lines.map(&:split).find { |cols| cols[0] == name && cols[1] == '_adb-tls-connect._tcp' }&.at(2)
+  end
+
   def self.resolve(serial)
+    if serial.start_with?('mdns:')
+      address = pick_mdns(serial, Open3.capture2e(env, 'adb', 'mdns', 'services').first)
+      return serial unless address
+      Open3.capture2e(env, 'adb', 'connect', address)
+      return address
+    end
     names = aliases(serial)
     return serial if names.size == 1
     listing, = Open3.capture2e(env, 'adb', 'devices')
