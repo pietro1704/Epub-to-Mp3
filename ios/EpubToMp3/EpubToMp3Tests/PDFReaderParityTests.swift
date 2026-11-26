@@ -100,6 +100,54 @@ final class PDFReaderParityTests: XCTestCase {
         }
     }
 
+    /// PDF parity with the EPUB reader: pausing keeps the passage marked, a jump drops the old mark.
+    func testPDFKeepsTheHighlightWhilePausedUntilTheNarrationMoves() async throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "Narration", body: "A synthetic sentence to narrate.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let suite = "pdf-paused-highlight-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        // The player reads the reader location from its resume store's defaults.
+        defaults.set("paused-pdf", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        player.services.navigation.rememberReaderPlaybackAnchor()
+        player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+            {"jobId":"paused-pdf","state":"finished","chapterIndexBase":1,"chapterProgress":[
+                {"index":1,"status":"completed","downloadUrl":"file:///tmp/paused-pdf.mp3","textOffset":0}]}
+            """.utf8)))
+        player.services.observation.publishCurrentChapter()
+        player.playbackPlayingChanged(true)
+        XCTAssertTrue(player.isPlaybackForReaderBook("paused-pdf"))
+        let settings = AppSettings(defaults: defaults)
+        settings.readerAudioTrackingEnabled = true
+        let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let pdf = ReaderPDFPresentation(view: view, bookID: "paused-pdf", defaults: defaults,
+                                        settings: settings, player: player)
+        pdf.load(document: try XCTUnwrap(PDFDocument(url: url)),
+                 metadata: try ConverterFFIAdapter().openBook(at: url).metadataJSON)
+        view.layoutIfNeeded()
+        let item = NSObject()
+        for seconds in [1.0, 2.0] {
+            player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds, isOutputting: true,
+                position: .init(chapterIndex: 0, seconds: seconds, duration: 10, sentenceID: nil,
+                    itemSeconds: seconds, itemDuration: 10))
+        }
+        func highlighted() -> [String] { (view.highlightedSelections ?? []).compactMap(\.string) }
+        let narrated = highlighted()
+        XCTAssertFalse(narrated.isEmpty, "Confirmed output must highlight the narrated passage")
+
+        player.playbackPlayingChanged(false)
+        // Longer than the stale-output limit, with several repaint timer ticks.
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        XCTAssertEqual(highlighted(), narrated, "The paused passage must stay highlighted")
+
+        player.narrationJumps.send()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(highlighted(), [], "After a jump the old passage is no longer where narration resumes")
+    }
+
     func testPDFLayoutSwitchPageNavigationAndReopenPreserveTheSourcePage() throws {
         let url = try PdfFixture.createMultiPage(pages: [
             (heading: "First", body: "First page with readable text."),
