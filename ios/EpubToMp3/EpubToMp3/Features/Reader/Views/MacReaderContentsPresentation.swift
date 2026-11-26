@@ -150,7 +150,10 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
             downloads?.cancel()
             downloads = candidate
             downloadedChapters = []
-            candidate?.onBusyChange = { [weak self] _ in self?.refreshActions() }
+            candidate?.onBusyChange = { [weak self] busy in
+                self?.refreshActions()
+                if !busy { self?.refreshDownloaded() }
+            }
             candidate?.onError = { [weak self] in self?.present(failure: $0, message: $1) }
         }
         if artifactObserver == nil {
@@ -168,7 +171,7 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         guard let bookID = downloads?.bookID else { return }
         downloadRefreshTask?.cancel()
         downloadRefreshTask = Task { [weak self] in
-            let downloaded = (try? await LocalAudioArtifactStore.shared.downloadedChapterIndicesInFiles(bookID: bookID)) ?? []
+            let downloaded = (try? await LocalAudioArtifactStore.shared.listenerDownloadedChapterIndices(bookID: bookID)) ?? []
             guard !Task.isCancelled, let self, self.downloads?.bookID == bookID else { return }
             self.downloadedChapters = downloaded
             self.chaptersTable.reloadData()

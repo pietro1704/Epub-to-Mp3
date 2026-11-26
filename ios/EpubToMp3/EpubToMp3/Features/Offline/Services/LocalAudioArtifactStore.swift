@@ -53,6 +53,30 @@ actor LocalAudioArtifactStore {
             .intersection(visibleCopies.publishedChapterIndices(bookID: bookID))
     }
 
+    /// What the listener sees as downloaded: the Files copies where the platform shows them,
+    /// otherwise (macOS) the kept audio itself.
+    func listenerDownloadedChapterIndices(bookID: String) throws -> Set<Int> {
+        visibleCopies == nil ? try downloadedChapterIndices(bookID: bookID)
+            : try downloadedChapterIndicesInFiles(bookID: bookID)
+    }
+
+    /// "Remove download" for one chapter, or for the whole book when `chapterIndex` is nil.
+    func removeListenerDownload(bookID: String, chapterIndex: Int?) throws {
+        guard visibleCopies == nil else {
+            try withdrawDownloadsFromFiles(bookID: bookID, chapterIndex: chapterIndex)
+            return
+        }
+        let downloaded = try downloadedChapterIndices(bookID: bookID)
+        let chapters = chapterIndex.map { downloaded.intersection([$0]) } ?? downloaded
+        guard !chapters.isEmpty else { return }
+        defer {
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil, userInfo: ["bookID": bookID])
+        }
+        for chapter in chapters.sorted() {
+            try removeDownloadedAudio(bookID: bookID, chapterIndex: chapter)
+        }
+    }
+
     /// Clears owned Files copies only while their protected audio remains available.
     func withdrawDownloadsFromFiles(bookID: String, chapterIndex: Int?) throws {
         guard let visibleCopies else { return }

@@ -116,7 +116,7 @@ final class ReaderChapterDownloads {
             }
         }
         do {
-            try await LocalAudioArtifactStore.shared.withdrawDownloadsFromFiles(bookID: book.id, chapterIndex: chapter)
+            try await LocalAudioArtifactStore.shared.removeListenerDownload(bookID: book.id, chapterIndex: chapter)
         } catch {
             report(error, context: "Remove download", title: L10n.string("settings.storageRemovalFailedTitle"))
         }
