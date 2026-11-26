@@ -112,7 +112,8 @@ final class MacReaderPageNumbersTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)
         func find<T: NSView>(in view: NSView, where matches: (T) -> Bool) -> T? {
             if let found = view as? T, matches(found) { return found }
-            return view.subviews.lazy.compactMap { find(in: $0, where: matches) }.first
+            for child in view.subviews { if let found = find(in: child, where: matches) { return found } }
+            return nil
         }
         let textView: MacReaderTextView = try XCTUnwrap(find(in: controller.view) { _ in true })
         try await inspect(textView) {
