@@ -120,6 +120,7 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
                 XCTAssertEqual(right.maxX, controller.view.bounds.maxX, accuracy: 2)
             }
             XCTAssertEqual(window.contentView?.bounds.width ?? 0, width, accuracy: 1, "layout must not resize the window")
+            attach(window, name: "mac-settings-width-\(Int(width))")
         }
     }
 
