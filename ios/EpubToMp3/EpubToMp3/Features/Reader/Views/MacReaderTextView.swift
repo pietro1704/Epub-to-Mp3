@@ -40,6 +40,8 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
     var onLinkClick: ((URL, String) -> Bool)?
     /// Linked views drawing the other columns; they live inside this view.
     var columnViews: [MacReaderTextView] = []
+    /// One-column page starts for one viewport height; every layout fit discards them.
+    var cachedPageStarts: (viewportHeight: CGFloat, starts: [CGFloat])?
     private weak var columnHost: MacReaderTextView?
 
     func makeColumn(frame: NSRect, container: NSTextContainer) -> MacReaderTextView {

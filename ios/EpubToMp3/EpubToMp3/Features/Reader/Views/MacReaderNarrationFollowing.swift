@@ -153,7 +153,24 @@ final class MacReaderNarrationFollowing {
               chapter.zeroBasedEpubIndex == location.chapterIndex else { return false }
         let offset = location.characterOffset(chapterText: chapter.text, renderedText: text.string)
         return ReaderNarrationPairing.isPaired(spokenChapter: location.chapterIndex, spokenOffset: offset,
-                                               readerChapter: chapter.zeroBasedEpubIndex, visible: Self.visibleCharacterRange(in: text, clip: scrollView.contentView))
+                                               readerChapter: chapter.zeroBasedEpubIndex, visible: readableCharacterRange(in: text))
+    }
+
+    /// The visible characters without the lines a one-column page hides for the next page.
+    private func readableCharacterRange(in text: NSTextView) -> NSRange? {
+        let clip = scrollView.contentView
+        guard let starts = pageStarts(in: text) else { return Self.visibleCharacterRange(in: text, clip: clip) }
+        var rect = clip.documentVisibleRect
+        let index = MacReaderTextLayout.pageIndex(of: rect.minY, in: starts)
+        if abs(starts[index] - rect.minY) <= 1, index + 1 < starts.count {
+            rect.size.height = max(1, min(rect.height, starts[index + 1] - rect.minY - 1))
+        }
+        return MacReaderTextLayout.characterRange(in: rect, of: text)
+    }
+
+    private func pageStarts(in text: NSTextView) -> [CGFloat]? {
+        guard settings.readerLayout == .paginated, !MacReaderTextLayout.showsColumns(text) else { return nil }
+        return MacReaderTextLayout.pageStarts(of: text, viewportHeight: scrollView.contentView.bounds.height)
     }
 
     private func isPaired(_ location: ReaderPlaybackLocation, in pdf: MacReaderPDFView) -> Bool {
@@ -209,9 +226,10 @@ final class MacReaderNarrationFollowing {
         guard let line = MacReaderTextLayout.lineRect(forCharacterAt: offset, in: text) else { return }
         let clip = scrollView.contentView
         let lineY = line.minY
-        let target = Self.scrollOffset(forLineAt: lineY, viewportHeight: clip.bounds.height,
-                                       documentHeight: text.frame.height,
-                                       paginated: settings.readerLayout == .paginated)
+        let target = pageStarts(in: text).map { $0[MacReaderTextLayout.pageIndex(of: lineY, in: $0)] }
+            ?? Self.scrollOffset(forLineAt: lineY, viewportHeight: clip.bounds.height,
+                                 documentHeight: text.frame.height,
+                                 paginated: settings.readerLayout == .paginated)
         clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
         scrollView.reflectScrolledClipView(clip)
     }

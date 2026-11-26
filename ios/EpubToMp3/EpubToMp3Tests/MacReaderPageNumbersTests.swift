@@ -24,6 +24,52 @@ final class MacReaderPageNumbersTests: XCTestCase {
         }
     }
 
+    /// MAC-READER-PAGE-BOTTOM-CLIP: a one-column page holds whole lines only, the next page starts at the next line,
+    /// and the page count and the scroll snap use the same page starts.
+    func testOneColumnPagesShowWholeLinesOnceEach() async throws {
+        try await withReader(columns: 1) { textView, indicator in
+            let scroll = try XCTUnwrap(textView.enclosingScrollView)
+            let manager = try XCTUnwrap(textView.layoutManager)
+            let container = try XCTUnwrap(textView.textContainer)
+            manager.ensureLayout(for: container)
+            let originY = textView.textContainerOrigin.y
+            var lines: [NSRect] = []
+            manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, _, _ in
+                lines.append(rect.offsetBy(dx: 0, dy: originY))
+            }
+            XCTAssertGreaterThan(lines.count, 40)
+            /// What the person can read: the viewport minus the bottom mask.
+            @MainActor func readable() -> (top: CGFloat, bottom: CGFloat) {
+                let visible = scroll.contentView.documentVisibleRect
+                let mask = textView.subviews.first { $0.accessibilityIdentifier() == "reader.pageMask" && !$0.isHidden }
+                return (visible.minY, min(visible.maxY, mask?.frame.minY ?? visible.maxY))
+            }
+            var shown: [Int] = []
+            var offsets: [CGFloat] = []
+            var labels: [String] = []
+            while offsets.count < 200 {
+                try await Task.sleep(nanoseconds: 150_000_000)
+                let (top, bottom) = readable()
+                offsets.append(scroll.contentView.bounds.origin.y)
+                labels.append(indicator()?.stringValue ?? "")
+                for (index, line) in lines.enumerated() where line.maxY > top + 0.5 && line.minY < bottom - 0.5 {
+                    XCTAssertTrue(line.minY >= top - 0.5 && line.maxY <= bottom + 0.5,
+                                  "page \(offsets.count): line \(index) is cut")
+                    shown.append(index)
+                }
+                if shown.last == lines.count - 1 { break }
+                XCTAssertEqual(textView.onPageTap?(true), true)
+            }
+            XCTAssertEqual(shown, Array(lines.indices), "every line is shown once, in order")
+            XCTAssertEqual(labels, (1...labels.count).map { L10n.string("reader.pageOf", $0, labels.count) })
+
+            XCTAssertEqual(textView.onPageTap?(false), true)
+            try await Task.sleep(nanoseconds: 150_000_000)
+            XCTAssertEqual(scroll.contentView.bounds.origin.y, offsets[offsets.count - 2], accuracy: 0.5,
+                           "turning back returns to the previous page start")
+        }
+    }
+
     func testIndicatorFollowsTheSwitchAndTheLayout() async throws {
         try await withReader(showsNumbers: false) { _, indicator in
             XCTAssertNil(indicator(), "switched off")
@@ -104,7 +150,7 @@ final class MacReaderPageNumbersTests: XCTestCase {
 
     private func withReader(
         showsNumbers: Bool = true, layout: ReaderLayout = .paginated, turnStyle: PageTurnStyle = .none,
-        reducesMotion: Bool = false,
+        reducesMotion: Bool = false, columns: Int? = nil,
         inspect: @MainActor (MacReaderTextView, () -> NSTextField?) async throws -> Void
     ) async throws {
         let identifier = "reader-pages-\(UUID().uuidString)"
@@ -135,6 +181,7 @@ final class MacReaderPageNumbersTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.readerLayout = layout
         settings.readerShowPageNumbers = showsNumbers
+        if let columns { settings.readerColumns = columns }
         settings.pageTurnStyle = turnStyle
         let ready = expectation(description: "reader ready")
         let controller = MacReaderViewController(
