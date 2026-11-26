@@ -46,6 +46,10 @@ final class MacReaderViewComposition {
     let textView = MacReaderTextView()
     let comicPageImageView = NSImageView()
     let contentScrollView = NSScrollView()
+    /// The paginated reader's "x of y", on its own strip below the text.
+    let pageIndicator = NSTextField(labelWithString: "")
+    private var contentBottomToSafeArea: NSLayoutConstraint?
+    private var contentBottomToPageIndicator: NSLayoutConstraint?
     let toolbar = NSStackView()
     private let chromeBackground = NSVisualEffectView()
     let bookTitleLabel = NSTextField(labelWithString: "")
@@ -177,8 +181,8 @@ final class MacReaderViewComposition {
             contentScrollView.leadingAnchor.constraint(equalTo: chapterTitleLabel.leadingAnchor),
             contentScrollView.trailingAnchor.constraint(equalTo: chapterTitleLabel.trailingAnchor),
             contentScrollView.topAnchor.constraint(equalTo: chromeBackground.bottomAnchor),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
+        installPageIndicator(in: view)
         loading.configure(in: view, toolbar: toolbar, target: target, retryAction: actions.retryLoading)
         textView.onKeyDown = { [weak self] event in
             self?.onKeyDown(event) ?? false
@@ -189,6 +193,36 @@ final class MacReaderViewComposition {
         }
         textView.onBuildSelectionMenu = { [weak self] range in
             self?.onBuildSelectionMenu(range) ?? []
+        }
+    }
+
+    private func installPageIndicator(in view: NSView) {
+        pageIndicator.translatesAutoresizingMaskIntoConstraints = false
+        pageIndicator.alignment = .center
+        pageIndicator.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        pageIndicator.setAccessibilityIdentifier("reader.pageIndicator")
+        pageIndicator.isHidden = true
+        view.addSubview(pageIndicator)
+        let toSafeArea = contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        contentBottomToSafeArea = toSafeArea
+        contentBottomToPageIndicator = contentScrollView.bottomAnchor.constraint(equalTo: pageIndicator.topAnchor, constant: -6)
+        NSLayoutConstraint.activate([
+            toSafeArea,
+            pageIndicator.centerXAnchor.constraint(equalTo: contentScrollView.centerXAnchor),
+            pageIndicator.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
+        ])
+    }
+
+    /// Visibility follows the reading settings, never the chrome, so hiding the chrome does not reflow the page.
+    func setPageIndicatorShown(_ shown: Bool) {
+        guard pageIndicator.isHidden == shown else { return }
+        pageIndicator.isHidden = !shown
+        if shown {
+            contentBottomToSafeArea?.isActive = false
+            contentBottomToPageIndicator?.isActive = true
+        } else {
+            contentBottomToPageIndicator?.isActive = false
+            contentBottomToSafeArea?.isActive = true
         }
     }
 

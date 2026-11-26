@@ -550,6 +550,7 @@ jobs:
             -only-testing:EpubToMp3Tests/ReaderContentsToolTitleTests
             -only-testing:EpubToMp3Tests/MacReaderColumnsTests
             -only-testing:EpubToMp3Tests/MacReaderSpacingAlignmentTests
+            -only-testing:EpubToMp3Tests/MacReaderPageNumbersTests
             -only-testing:EpubToMp3Tests/MacReaderNarrationFollowingTests
             -only-testing:EpubToMp3Tests/MacReaderTextLayoutTests
             -only-testing:EpubToMp3Tests/MacReaderHeaderClearanceTests

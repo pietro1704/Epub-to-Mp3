@@ -19,6 +19,7 @@ final class MacReaderTextPresentation {
     private let observeOpenStage: (String) -> Void
     private var settingsCancellables: Set<AnyCancellable> = []
     var onPlayPDF: ((PDFReadingAudioMap.Anchor) -> Void)?
+    private var pageIndicator: NSTextField { composition.pageIndicator }
     private var textView: MacReaderTextView { composition.textView }
     private var comicPageImageView: NSImageView { composition.comicPageImageView }
     private var contentScrollView: NSScrollView { composition.contentScrollView }
@@ -87,6 +88,21 @@ final class MacReaderTextPresentation {
     private func isActiveLoad(_ id: UUID, bookID: String) -> Bool { document.isActiveLoad(id, bookID: bookID) }
 
     func observeAppearance() {
+        // Scrolling, page turns and window resizes all move or resize the viewport.
+        contentScrollView.contentView.postsBoundsChangedNotifications = true
+        contentScrollView.contentView.postsFrameChangedNotifications = true
+        textView.postsFrameChangedNotifications = true
+        let moves: [(Notification.Name, NSView)] = [
+            (NSView.boundsDidChangeNotification, contentScrollView.contentView),
+            (NSView.frameDidChangeNotification, contentScrollView.contentView),
+            (NSView.frameDidChangeNotification, textView),
+        ]
+        for (name, source) in moves {
+            NotificationCenter.default.publisher(for: name, object: source)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.updatePageIndicator() }
+                .store(in: &settingsCancellables)
+        }
         settings.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -136,6 +152,10 @@ final class MacReaderTextPresentation {
         presentationGeneration = UUID()
         chapterTitleLabel.stringValue = chapter.name ?? ""
 
+        composition.setPageIndicatorShown(!chapter.isImageOnly && settings.readerLayout == .paginated && settings.readerShowPageNumbers)
+        view.layoutSubtreeIfNeeded()
+        pageIndicator.textColor = settings.readerColors.foreground
+
         if chapter.isImageOnly {
             if let base64 = chapter.resources?.first?.dataBase64, let data = Data(base64Encoded: base64) {
                 comicPageImageView.image = NSImage(data: data)
@@ -166,6 +186,7 @@ final class MacReaderTextPresentation {
             clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
             contentScrollView.reflectScrolledClipView(clipView)
         }
+        updatePageIndicator()
         composition.setFootnotesAvailable(chapter.footnotes?.isEmpty == false)
         ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0, defaults: location.defaults)
         if let bookID = currentBookId { prepareChapterProjection(bookID, index) }
@@ -195,9 +216,8 @@ final class MacReaderTextPresentation {
         contentScrollView.layoutSubtreeIfNeeded()
         let clipView = contentScrollView.contentView
         let visibleBounds = clipView.bounds
-        // Column pages are exact viewport pages; one column keeps an overlap.
         let columnar = (documentView as? NSTextView).map(MacReaderTextLayout.showsColumns) ?? false
-        let page = max(1, visibleBounds.height * (columnar ? 1 : 0.9))
+        let page = Self.pageStep(viewportHeight: visibleBounds.height, columnar: columnar)
         let maximumY = max(0, documentView.frame.height - visibleBounds.height)
         let atStart = visibleBounds.origin.y <= 1
         let atEnd: Bool
@@ -234,6 +254,31 @@ final class MacReaderTextPresentation {
     }
 
     // MARK: - Pagination (viewport snap) + progress restoration
+
+    /// Column pages are exact viewport pages; one column keeps an overlap.
+    private static func pageStep(viewportHeight: CGFloat, columnar: Bool) -> CGFloat {
+        max(1, viewportHeight * (columnar ? 1 : 0.9))
+    }
+
+    /// Numbers pages by the same step a page turn moves, ending where the text ends.
+    func updatePageIndicator() {
+        guard !pageIndicator.isHidden, contentScrollView.documentView === textView,
+              let container = textView.textContainer, let manager = textView.layoutManager else { return }
+        let bounds = contentScrollView.contentView.bounds
+        let columnar = MacReaderTextLayout.showsColumns(textView)
+        let step = Self.pageStep(viewportHeight: bounds.height, columnar: columnar)
+        var end = max(0, textView.frame.height - bounds.height)
+        if !columnar {
+            manager.ensureLayout(for: container)
+            let textBottom = manager.usedRect(for: container).maxY + textView.textContainerOrigin.y
+            end = min(end, max(0, textBottom - bounds.height))
+        }
+        let total = max(0, Int(((end - 1) / step).rounded(.up))) + 1
+        let page = bounds.origin.y >= end - 1 ? total
+            : min(total, max(1, Int((bounds.origin.y / step).rounded()) + 1))
+        let value = L10n.string("reader.pageOf", page, total)
+        if pageIndicator.stringValue != value { pageIndicator.stringValue = value }
+    }
 
     /// In `.paginated` mode, after a trackpad/scroll-wheel gesture ends,
     /// snaps the scroll position to the nearest page start so it lands on a
@@ -352,6 +397,7 @@ final class MacReaderTextPresentation {
                   self.loadGeneration == generation, self.currentBookId == bookID else { return }
             self.onPlayPDF?(anchor)
         }
+        composition.setPageIndicatorShown(false)
         statusLabel.stringValue = L10n.string("reader.pdf")
         chapterTitleLabel.stringValue = ""
         contentScrollView.documentView = view

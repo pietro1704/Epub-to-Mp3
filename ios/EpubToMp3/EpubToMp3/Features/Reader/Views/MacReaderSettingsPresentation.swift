@@ -12,6 +12,7 @@ private final class TopAnchoredStackView: NSStackView {
 final class MacReaderSettingsPresentation: NSObject {
     private let settings: AppSettings
     private let settingsPopover: NSPopover
+    private weak var pageNumbersToggle: NSButton?
     private let bookPreferences: BookReadingPreferencesStore
 
     init(settings: AppSettings, popover: NSPopover, bookPreferences: BookReadingPreferencesStore = .shared) {
@@ -95,6 +96,13 @@ final class MacReaderSettingsPresentation: NSObject {
             current: settings.readerLetterSpacing, title: L10n.string("reader.kerning"),
             identifier: "readerSettings.kerning") { [weak settings] in settings?.readerLetterSpacing = $0 }
 
+        let pageNumbers = NSButton(checkboxWithTitle: L10n.string("readerSettings.showPageNumbers"), target: self,
+                                   action: #selector(pageNumbersChanged(_:)))
+        pageNumbers.state = settings.readerShowPageNumbers ? .on : .off
+        pageNumbers.setAccessibilityIdentifier("readerSettings.showPageNumbers")
+        pageNumbers.isHidden = settings.readerLayout != .paginated
+        pageNumbersToggle = pageNumbers
+
         let columns = NSPopUpButton()
         columns.addItems(withTitles: ["1", "2", "3", "4"])
         columns.selectItem(withTitle: String(settings.readerColumns))
@@ -103,7 +111,7 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, pageNumbers, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -145,11 +153,17 @@ final class MacReaderSettingsPresentation: NSObject {
     }
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
-        settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+        let selected = ReaderLayout.allCases[sender.indexOfSelectedItem]
+        settings.readerLayout = selected
+        pageNumbersToggle?.isHidden = selected != .paginated
     }
 
     @objc private func alignmentChanged(_ sender: NSPopUpButton) {
         settings.readerTextAlignment = ReaderTextAlignment.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func pageNumbersChanged(_ sender: NSButton) {
+        settings.readerShowPageNumbers = sender.state == .on
     }
 
     @objc private func columnsChanged(_ sender: NSPopUpButton) {
