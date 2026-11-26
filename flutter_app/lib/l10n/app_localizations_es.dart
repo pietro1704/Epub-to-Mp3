@@ -858,4 +858,20 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get convertStart => 'Iniciar conversión';
+
+  @override
+  String get tocRemoveDownloads => 'Quitar descargas';
+
+  @override
+  String get tocRemoveDownloadsMessage =>
+      'Se eliminarán todos los MP3 descargados de este libro.';
+
+  @override
+  String get tocAudioReady => 'Audio listo';
+
+  @override
+  String get tocAudioConverting => 'Convirtiendo audio';
+
+  @override
+  String get tocAudioFailed => 'Falló el audio';
 }

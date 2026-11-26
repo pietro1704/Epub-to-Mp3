@@ -1617,6 +1617,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Start conversion'**
   String get convertStart;
+
+  /// No description provided for @tocRemoveDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove downloads'**
+  String get tocRemoveDownloads;
+
+  /// No description provided for @tocRemoveDownloadsMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'All downloaded MP3s of this book will be deleted.'**
+  String get tocRemoveDownloadsMessage;
+
+  /// No description provided for @tocAudioReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio ready'**
+  String get tocAudioReady;
+
+  /// No description provided for @tocAudioConverting.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting audio'**
+  String get tocAudioConverting;
+
+  /// No description provided for @tocAudioFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio failed'**
+  String get tocAudioFailed;
 }
 
 class _AppLocalizationsDelegate

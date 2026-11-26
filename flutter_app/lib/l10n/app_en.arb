@@ -298,5 +298,10 @@
   "convertOptionsManagedLocally": "Cover and audio processing options are managed by the local converter.",
   "convertIncludeCover": "Include cover",
   "convertNormalizeAudio": "Normalize audio",
-  "convertStart": "Start conversion"
+  "convertStart": "Start conversion",
+  "tocRemoveDownloads": "Remove downloads",
+  "tocRemoveDownloadsMessage": "All downloaded MP3s of this book will be deleted.",
+  "tocAudioReady": "Audio ready",
+  "tocAudioConverting": "Converting audio",
+  "tocAudioFailed": "Audio failed"
 }

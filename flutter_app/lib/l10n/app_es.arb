@@ -291,5 +291,10 @@
   "convertOptionsManagedLocally": "Las opciones de portada y de procesamiento de audio las define el conversor local.",
   "convertIncludeCover": "Incluir portada",
   "convertNormalizeAudio": "Normalizar audio",
-  "convertStart": "Iniciar conversión"
+  "convertStart": "Iniciar conversión",
+  "tocRemoveDownloads": "Quitar descargas",
+  "tocRemoveDownloadsMessage": "Se eliminarán todos los MP3 descargados de este libro.",
+  "tocAudioReady": "Audio listo",
+  "tocAudioConverting": "Convirtiendo audio",
+  "tocAudioFailed": "Falló el audio"
 }
