@@ -45,7 +45,7 @@ final class MacLocalAudioDownloadsViewController: NSViewController {
         list.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let rows = entries.enumerated().map { index, entry -> NSView in
             let book = entry.book
-            let detail = [book.author, L10n.string("settings.downloadedChapters", book.chapterCount),
+            let detail = [book.author, L10n.downloadedChapters(book.chapterCount),
                           ByteCountFormatter.string(fromByteCount: book.byteCount, countStyle: .file)]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
