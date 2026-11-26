@@ -197,6 +197,50 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         XCTAssertNil(manager.activeSentenceRange)
     }
 
+    /// Pausing keeps the passage marked so the reader shows where narration resumes; a jump drops the old mark.
+    func testReaderKeepsTheHighlightWhilePausedUntilTheNarrationMoves() throws {
+        let defaults = try defaults()
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let standard = UserDefaults.standard
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey]
+        let saved = keys.map { standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) } }
+        standard.set("paused-highlight-fixture", forKey: keys[0])
+        standard.set(0, forKey: keys[1])
+        player.rememberReaderPlaybackAnchor()
+        player.playbackPlayingChanged(true)
+        let document = ReaderBookDocument(book: BookEntity(id: "paused-highlight-fixture", title: "Fixture",
+            bookmark: Data(), displayFilename: "fixture.epub", addedAt: Date(), fileType: .epub))
+        let chapter = EbookFulltext.Chapter(index: 1, name: "Chapter", text: "A synthetic sentence to narrate.",
+            html: nil, css: nil, charCount: nil, segments: nil)
+        document.fulltext = EbookFulltext(jobId: "paused-highlight-fixture", bookTitle: nil, bookAuthor: nil,
+            chapters: [chapter])
+        let textView = ReaderTextViewFactory.make()
+        textView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        let manager = try XCTUnwrap(textView.layoutManager as? ReaderPlaybackLayoutManager)
+        textView.attributedText = NSAttributedString(string: chapter.text)
+        let settings = AppSettings(defaults: defaults)
+        settings.readerAudioTrackingEnabled = true
+        let paint = ReaderAudioHighlightPresentation(document: document, player: player, textView: textView, settings: settings)
+        paint.observe()
+        let item = NSObject()
+        for seconds in [1.0, 2.0] {
+            player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds, isOutputting: true,
+                position: .init(chapterIndex: 0, seconds: seconds, duration: 10, sentenceID: nil,
+                    itemSeconds: seconds, itemDuration: 10))
+        }
+        let narrated = try XCTUnwrap(manager.activeSentenceRange)
+
+        player.playbackPlayingChanged(false)
+        paint.refresh()
+        XCTAssertEqual(manager.activeSentenceRange, narrated, "The paused passage must stay highlighted")
+
+        player.narrationJumps.send()
+        paint.refresh()
+        XCTAssertNil(manager.activeSentenceRange, "After a jump the old passage is no longer where narration resumes")
+        paint.stop()
+    }
+
     func testRepeatedWordsUseTheirOwnUTF16Range() throws {
         let confirmed = PlaybackAudioOutput.Position(chapterIndex: 3, seconds: 12, duration: 30,
             sentenceID: "sentence", itemSeconds: 2, itemDuration: 4)
