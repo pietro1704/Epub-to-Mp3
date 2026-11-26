@@ -163,6 +163,59 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         XCTAssertNil(control(in: controller.view, identifier: "settings.pageNumbers"))
     }
 
+    /// PARITY-MAC-SETTINGS-5: Playback has the audio rate, kept for the next launch, as on Linux.
+    func testPlaybackSectionKeepsTheChosenAudioRate() throws {
+        let settings = AppSettings(defaults: defaults)
+        let (controller, window) = host(settings)
+        defer { window.close() }
+        let popup = try XCTUnwrap(control(in: controller.view, identifier: "settings.audioRate") as? NSPopUpButton,
+                                  "missing audio rate")
+        XCTAssertEqual(popup.titleOfSelectedItem, PlaybackRate.x100.label)
+        popup.selectItem(withTitle: PlaybackRate.x150.label)
+        popup.sendAction(popup.action, to: popup.target)
+        XCTAssertEqual(AppSettings(defaults: defaults).playbackRate, .x150)
+        attach(window, name: "mac-settings-audio-rate")
+    }
+
+    /// PARITY-MAC-SETTINGS-6: Storage opens the local audio screen, where each book is removed on its own.
+    func testStorageOpensTheLocalAudioScreen() throws {
+        let (controller, window) = host(AppSettings(defaults: defaults))
+        defer { window.close() }
+        let disclosure = try XCTUnwrap(control(in: controller.view,
+            identifier: "settings.manageDownloads.disclosure") as? NSButton, "missing local audio row")
+        disclosure.performClick(nil)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(descendants(controller.view).first { $0.accessibilityIdentifier() == "settings.downloadedBooks" })
+        attach(window, name: "mac-local-audio")
+    }
+
+    func testLocalAudioScreenListsEachDownloadedBookWithItsOwnRemoveButton() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mac-downloads-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let artifacts = root.appendingPathComponent("artifacts")
+        for number in 1...2 {
+            try LocalAudioArtifactFixture.seed(root: artifacts, bookID: "offline-\(number)",
+                bookTitle: "Synthetic Offline Book \(number)", author: "Test Author", chapters: [
+                    .init(index: 0, title: "Chapter", retention: .downloaded, audio: Data(repeating: 1, count: 4096))])
+        }
+        let screen = MacLocalAudioDownloadsViewController(library: LibraryStore(defaults: defaults),
+            artifactStore: LocalAudioArtifactStore(root: artifacts),
+            retainedRoot: root.appendingPathComponent("retained"))
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 500),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentViewController = screen
+        window.setContentSize(NSSize(width: 900, height: 500))
+        window.orderFrontRegardless()
+        await screen.refreshDownloadedBooks()
+        screen.view.layoutSubtreeIfNeeded()
+        for number in 1...2 {
+            XCTAssertNotNil(control(in: screen.view, identifier: "settings.downloadedBook.remove.offline-\(number)"))
+        }
+        attach(window, name: "mac-local-audio-items")
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),

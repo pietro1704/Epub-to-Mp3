@@ -40,6 +40,7 @@ final class AppSettings: ObservableObject {
             defaults.object(forKey: Self.playbackBackwardSecondsKey) as? Double
         )
         self.remoteButtonMode = RemoteButtonMode.stored(in: defaults)
+        self.playbackRate = (defaults.object(forKey: "playbackRate") as? Float).flatMap(PlaybackRate.init(rawValue:)) ?? .x100
         reloadReaderPreferences(from: defaults, arguments: ProcessInfo.processInfo.arguments)
         loadingPersistedValues = false
         // Synchronous, like the `@Published` speech properties it replaces:
@@ -152,6 +153,11 @@ final class AppSettings: ObservableObject {
             }
             defaults.set(playbackForwardSeconds, forKey: Self.playbackForwardSecondsKey)
         }
+    }
+
+    /// The narration speed the player starts with; changing it in the player updates it.
+    @Published var playbackRate: PlaybackRate = .x100 {
+        didSet { defaults.set(playbackRate.rawValue, forKey: "playbackRate") }
     }
 
     /// What the car / headset next and previous buttons do. Read by the remote command handlers at event time.

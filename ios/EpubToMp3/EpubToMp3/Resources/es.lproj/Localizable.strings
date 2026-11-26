@@ -652,3 +652,4 @@
 "discovery.rights.camara" = "Descarga gratuita de la editorial · Derechos reservados en el PDF";
 "settings.originalTypography" = "Tipografía original";
 "settings.originalTypography.restore" = "Restaurar";
+"settings.audioRate" = "Velocidad del audio";
