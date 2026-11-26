@@ -189,6 +189,33 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         attach(window, name: "mac-local-audio")
     }
 
+    func testLocalAudioScreenListsEachDownloadedBookWithItsOwnRemoveButton() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mac-downloads-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let artifacts = root.appendingPathComponent("artifacts")
+        for number in 1...2 {
+            try LocalAudioArtifactFixture.seed(root: artifacts, bookID: "offline-\(number)",
+                bookTitle: "Synthetic Offline Book \(number)", author: "Test Author", chapters: [
+                    .init(index: 0, title: "Chapter", retention: .downloaded, audio: Data(repeating: 1, count: 4096))])
+        }
+        let screen = MacLocalAudioDownloadsViewController(library: LibraryStore(defaults: defaults),
+            artifactStore: LocalAudioArtifactStore(root: artifacts),
+            retainedRoot: root.appendingPathComponent("retained"))
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 500),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentViewController = screen
+        window.setContentSize(NSSize(width: 900, height: 500))
+        window.orderFrontRegardless()
+        await screen.refreshDownloadedBooks()
+        screen.view.layoutSubtreeIfNeeded()
+        for number in 1...2 {
+            XCTAssertNotNil(control(in: screen.view, identifier: "settings.downloadedBook.remove.offline-\(number)"))
+        }
+        attach(window, name: "mac-local-audio-items")
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),
