@@ -450,3 +450,56 @@ fn pdf_scan_with_a_stray_character_per_page_fails_with_the_ocr_required_code() {
     let worker = converter_core::worker::WorkerError::from(error);
     assert_eq!(worker.code(), "pdf_ocr_required", "{worker}");
 }
+
+fn ingest_pages(pages: &[&str]) -> converter_core::epub::Book {
+    converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(
+        std::path::Path::new("cleanup.pdf"),
+        &fixture::pdf(false, pages),
+    )
+    .unwrap()
+}
+
+#[test]
+fn pdf_repeated_running_headers_and_page_numbers_are_removed() {
+    let book = ingest_pages(&[
+        "Meu Livro Sinistro\nPrimeira pagina com texto proprio e suficiente.\n1",
+        "Meu Livro Sinistro\nSegunda pagina com outro texto bem diferente.\n2",
+        "Meu Livro Sinistro\nTerceira pagina fala de outra coisa totalmente.\n3",
+    ]);
+    let all: String = book
+        .chapters
+        .iter()
+        .map(|c| c.text.clone())
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(!all.contains("Meu Livro Sinistro"), "{all}");
+    assert!(
+        !all.contains("|1") && !all.ends_with('3') && !all.contains('2'),
+        "{all}"
+    );
+    assert!(
+        all.contains("Primeira pagina") && all.contains("Terceira pagina"),
+        "{all}"
+    );
+}
+
+#[test]
+fn pdf_text_that_appears_once_is_never_removed_as_a_header() {
+    let book = ingest_pages(&[
+        "Capitulo Um\nTexto da pagina um.",
+        "Outro titulo\nTexto da pagina dois.",
+        "Mais um\nTexto tres.",
+    ]);
+    let all: String = book.chapters.iter().map(|c| c.text.clone()).collect();
+    assert!(
+        all.contains("Capitulo Um") && all.contains("Outro titulo"),
+        "{all}"
+    );
+}
+
+#[test]
+fn pdf_repeated_spaces_are_collapsed() {
+    let book = ingest_pages(&["O   oficial  do   fluxo", "x", "y"]);
+    let text = &book.chapters[0].text;
+    assert!(text.contains("O oficial do fluxo"), "{text:?}");
+}

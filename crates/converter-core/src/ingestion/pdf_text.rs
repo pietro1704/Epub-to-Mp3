@@ -67,7 +67,7 @@ impl PdfTextIngestion {
             // Per-page extraction errors must never truncate a book silently.
             pdf_extract::output_doc_page(&doc, &mut PlainTextOutput::new(&mut page), *number)
                 .map_err(extraction_error)?;
-            page = page.trim().replace('\0', "");
+            page = normalize_page(page.trim());
             // Covers, figures and blank pages have nothing to narrate: skip and count them.
             if page.trim().is_empty() {
                 skipped_pages += 1;
@@ -99,6 +99,7 @@ impl PdfTextIngestion {
         if cancelled() {
             return Err(IngestionError::Cancelled);
         }
+        strip_running_lines(&mut text);
         let (toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
         let mut chapters = Vec::new();
         let starts = if starts.is_empty() {
@@ -205,6 +206,89 @@ fn has_drawn_content(doc: &Document, page: pdf_extract::ObjectId) -> Result<bool
 /// Lines shorter than this share of the typical line width may end a paragraph.
 const SHORT_LINE_RATIO: f64 = 0.7;
 
+/// Maps typographic ligatures to letters, drops NULs and collapses runs of blanks (newlines stay).
+fn normalize_page(page: &str) -> String {
+    let mut out = String::with_capacity(page.len());
+    let mut blank = false;
+    for ch in page.chars() {
+        let mapped = match ch {
+            '\0' => continue,
+            '\u{fb00}' => "ff",
+            '\u{fb01}' => "fi",
+            '\u{fb02}' => "fl",
+            '\u{fb03}' => "ffi",
+            '\u{fb04}' => "ffl",
+            '\u{fb05}' | '\u{fb06}' => "st",
+            ' ' | '\t' | '\u{a0}' => {
+                if !blank {
+                    out.push(' ');
+                }
+                blank = true;
+                continue;
+            }
+            other => {
+                blank = false;
+                out.push(other);
+                continue;
+            }
+        };
+        blank = false;
+        out.push_str(mapped);
+    }
+    out
+}
+
+/// Running headers, footers and page numbers repeat on many pages. The first and last line of
+/// a page are dropped when the same line (digits aside) leads or ends at least three pages.
+fn strip_running_lines(pages: &mut [String]) {
+    if pages.len() < 3 {
+        return;
+    }
+    let key = |line: &str| -> Option<String> {
+        let line = line.trim();
+        (!line.is_empty() && line.chars().count() <= 80).then(|| {
+            line.chars()
+                .map(|c| if c.is_ascii_digit() { '#' } else { c })
+                .collect()
+        })
+    };
+    let edges = |page: &str| -> Vec<String> {
+        let lines: Vec<&str> = page.lines().filter(|l| !l.trim().is_empty()).collect();
+        let mut keys = Vec::new();
+        for line in [lines.first(), lines.last()].into_iter().flatten() {
+            if lines.len() > 1 {
+                keys.extend(key(line));
+            }
+        }
+        keys.dedup();
+        keys
+    };
+    let mut counts = std::collections::HashMap::<String, usize>::new();
+    for page in pages.iter() {
+        for k in edges(page) {
+            *counts.entry(k).or_default() += 1;
+        }
+    }
+    let repeated = |k: &str| counts.get(k).is_some_and(|n| *n >= 3);
+    for page in pages.iter_mut() {
+        let lines: Vec<&str> = page.lines().collect();
+        let first = lines.iter().position(|l| !l.trim().is_empty());
+        let last = lines.iter().rposition(|l| !l.trim().is_empty());
+        if first == last {
+            continue;
+        }
+        let kept: Vec<&str> = lines
+            .iter()
+            .enumerate()
+            .filter(|(i, l)| {
+                !((Some(*i) == first || Some(*i) == last) && key(l).is_some_and(|k| repeated(&k)))
+            })
+            .map(|(_, l)| *l)
+            .collect();
+        *page = kept.join("\n").trim().to_string();
+    }
+}
+
 /// `pdf_extract` emits one `\n` per visual line. A lone `\n` is a soft wrap (joined with a
 /// space, or glued back when a hyphenated word is split) unless it is a real paragraph end:
 /// the next line opens with a dialogue dash, or the line is well short of the page width and
@@ -293,7 +377,15 @@ fn extraction_error(error: impl std::fmt::Display) -> IngestionError {
 
 #[cfg(test)]
 mod tests {
-    use super::reflow_paragraphs;
+    use super::{normalize_page, reflow_paragraphs};
+
+    #[test]
+    fn ligatures_map_to_letters() {
+        assert_eq!(
+            normalize_page("of\u{fb01}cial \u{fb02}uxo \u{fb00}\u{fb03}\u{fb04}\u{fb05}\u{fb06}"),
+            "official fluxo ffffiffl".to_string() + "stst"
+        );
+    }
 
     #[test]
     fn a_dialogue_dash_opens_a_new_paragraph() {
