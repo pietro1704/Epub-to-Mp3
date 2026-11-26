@@ -1,6 +1,7 @@
 import '../features/playback/measured_playback_binding.dart';
 import '../features/playback/measured_speech_alignment.dart';
 import '../screens/bookmarks_list_screen.dart';
+import '../screens/models_screen.dart';
 import 'reader_search_overlay.dart';
 
 import 'dart:async';

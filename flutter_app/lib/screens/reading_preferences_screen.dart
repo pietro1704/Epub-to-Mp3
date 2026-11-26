@@ -217,6 +217,14 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
               onTap: ref.read(settingsProvider.notifier).resetReaderTypography,
             ),
           ],
+          SwitchListTile(
+            key: const ValueKey('reader-follow-audio'),
+            contentPadding: EdgeInsets.zero,
+            title: Text(t.autoScrollLabel),
+            subtitle: Text(t.autoScrollDesc),
+            value: settings.readerAutoScroll,
+            onChanged: (v) => ref.read(settingsProvider.notifier).setReaderAutoScroll(v),
+          ),
           _SliderRow(
             label: t.readingSpeedLabel,
             value: settings.audioRate.clamp(0.5, 3.0).toDouble(),
