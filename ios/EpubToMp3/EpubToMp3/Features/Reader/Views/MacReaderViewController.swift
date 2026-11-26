@@ -183,8 +183,14 @@ final class MacReaderViewController: NSViewController {
     private lazy var contentsPresentation: MacReaderContentsPresentation = MacReaderContentsPresentation(
         document: document, composition: composition,
         persistProgress: { [weak self] in self?.persistReadingProgress() },
-        showChapter: { [weak self] in self?.showChapter($0) }
+        showChapter: { [weak self] in self?.showChapter($0) },
+        makeDownloads: { [weak self] in self?.makeChapterDownloads() }
     )
+    private func makeChapterDownloads() -> ReaderChapterDownloads? {
+        guard let book = library.books.first(where: { $0.id == document.currentBookId }),
+              book.fileType.supportsAudioConversion else { return nil }
+        return ReaderChapterDownloads(book: book, library: library, settings: settings, snapshot: player.snapshot)
+    }
     @objc private func showTOC(_ sender: NSButton) { contentsPresentation.showTOC(sender) }
     func numberOfRows(in tableView: NSTableView) -> Int { contentsPresentation.numberOfRows(in: tableView) }
     private func selectCurrentTOCRow() { contentsPresentation.selectCurrentTOCRow() }
