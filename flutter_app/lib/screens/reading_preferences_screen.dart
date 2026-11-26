@@ -17,12 +17,24 @@ class ReadingPreferencesScreen extends ConsumerStatefulWidget {
   final String? bookId;
 
   @override
-  ConsumerState<ReadingPreferencesScreen> createState() => _ReadingPreferencesScreenState();
+  ConsumerState<ReadingPreferencesScreen> createState() =>
+      _ReadingPreferencesScreenState();
 }
 
-class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScreen> {
+class _ReadingPreferencesScreenState
+    extends ConsumerState<ReadingPreferencesScreen> {
   /// True while editing this book's own preferences.
-  late bool _forBook = widget.bookId != null;
+  late bool _forBook =
+      widget.bookId != null &&
+      (ref.read(sharedPrefsProvider).getBool(_scopeKey) ?? true);
+
+  /// "Only this book" switch: default on, and once turned off it stays off.
+  static const _scopeKey = 'readingPrefsForBook';
+
+  void _setForBook(bool value) {
+    ref.read(sharedPrefsProvider).setBool(_scopeKey, value);
+    setState(() => _forBook = value);
+  }
 
   String? get _bookId => _forBook ? widget.bookId : null;
 
@@ -34,7 +46,9 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
   }) async {
     final bookId = _bookId;
     if (bookId != null) {
-      await ref.read(bookReadingOverridesProvider(bookId).notifier).update(forBook);
+      await ref
+          .read(bookReadingOverridesProvider(bookId).notifier)
+          .update(forBook);
     } else {
       await forDefault(ref.read(settingsProvider.notifier));
     }
@@ -45,7 +59,9 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
     final t = AppLocalizations.of(context)!;
     final settings = _shown;
     final bookId = widget.bookId;
-    final overridden = bookId != null && !ref.watch(bookReadingOverridesProvider(bookId)).isEmpty;
+    final overridden =
+        bookId != null &&
+        !ref.watch(bookReadingOverridesProvider(bookId)).isEmpty;
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(t.readingPreferencesTitle)),
@@ -60,13 +76,13 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
                   key: const ValueKey('reading-mode-default'),
                   label: Text(t.readingModeDefault),
                   selected: !_forBook,
-                  onSelected: (_) => setState(() => _forBook = false),
+                  onSelected: (_) => _setForBook(false),
                 ),
                 ChoiceChip(
                   key: const ValueKey('reading-mode-book'),
                   label: Text(t.readingModeBook),
                   selected: _forBook,
-                  onSelected: (_) => setState(() => _forBook = true),
+                  onSelected: (_) => _setForBook(true),
                 ),
               ],
             )
@@ -75,18 +91,28 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           if (bookId != null && !_forBook)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(t.readingDefaultHint, style: theme.textTheme.bodySmall),
+              child: Text(
+                t.readingDefaultHint,
+                style: theme.textTheme.bodySmall,
+              ),
             ),
           if (_forBook && bookId != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(
                 children: [
-                  Expanded(child: Text(t.readingBookHint, style: theme.textTheme.bodySmall)),
+                  Expanded(
+                    child: Text(
+                      t.readingBookHint,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
                   if (overridden)
                     TextButton(
                       key: const ValueKey('reading-use-default'),
-                      onPressed: () => ref.read(bookReadingOverridesProvider(bookId).notifier).clear(),
+                      onPressed: () => ref
+                          .read(bookReadingOverridesProvider(bookId).notifier)
+                          .clear(),
                       child: Text(t.readingUseDefault),
                     ),
                 ],
@@ -100,7 +126,9 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
             spacing: 12,
             runSpacing: 8,
             children: [
-              for (final option in ReaderTheme.values.where((o) => o != ReaderTheme.custom))
+              for (final option in ReaderTheme.values.where(
+                (o) => o != ReaderTheme.custom,
+              ))
                 _ThemeSwatch(
                   theme: option,
                   selected: settings.readerTheme == option,
@@ -115,7 +143,10 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           Text(t.fontLabel, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           SegmentedButton<ReaderFontFamily>(
-            segments: [for (final f in ReaderFontFamily.values) ButtonSegment(value: f, label: Text(_fontName(t, f)))],
+            segments: [
+              for (final f in ReaderFontFamily.values)
+                ButtonSegment(value: f, label: Text(_fontName(t, f))),
+            ],
             selected: {settings.readerFontFamily},
             onSelectionChanged: (s) => _edit(
               forBook: (o) => o.copyWith(fontFamily: s.first),
@@ -132,18 +163,28 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
                 icon: const Icon(Icons.text_decrease),
                 onPressed: settings.readerFontSize > 0
                     ? () => _edit(
-                        forBook: (o) => o.copyWith(fontSize: settings.readerFontSize - 1),
-                        forDefault: (n) => n.setReaderFontSize(settings.readerFontSize - 1),
+                        forBook: (o) =>
+                            o.copyWith(fontSize: settings.readerFontSize - 1),
+                        forDefault: (n) =>
+                            n.setReaderFontSize(settings.readerFontSize - 1),
                       )
                     : null,
               ),
-              SizedBox(width: 56, child: Text('${settings.readerPointSize.toInt()} pt', textAlign: TextAlign.center)),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '${settings.readerPointSize.toInt()} pt',
+                  textAlign: TextAlign.center,
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.text_increase),
                 onPressed: settings.readerFontSize < 4
                     ? () => _edit(
-                        forBook: (o) => o.copyWith(fontSize: settings.readerFontSize + 1),
-                        forDefault: (n) => n.setReaderFontSize(settings.readerFontSize + 1),
+                        forBook: (o) =>
+                            o.copyWith(fontSize: settings.readerFontSize + 1),
+                        forDefault: (n) =>
+                            n.setReaderFontSize(settings.readerFontSize + 1),
                       )
                     : null,
               ),
@@ -154,8 +195,14 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           const SizedBox(height: 8),
           SegmentedButton<ReaderLayout>(
             segments: [
-              ButtonSegment(value: ReaderLayout.scrolling, label: Text(t.readerLayoutScrolling)),
-              ButtonSegment(value: ReaderLayout.paginated, label: Text(t.readerLayoutPaginated)),
+              ButtonSegment(
+                value: ReaderLayout.scrolling,
+                label: Text(t.readerLayoutScrolling),
+              ),
+              ButtonSegment(
+                value: ReaderLayout.paginated,
+                label: Text(t.readerLayoutPaginated),
+              ),
             ],
             selected: {settings.readerLayout},
             onSelectionChanged: (s) => _edit(
@@ -193,8 +240,14 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           const SizedBox(height: 8),
           SegmentedButton<ReaderTextAlignment>(
             segments: [
-              ButtonSegment(value: ReaderTextAlignment.justified, label: Text(t.readerAlignmentJustified)),
-              ButtonSegment(value: ReaderTextAlignment.left, label: Text(t.readerAlignmentLeft)),
+              ButtonSegment(
+                value: ReaderTextAlignment.justified,
+                label: Text(t.readerAlignmentJustified),
+              ),
+              ButtonSegment(
+                value: ReaderTextAlignment.left,
+                label: Text(t.readerAlignmentLeft),
+              ),
             ],
             selected: {settings.readerTextAlignment},
             onSelectionChanged: (s) => _edit(
@@ -205,7 +258,10 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
           ),
           if (settings.readerLayout == ReaderLayout.paginated) ...[
             const SizedBox(height: 8),
-            Text(t.readerPageTurnStyle, style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              t.readerPageTurnStyle,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 8),
             SegmentedButton<String>(
               key: const ValueKey('reader-page-turn-style'),
@@ -215,8 +271,9 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
                 ButtonSegment(value: 'none', label: Text(t.pageTurnNone)),
               ],
               selected: {settings.readerPageTurnStyle},
-              onSelectionChanged: (s) =>
-                  ref.read(settingsProvider.notifier).setReaderPageTurnStyle(s.first),
+              onSelectionChanged: (s) => ref
+                  .read(settingsProvider.notifier)
+                  .setReaderPageTurnStyle(s.first),
               showSelectedIcon: false,
             ),
           ],
@@ -225,7 +282,9 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
               contentPadding: EdgeInsets.zero,
               title: Text(t.readerShowPageNumbers),
               value: settings.readerShowPageNumbers,
-              onChanged: (v) => ref.read(settingsProvider.notifier).setReaderShowPageNumbers(v),
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .setReaderShowPageNumbers(v),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -240,7 +299,8 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
             title: Text(t.autoScrollLabel),
             subtitle: Text(t.autoScrollDesc),
             value: settings.readerAutoScroll,
-            onChanged: (v) => ref.read(settingsProvider.notifier).setReaderAutoScroll(v),
+            onChanged: (v) =>
+                ref.read(settingsProvider.notifier).setReaderAutoScroll(v),
           ),
           _SliderRow(
             label: t.readingSpeedLabel,
@@ -261,7 +321,11 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
 }
 
 class _ThemeSwatch extends StatelessWidget {
-  const _ThemeSwatch({required this.theme, required this.selected, required this.onTap});
+  const _ThemeSwatch({
+    required this.theme,
+    required this.selected,
+    required this.onTap,
+  });
 
   final ReaderTheme theme;
   final bool selected;
@@ -284,13 +348,18 @@ class _ThemeSwatch extends StatelessWidget {
               shape: BoxShape.circle,
               color: ReaderThemeColors.previewColor(theme),
               border: Border.all(
-                color: selected ? Theme.of(context).colorScheme.primary : Colors.grey.shade400,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey.shade400,
                 width: selected ? 3 : 1,
               ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(_themeName(AppLocalizations.of(context)!, theme), style: const TextStyle(fontSize: 11)),
+          Text(
+            _themeName(AppLocalizations.of(context)!, theme),
+            style: const TextStyle(fontSize: 11),
+          ),
         ],
       ),
     ),
@@ -323,7 +392,13 @@ class _SliderRow extends StatelessWidget {
       children: [
         SizedBox(width: 120, child: Text(label)),
         Expanded(
-          child: Slider(value: value.clamp(min, max), min: min, max: max, divisions: divisions, onChanged: onChanged),
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+          ),
         ),
         SizedBox(width: 56, child: Text(display, textAlign: TextAlign.end)),
       ],
