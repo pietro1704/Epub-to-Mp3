@@ -397,6 +397,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                             0
                       : 0),
               bookId: widget.bookId,
+              chapterPosition: _currentChapterIndex,
               onPlayFromHere: widget.onListenFrom == null
                   ? null
                   : (utf16) => _playFromHere(chapter, utf16),

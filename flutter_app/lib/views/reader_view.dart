@@ -42,6 +42,10 @@ class ReaderView extends ConsumerStatefulWidget {
 
   /// Enables saved highlights and notes on selected text for this book.
   final String? bookId;
+
+  /// The chapter's position in the book as Rust numbers it (the payload array
+  /// position); [FulltextChapter.index] is only an identifier.
+  final int? chapterPosition;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
@@ -66,6 +70,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.onVisibleTextOffset,
     this.onPlayFromHere,
     this.bookId,
+    this.chapterPosition,
     required this.spans,
     this.currentSentenceId,
     this.onJumpToSentence,
@@ -464,12 +469,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final text = widget.chapter.text;
     if (book == null || range.end > text.length) return;
     final corrections = ref.read(bookLanguageCorrectionsProvider);
-    final scope = PassageLanguageCorrection(
-      chapterIndex: widget.chapter.index,
-      start: text.substring(0, range.start).runes.length,
-      end: text.substring(0, range.end).runes.length,
-      language: '',
+    final scope = PassageLanguageCorrection.forSelection(
+      text: text,
+      range: range,
+      chapterPosition: widget.chapterPosition ?? widget.chapter.index,
     );
+    if (scope == null) return;
     final current = corrections
         .decision(book)
         .passages
