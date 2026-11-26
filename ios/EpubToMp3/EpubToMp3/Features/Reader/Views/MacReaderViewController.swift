@@ -14,6 +14,7 @@ final class MacReaderViewController: NSViewController {
     private let preparedFulltextWriter: @Sendable (EbookFulltext, String) -> Void
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
+    private let reducesMotion: () -> Bool
     private let onClose: () -> Void
     private let onListen: () -> Void
     private let onVoiceModels: (NSViewController, NSView) -> Void
@@ -78,6 +79,7 @@ final class MacReaderViewController: NSViewController {
             LocalFulltextCache.save(payload, bookId: id)
         },
         openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil,
+        reducesMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
         initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void = { operation in
             DispatchQueue.main.async { operation() }
         }
@@ -99,6 +101,7 @@ final class MacReaderViewController: NSViewController {
         self.openStageObserver = openStageObserver
         document.openJourney.stageObserver = openStageObserver
         self.initialPositionScheduler = initialPositionScheduler
+        self.reducesMotion = reducesMotion
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -292,7 +295,7 @@ final class MacReaderViewController: NSViewController {
 
     private lazy var textPresentation: MacReaderTextPresentation = MacReaderTextPresentation(
         document: document, composition: composition, settings: settings, location: player.location, renderer: preparedRenderer,
-        initialPositionScheduler: initialPositionScheduler, stageObserver: openStageObserver,
+        initialPositionScheduler: initialPositionScheduler, stageObserver: openStageObserver, reducesMotion: reducesMotion,
         repaintSavedHighlights: { [weak self] in self?.annotations.repaintSavedHighlights(chapterIndex: $0) },
         prepareChapterProjection: { [weak self] in self?.bookLoad.prepareChapterProjection(bookID: $0, ordinal: $1) },
         selectCurrentTOCRow: { [weak self] in self?.contentsPresentation.selectCurrentTOCRow() },

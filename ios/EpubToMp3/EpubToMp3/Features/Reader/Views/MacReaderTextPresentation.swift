@@ -12,6 +12,7 @@ final class MacReaderTextPresentation {
     private let settings: AppSettings
     private let preparedRenderer: PreparedChapterRenderer
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
+    private let reducesMotion: () -> Bool
     private let repaintSavedHighlights: (Int) -> Void
     private let prepareChapterProjection: (String, Int) -> Void
     private let selectCurrentTOCRow: () -> Void
@@ -69,7 +70,8 @@ final class MacReaderTextPresentation {
     init(document: MacReaderDocument, composition: MacReaderViewComposition, settings: AppSettings, location: ReaderLocation,
          renderer: PreparedChapterRenderer,
          initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void,
-         stageObserver: (@Sendable (String, UInt64) -> Void)?, repaintSavedHighlights: @escaping (Int) -> Void,
+         stageObserver: (@Sendable (String, UInt64) -> Void)?, reducesMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         repaintSavedHighlights: @escaping (Int) -> Void,
          prepareChapterProjection: @escaping (String, Int) -> Void, selectCurrentTOCRow: @escaping () -> Void,
          closeReader: @escaping () -> Void) {
         self.location = location
@@ -78,6 +80,7 @@ final class MacReaderTextPresentation {
         self.settings = settings
         preparedRenderer = renderer
         self.initialPositionScheduler = initialPositionScheduler
+        self.reducesMotion = reducesMotion
         self.repaintSavedHighlights = repaintSavedHighlights
         self.prepareChapterProjection = prepareChapterProjection
         self.selectCurrentTOCRow = selectCurrentTOCRow
