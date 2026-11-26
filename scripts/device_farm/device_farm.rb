@@ -25,6 +25,7 @@ require 'json'
 require 'open3'
 require 'optparse'
 require 'time'
+require 'socket'
 require 'timeout'
 
 module DeviceFarm
@@ -107,6 +108,7 @@ module DeviceFarm
   end
 
   def self.resolve(serial)
+    env = env_for(serial)
     if serial.start_with?('mdns:')
       address = pick_mdns(serial, Open3.capture2e(env, 'adb', 'mdns', 'services').first)
       unless address
@@ -137,9 +139,32 @@ module DeviceFarm
     { 'ANDROID_ADB_SERVER_PORT' => ADB_PORT }
   end
 
+  ADB_PORTS = (ENV['DEVICE_FARM_ADB_PORTS'] || "#{ADB_PORT},5037").split(',').uniq
+
+  # The server that lists the device as ready (any of its names); the default server otherwise.
+  # Only reads: it never starts, kills or restarts a server.
+  def self.pick_server(serial, ports, reader)
+    names = aliases(serial)
+    found = ports.find do |port|
+      reader.call(port).lines.any? { |line| name, state = line.split; state == 'device' && names.include?(name) }
+    end
+    found || ports.first
+  end
+
+  def self.listing_of(port)
+    Socket.tcp('127.0.0.1', port.to_i, connect_timeout: 1) { |_| }
+    Open3.capture2e({ 'ANDROID_ADB_SERVER_PORT' => port }, 'adb', 'devices').first
+  rescue StandardError
+    ''
+  end
+
+  def self.env_for(serial)
+    { 'ANDROID_ADB_SERVER_PORT' => pick_server(serial, ADB_PORTS, method(:listing_of)) }
+  end
+
   def self.adb(serial, *args, timeout: 60)
     safe!(args)
-    capture(env, ['adb', '-s', resolve(serial), *args], timeout: timeout, label: "adb -s #{serial} #{args.join(' ')}")
+    capture(env_for(serial), ['adb', '-s', resolve(serial), *args], timeout: timeout, label: "adb -s #{serial} #{args.join(' ')}")
   end
 
   # Runs argv in its own process group and kills the whole group at the deadline. Timeout around
