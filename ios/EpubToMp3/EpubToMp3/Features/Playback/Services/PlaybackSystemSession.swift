@@ -182,7 +182,8 @@ final class PlaybackSystemSession {
     }
 
     /// Next / previous track from a car, headset or lock screen: a chapter move, or ±N seconds when the user chose that.
-    private func handleTrackCommand(forward: Bool) {
+    /// Internal so tests can drive the same path as the AirPods next/previous-track targets.
+    func handleTrackCommand(forward: Bool) {
         let resolution = RemoteButtonMode.stored().resolve(
             forward: forward,
             forwardSeconds: Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey),
