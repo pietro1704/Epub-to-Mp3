@@ -100,6 +100,17 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
         playbackSession.observePlayback()
+        // The Settings speed and the player's speed are one preference.
+        settings.$playbackRate.removeDuplicates()
+            .sink { [weak player] rate in
+                if player?.rate != rate { player?.setRate(rate) }
+            }
+            .store(in: &cancellables)
+        player.$rate.dropFirst().removeDuplicates()
+            .sink { [weak settings] rate in
+                if settings?.playbackRate != rate { settings?.playbackRate = rate }
+            }
+            .store(in: &cancellables)
         player.restartReaderListening = { [weak self] chapter, ratio in
             guard let self, let bookID = self.player.location.readingBookID,
                   let book = self.library.books.first(where: { $0.id == bookID }),

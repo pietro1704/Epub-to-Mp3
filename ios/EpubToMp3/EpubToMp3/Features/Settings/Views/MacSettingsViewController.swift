@@ -13,6 +13,7 @@ final class MacSettingsViewController: NSViewController {
     private var isClearingDownloads = false
     private let skipForwardPopup = NSPopUpButton()
     private let skipBackwardPopup = NSPopUpButton()
+    private let audioRatePopup = NSPopUpButton()
     private let remoteButtonsControl = NSSegmentedControl()
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
@@ -139,6 +140,10 @@ final class MacSettingsViewController: NSViewController {
             popup.setAccessibilityLabel(L10n.string(key))
             popup.setAccessibilityIdentifier(key)
         }
+        audioRatePopup.target = self
+        audioRatePopup.action = #selector(audioRateChanged(_:))
+        audioRatePopup.setAccessibilityLabel(L10n.string("settings.audioRate"))
+        audioRatePopup.setAccessibilityIdentifier("settings.audioRate")
         remoteButtonsControl.segmentCount = RemoteButtonMode.allCases.count
         for (index, mode) in RemoteButtonMode.allCases.enumerated() {
             remoteButtonsControl.setLabel(mode.title, forSegment: index)
@@ -158,6 +163,8 @@ final class MacSettingsViewController: NSViewController {
         remote.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 10, right: 0)
         remote.arrangedSubviews[0].widthAnchor.constraint(equalTo: remote.widthAnchor).isActive = true
         return [
+            MacSettingsSections.row(title: L10n.string("settings.audioRate"), symbol: "speedometer",
+                                    accessory: audioRatePopup),
             MacSettingsSections.row(title: L10n.string("settings.skipBackward"), symbol: "gobackward",
                                     accessory: skipBackwardPopup),
             MacSettingsSections.row(title: L10n.string("settings.skipForward"), symbol: "goforward",
@@ -243,6 +250,12 @@ final class MacSettingsViewController: NSViewController {
         PlaybackSystemSession.refreshSkipIntervals()
     }
 
+    @objc private func audioRateChanged(_ sender: NSPopUpButton) {
+        let rates = PlaybackRate.menuRates(selected: settings.playbackRate)
+        guard rates.indices.contains(sender.indexOfSelectedItem) else { return }
+        settings.playbackRate = rates[sender.indexOfSelectedItem]
+    }
+
     @objc private func remoteButtonsChanged(_ sender: NSSegmentedControl) {
         guard RemoteButtonMode.allCases.indices.contains(sender.selectedSegment) else { return }
         settings.remoteButtonMode = RemoteButtonMode.allCases[sender.selectedSegment]
@@ -279,6 +292,10 @@ final class MacSettingsViewController: NSViewController {
     private func refresh() {
         select(Self.skipIntervals.firstIndex(of: Int(settings.playbackBackwardSeconds)), in: skipBackwardPopup)
         select(Self.skipIntervals.firstIndex(of: Int(settings.playbackForwardSeconds)), in: skipForwardPopup)
+        let rates = PlaybackRate.menuRates(selected: settings.playbackRate)
+        audioRatePopup.removeAllItems()
+        audioRatePopup.addItems(withTitles: rates.map(\.label))
+        audioRatePopup.selectItem(withTitle: settings.playbackRate.label)
         remoteButtonsControl.selectedSegment = RemoteButtonMode.allCases.firstIndex(of: settings.remoteButtonMode) ?? 0
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current())
