@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.13.0] — 2026-11-26
+
+### Bug Fixes
+
+- Keep the narrated passage highlighted while paused (#1637) ([4991da1](https://github.com/pietro1704/Epub-to-Mp3/commit/4991da1e8b3bbfc3fd40409c53aa888b3be00b7a))
+- Keep the narrated passage highlighted while paused (#1636) ([ae465eb](https://github.com/pietro1704/Epub-to-Mp3/commit/ae465eb2c26ab5782477bac6391858cdfc268c20))
+- Identify the tablet by hardware serial; no monkey on it under any address (#1635) ([3395e48](https://github.com/pietro1704/Epub-to-Mp3/commit/3395e4815e3817b6adbce3861e88c303b3408fdc))
+- Convert PDFs with text-less pages and calibre fonts (#1633) ([9f56031](https://github.com/pietro1704/Epub-to-Mp3/commit/9f56031083f5d6c9498a4b6d0c27cd4e9753e232))
+- The monkey is off on the tablet by serial (#1632) ([5b8b4e5](https://github.com/pietro1704/Epub-to-Mp3/commit/5b8b4e5ed29b760c5bf26f8791902986abf80387))
+- Phases touch a device only while the app is alone in the foreground (#1631) ([5e380b2](https://github.com/pietro1704/Epub-to-Mp3/commit/5e380b20c3dc94b53af555b793c7f64c0892c3e2))
+- Attach a note to the highlight under the selection (#1630) ([1b624da](https://github.com/pietro1704/Epub-to-Mp3/commit/1b624da20ababa21b802b05f452ecf460e8eaa1a))
+- Do not report a missing voice while the catalog is loading (#1628) ([5f412da](https://github.com/pietro1704/Epub-to-Mp3/commit/5f412dadcc04f10ff20e7492a4b6ac9092d3ee52))
+- Offer remove highlight on the first selection menu level (#1627) ([c144145](https://github.com/pietro1704/Epub-to-Mp3/commit/c1441455424c5b950174d3c98a2518b5b1678444))
+- Keep reader settings per book by default (#1625) ([80736dc](https://github.com/pietro1704/Epub-to-Mp3/commit/80736dca39f190de1b85a0b10a47f11dab256f46))
+- Keep the page still while auto-scroll is off (#1626) ([572a702](https://github.com/pietro1704/Epub-to-Mp3/commit/572a702c1fc944cc45c2013a43825d4c11a8dbcb))
+- Return from the font picker once a font is chosen (#1624) ([7850abd](https://github.com/pietro1704/Epub-to-Mp3/commit/7850abd292f3bb72bbd661ccdb7591a6a040724b))
+- Cap tile width by adding columns on wide windows (#1621) ([a548070](https://github.com/pietro1704/Epub-to-Mp3/commit/a548070297314cb4bfaf858070a770af2711c7f8))
+- A failed job with no audio retries with the current voice settings (#1622) ([3c661e2](https://github.com/pietro1704/Epub-to-Mp3/commit/3c661e253bc299d2635cd647b00bea38debfeed3))
+- Start every one-column page at a whole line (#1619) ([5a3dca1](https://github.com/pietro1704/Epub-to-Mp3/commit/5a3dca1151e9a9a066133529e3a29f9230d02de0))
+- Leave devices on the normal debug app after the suite round (#1620) ([7af6629](https://github.com/pietro1704/Epub-to-Mp3/commit/7af6629d535af0cbe1cfec340a65eb7d7dc90c29))
+- Centre the reader header title (#1615) ([4ebe869](https://github.com/pietro1704/Epub-to-Mp3/commit/4ebe869d404551ebc88c4dc0109506add40a93aa))
+- The only-this-book switch stays off once turned off (#1616) ([7cf2c27](https://github.com/pietro1704/Epub-to-Mp3/commit/7cf2c276b399349de34e4b4fe5cb64eed1ceb139))
+- A remote jump leaves the page alone when follow audio is off (#1614) ([650b1ed](https://github.com/pietro1704/Epub-to-Mp3/commit/650b1eda6d49d90745778b5090150449fd334b64))
+- A remote seek or skip makes the reader follow the narration again (#1612) ([7639526](https://github.com/pietro1704/Epub-to-Mp3/commit/76395268164048bd933b51069e84c5abe4685f19))
+- Install Android build-tools in the publish job so apksigner is on PATH (#1610) ([36b70f5](https://github.com/pietro1704/Epub-to-Mp3/commit/36b70f5b67e5f5a1e4e5806cc733fbe416fdee39))
+
+### Chores
+
+- Bump version to 0.13.0 ([ebf6163](https://github.com/pietro1704/Epub-to-Mp3/commit/ebf6163f4b719baf2464d59835420dde7a5760b2))
+
+### Features
+
+- Tell how many text-less PDF pages were skipped (#1634) ([e3867e7](https://github.com/pietro1704/Epub-to-Mp3/commit/e3867e7cd8ed8aee65ef95d723b316c770f34859))
+- Keep audio speed and manage offline audio from Settings (#1623) ([406cabf](https://github.com/pietro1704/Epub-to-Mp3/commit/406cabf4dfa5435a05c89bd8c98822c35c2f472c))
+- Complete the reading preferences page (#1618) ([63e8b55](https://github.com/pietro1704/Epub-to-Mp3/commit/63e8b55aa889eee747675782d558010560437f6b))
+- Offer slide and none page turns in the reader (#1613) ([250c7ff](https://github.com/pietro1704/Epub-to-Mp3/commit/250c7ffb66f8c5d11a5d4c3fe31b7e82e7e69268))
+- Show settings in two columns on wide windows (#1608) ([149ec49](https://github.com/pietro1704/Epub-to-Mp3/commit/149ec49ea9887d4d8718df796d659dc92b367ce7))
+- Share the available chapter audio from the contents menu (share_plus) (#1609) ([f63fecf](https://github.com/pietro1704/Epub-to-Mp3/commit/f63fecfb28e82fb2bff19924a1f2707a639cf17f))
+
+### Tests
+
+- A failed download from the contents menu shows a snackbar (#1629) ([f8e8a1f](https://github.com/pietro1704/Epub-to-Mp3/commit/f8e8a1ff4b9c05d9fd98c3bc3d64234b0e0773af))
+- Edge guard never reaches the last whole line's descenders (#1617) ([860d346](https://github.com/pietro1704/Epub-to-Mp3/commit/860d346819544aaf312138d5b6f6b41ac7508182))
+- The suite logs each journey step so a hang shows where it stopped (#1611) ([b98cf7b](https://github.com/pietro1704/Epub-to-Mp3/commit/b98cf7b5536a49cc8270c2567c484c1cf23b0ff1))
+
 ## [0.12.0] — 2026-11-26
 
 ### Bug Fixes
@@ -72,7 +117,7 @@
 
 ### Chores
 
-- Bump version to 0.12.0 ([ea0067e](https://github.com/pietro1704/Epub-to-Mp3/commit/ea0067e72d56888a4708daeacc778c6d9e24d6f7))
+- V0.12.0 (#1607) ([3965e32](https://github.com/pietro1704/Epub-to-Mp3/commit/3965e329e96ee14c15c82ee8aa12a59e549686ad))
 - Default local Apple builds to Xcode 26.3 (#1507) ([a9f0f10](https://github.com/pietro1704/Epub-to-Mp3/commit/a9f0f1023ed74cba2c036dd57d0e469813d66f9e))
 
 ### Documentation
