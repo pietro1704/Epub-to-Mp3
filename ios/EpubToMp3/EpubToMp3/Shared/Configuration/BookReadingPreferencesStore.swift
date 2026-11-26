@@ -28,6 +28,8 @@ final class BookReadingPreferencesStore {
         Set(registry.stringArray(forKey: Self.registryKey) ?? [])
     }
 
+    func isTurnedOff(_ bookID: String) -> Bool { false }
+
     func hasPreferences(for bookID: String) -> Bool { bookIDs.contains(bookID) }
 
     func suite(for bookID: String) -> UserDefaults? {
