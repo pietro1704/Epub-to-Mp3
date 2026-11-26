@@ -141,7 +141,12 @@ final remotePlayStartSyncProvider = Provider<void>((ref) {
       coordinator.finishInitialAudioRequest();
     }
   };
-  ref.onDispose(() => handler.startNarration = null);
+  handler.onRemoteJump = () =>
+      ref.read(readerPairRequestProvider.notifier).state++;
+  ref.onDispose(() {
+    handler.startNarration = null;
+    handler.onRemoteJump = null;
+  });
 });
 
 /// Linux desktop transport (MPRIS): the same handler as the Android MediaSession, attached so the

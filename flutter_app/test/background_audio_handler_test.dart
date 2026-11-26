@@ -48,6 +48,20 @@ void main() {
       handler = BackgroundAudioHandler(player);
     });
 
+    test(
+      'every remote jump reports itself so the reader can follow again',
+      () async {
+        var jumps = 0;
+        handler.onRemoteJump = () => jumps++;
+        await handler.seek(const Duration(seconds: 5));
+        await handler.fastForward();
+        await handler.rewind();
+        await handler.skipToNext();
+        await handler.skipToPrevious();
+        expect(jumps, 5);
+      },
+    );
+
     tearDown(() => handler.dispose());
 
     test('maps media commands to the existing AudioPlayerInterface', () async {
