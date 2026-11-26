@@ -3,6 +3,11 @@ import AppKit
 import PDFKit
 import Combine
 
+/// A scroll view opens an unflipped document at its bottom.
+private final class TopAnchoredStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 @MainActor
 final class MacReaderSettingsPresentation: NSObject {
     private let settings: AppSettings
@@ -98,11 +103,15 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
+        // A leading-aligned stack gives a slider no width of its own.
+        for control in [sizeControl, lineSpacing, margin, kerning] {
+            control.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        }
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
