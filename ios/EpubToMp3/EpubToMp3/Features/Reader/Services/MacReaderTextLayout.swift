@@ -10,11 +10,12 @@ enum MacReaderTextLayout {
     /// A narrow window shows fewer columns instead of unreadable ones.
     private static let minimumColumnWidth: CGFloat = 220
 
-    static func fit(_ textView: NSTextView, in scrollView: NSScrollView, columns: Int = 1) {
+    static func fit(_ textView: NSTextView, in scrollView: NSScrollView, columns: Int = 1, paginated: Bool = false) {
         let viewport = scrollView.contentView.bounds
         guard viewport.width > 0, viewport.height > 0,
               let container = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
+        (textView as? MacReaderTextView)?.cachedPageStarts = nil
 
         let usableWidth = viewport.width - textView.textContainerInset.width * 2
         let fitting = Int((usableWidth + columnGap) / (minimumColumnWidth + columnGap))
@@ -46,6 +47,37 @@ enum MacReaderTextLayout {
         let height = max(viewport.height, ceil(used.maxY + textView.textContainerInset.height))
         textView.setFrameOrigin(.zero)
         textView.setFrameSize(NSSize(width: viewport.width, height: height))
+        guard paginated, let last = pageStarts(of: textView, viewportHeight: viewport.height).last else { return }
+        // The last page must be able to scroll to its own first line.
+        textView.setFrameSize(NSSize(width: viewport.width, height: max(height, last + viewport.height)))
+    }
+
+    /// One-column pages: each one starts at the top of the first line that did not fit on the previous page, so a
+    /// line is never split between two pages nor shown twice. A line taller than a page is split by height.
+    static func pageStarts(of textView: NSTextView, viewportHeight: CGFloat) -> [CGFloat] {
+        guard viewportHeight > 0, let manager = textView.layoutManager,
+              let container = textView.textContainer else { return [0] }
+        let host = textView as? MacReaderTextView
+        if let cached = host?.cachedPageStarts, cached.viewportHeight == viewportHeight { return cached.starts }
+        manager.ensureLayout(for: container)
+        let originY = textView.textContainerOrigin.y
+        let usable = max(1, viewportHeight - textView.textContainerInset.height)
+        var starts: [CGFloat] = [0]
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
+            let line = rect.union(manager.boundingRect(forGlyphRange: glyphs, in: container))
+                .offsetBy(dx: 0, dy: originY)
+            while line.maxY > starts[starts.count - 1] + usable + 0.5 {
+                let current = starts[starts.count - 1]
+                starts.append(line.minY > current + 0.5 ? line.minY : current + usable)
+            }
+        }
+        host?.cachedPageStarts = (viewportHeight, starts)
+        return starts
+    }
+
+    /// The page that holds the document position `y`.
+    static func pageIndex(of y: CGFloat, in starts: [CGFloat]) -> Int {
+        starts.lastIndex { $0 <= y + 1 } ?? 0
     }
 
     static func showsColumns(_ textView: NSTextView) -> Bool {

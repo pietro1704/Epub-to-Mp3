@@ -4,7 +4,7 @@ import PDFKit
 import Combine
 
 /// Clips the sliding pages and lets every click reach the reader underneath.
-private final class MacPageSlideView: NSView {
+private final class MacReaderOverlayView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -33,6 +33,11 @@ final class MacReaderTextPresentation {
     private let closeReader: () -> Void
     private let observeOpenStage: (String) -> Void
     private var settingsCancellables: Set<AnyCancellable> = []
+    private lazy var pageMask: NSView = {
+        let mask = MacReaderOverlayView(frame: .zero)
+        mask.setAccessibilityIdentifier("reader.pageMask")
+        return mask
+    }()
     var onPlayPDF: ((PDFReadingAudioMap.Anchor) -> Void)?
     private var pageIndicator: NSTextField { composition.pageIndicator }
     private var textView: MacReaderTextView { composition.textView }
@@ -137,8 +142,10 @@ final class MacReaderTextPresentation {
                 // A new column count can shorten the document.
                 let maximumY = max(0, (self.contentScrollView.documentView?.frame.height ?? 0)
                     - self.contentScrollView.contentView.bounds.height)
-                self.contentScrollView.contentView.scroll(to: NSPoint(x: origin.x, y: min(origin.y, maximumY)))
+                let target = self.pageAligned(min(origin.y, maximumY))
+                self.contentScrollView.contentView.scroll(to: NSPoint(x: origin.x, y: target))
                 self.contentScrollView.reflectScrolledClipView(self.contentScrollView.contentView)
+                self.updatePageIndicator()
                 self.persistReadingProgress()
             }
             .store(in: &settingsCancellables)
@@ -194,12 +201,13 @@ final class MacReaderTextPresentation {
                 textView.font = ReaderFontCatalog.font(for: settings.readerOverrideFontFamily ? settings.readerFontFamily : .original, size: settings.readerPointSize)
                 textView.textColor = settings.readerColors.foreground
             }
-            MacReaderTextLayout.fit(textView, in: contentScrollView, columns: settings.readerColumns)
+            MacReaderTextLayout.fit(textView, in: contentScrollView, columns: settings.readerColumns,
+                                    paginated: settings.readerLayout == .paginated)
             repaintSavedHighlights(index)
             // NSTextView's responder actions need not move this read-only
             // viewport. Commit its measured destination directly.
             let clipView = contentScrollView.contentView
-            let end = max(0, textView.frame.height - clipView.bounds.height)
+            let end = pageStarts()?.last ?? max(0, textView.frame.height - clipView.bounds.height)
             clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
             contentScrollView.reflectScrolledClipView(clipView)
         }
@@ -237,8 +245,11 @@ final class MacReaderTextPresentation {
         let page = Self.pageStep(viewportHeight: visibleBounds.height, columnar: columnar)
         let maximumY = max(0, documentView.frame.height - visibleBounds.height)
         let atStart = visibleBounds.origin.y <= 1
+        let starts = pageStarts()
         let atEnd: Bool
-        if !columnar, let readerTextView = documentView as? NSTextView,
+        if let last = starts?.last {
+            atEnd = visibleBounds.origin.y >= last - 0.5
+        } else if !columnar, let readerTextView = documentView as? NSTextView,
            let container = readerTextView.textContainer,
            let layoutManager = readerTextView.layoutManager {
             layoutManager.ensureLayout(for: container)
@@ -267,11 +278,15 @@ final class MacReaderTextPresentation {
             persistReadingProgress()
             return
         }
-        let offset = forward ? page : -page
-        let nextY = min(max(visibleBounds.origin.y + offset, 0), maximumY)
+        let current = visibleBounds.origin.y
+        let aligned = starts.map { starts in
+            forward ? starts.first { $0 > current + 0.5 } ?? current : starts.last { $0 < current - 0.5 } ?? 0
+        }
+        let nextY = min(max(aligned ?? current + (forward ? page : -page), 0), maximumY)
         let outgoing = nextY == visibleBounds.origin.y ? nil : pageSlideSnapshot()
         clipView.scroll(to: NSPoint(x: visibleBounds.origin.x, y: nextY))
         contentScrollView.reflectScrolledClipView(clipView)
+        updatePageMask()
         slidePage(from: outgoing, forward: forward)
         persistReadingProgress()
     }
@@ -302,7 +317,7 @@ final class MacReaderTextPresentation {
         guard let outgoing, let host = contentScrollView.superview else { return }
         contentScrollView.layoutSubtreeIfNeeded()
         guard let incoming = visiblePageImage() else { return }
-        let overlay = MacPageSlideView(frame: contentScrollView.frame)
+        let overlay = MacReaderOverlayView(frame: contentScrollView.frame)
         overlay.layer?.backgroundColor = settings.readerColors.background.cgColor
         let travel = forward ? overlay.bounds.width : -overlay.bounds.width
         let old = NSImageView(frame: overlay.bounds)
@@ -326,16 +341,48 @@ final class MacReaderTextPresentation {
 
     // MARK: - Pagination (viewport snap) + progress restoration
 
-    /// Column pages are exact viewport pages; one column keeps an overlap.
+    /// The line-aligned page starts of paginated one-column text, nil for every other surface.
+    private func pageStarts() -> [CGFloat]? {
+        guard settings.readerLayout == .paginated, contentScrollView.documentView === textView,
+              !MacReaderTextLayout.showsColumns(textView) else { return nil }
+        return MacReaderTextLayout.pageStarts(of: textView,
+                                              viewportHeight: contentScrollView.contentView.bounds.height)
+    }
+
+    private func pageAligned(_ offset: CGFloat) -> CGFloat {
+        guard let starts = pageStarts() else { return offset }
+        return starts[MacReaderTextLayout.pageIndex(of: offset, in: starts)]
+    }
+
+    /// Covers the lines at the bottom of a page that belong to the next one. A free scroll shows everything.
+    private func updatePageMask() {
+        let bounds = contentScrollView.contentView.bounds
+        guard let starts = pageStarts() else { pageMask.isHidden = true; return }
+        let index = MacReaderTextLayout.pageIndex(of: bounds.origin.y, in: starts)
+        guard abs(starts[index] - bounds.origin.y) <= 1, index + 1 < starts.count,
+              starts[index + 1] < bounds.maxY else { pageMask.isHidden = true; return }
+        if pageMask.superview !== textView { textView.addSubview(pageMask) }
+        pageMask.layer?.backgroundColor = settings.readerColors.background.cgColor
+        pageMask.frame = NSRect(x: 0, y: starts[index + 1], width: textView.frame.width,
+                                height: bounds.maxY - starts[index + 1])
+        pageMask.isHidden = false
+    }
+
+    /// Column pages are exact viewport pages; one column scrolls with an overlap.
     private static func pageStep(viewportHeight: CGFloat, columnar: Bool) -> CGFloat {
         max(1, viewportHeight * (columnar ? 1 : 0.9))
     }
 
     /// Numbers pages by the same step a page turn moves, ending where the text ends.
     func updatePageIndicator() {
+        updatePageMask()
         guard !pageIndicator.isHidden, contentScrollView.documentView === textView,
               let container = textView.textContainer, let manager = textView.layoutManager else { return }
         let bounds = contentScrollView.contentView.bounds
+        if let starts = pageStarts() {
+            showPage(MacReaderTextLayout.pageIndex(of: bounds.origin.y, in: starts) + 1, of: starts.count)
+            return
+        }
         let columnar = MacReaderTextLayout.showsColumns(textView)
         let step = Self.pageStep(viewportHeight: bounds.height, columnar: columnar)
         var end = max(0, textView.frame.height - bounds.height)
@@ -347,6 +394,10 @@ final class MacReaderTextPresentation {
         let total = max(0, Int(((end - 1) / step).rounded(.up))) + 1
         let page = bounds.origin.y >= end - 1 ? total
             : min(total, max(1, Int((bounds.origin.y / step).rounded()) + 1))
+        showPage(page, of: total)
+    }
+
+    private func showPage(_ page: Int, of total: Int) {
         let value = L10n.string("reader.pageOf", page, total)
         if pageIndicator.stringValue != value { pageIndicator.stringValue = value }
     }
@@ -360,9 +411,9 @@ final class MacReaderTextPresentation {
               let documentView = contentScrollView.documentView else { return }
         let clipView = contentScrollView.contentView
         let maxY = max(0, documentView.frame.height - clipView.bounds.height)
-        guard let snappedY = Self.pageSnapOffset(
-            for: clipView.bounds.origin.y, pageHeight: clipView.bounds.height, maximumOffset: maxY
-        ) else { return }
+        let y = clipView.bounds.origin.y
+        guard let snappedY = pageStarts()?.min(by: { abs($0 - y) < abs($1 - y) })
+            ?? Self.pageSnapOffset(for: y, pageHeight: clipView.bounds.height, maximumOffset: maxY) else { return }
         clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: snappedY))
         contentScrollView.reflectScrolledClipView(clipView)
         persistReadingProgress()
@@ -420,7 +471,8 @@ final class MacReaderTextPresentation {
             }
             self.view.layoutSubtreeIfNeeded()
             if self.contentScrollView.documentView === self.textView {
-                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView, columns: self.settings.readerColumns)
+                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView, columns: self.settings.readerColumns,
+                                        paginated: self.settings.readerLayout == .paginated)
             }
             guard let documentView = self.contentScrollView.documentView else {
                 self.isRestoringInitialPosition = false
@@ -431,8 +483,9 @@ final class MacReaderTextPresentation {
             // A navigation performed while layout was pending wins over
             // initial restoration; never move a newer chapter's viewport.
             if let entry, self.selectedChapter == chapterIndex {
-                clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
+                clipView.scroll(to: NSPoint(x: 0, y: self.pageAligned(entry.offsetFraction * scrollable)))
                 self.contentScrollView.reflectScrolledClipView(clipView)
+                self.updatePageIndicator()
                 if let chapter = self.chapter(at: chapterIndex) {
                     ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: entry.offsetFraction, defaults: self.location.defaults)
                 }
