@@ -92,8 +92,11 @@ func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
         guard let self, self.isCurrent(selection) else { return }
         self.promptForNote(selection)
     }
-    let more = UIMenu(title: L10n.string("reader.selection.more"), image: UIImage(systemName: "ellipsis"), children: [change, note] + (selectionLanguageAction(range: range).map { [$0] } ?? []))
-    return UIMenu(children: [play, more] + suggestedActions)
+    // Inside a saved highlight, removing it stays on the first level.
+    let isSaved = selection.existing != nil
+    let more = UIMenu(title: L10n.string("reader.selection.more"), image: UIImage(systemName: "ellipsis"),
+                      children: (isSaved ? [] : [change]) + [note] + (selectionLanguageAction(range: range).map { [$0] } ?? []))
+    return UIMenu(children: [play] + (isSaved ? [change] : []) + [more] + suggestedActions)
 }
 
 func installLegacySelectionActions() {
