@@ -207,6 +207,7 @@ class DeviceFarmTest < Minitest::Test
         [args.include?('window') ? window : '123', true]
       },
       sleep: ->(*) {},
+      foreground_exclusive: ->(_s) { [true, nil] },
       close_app: ->(*) {}
     }
     singleton = DeviceFarm.singleton_class
@@ -227,6 +228,7 @@ class DeviceFarmTest < Minitest::Test
         ['', true]
       },
       sleep: ->(*) {},
+      foreground_exclusive: ->(_s) { [true, nil] },
       close_app: ->(*) {},
       installed?: ->(*) { true },
       install: lambda { |serial|
@@ -251,6 +253,7 @@ class DeviceFarmTest < Minitest::Test
     fakes = {
       adb: ->(_serial, *args, **) { [args.include?('logcat') && args.include?('-d') ? log.b : '', true] },
       sleep: ->(*) {},
+      foreground_exclusive: ->(_s) { [true, nil] },
       close_app: ->(*) {},
       installed?: ->(*) { true },
       install: ->(*) { [true, 'Success'] }
@@ -308,11 +311,11 @@ class DeviceFarmTest < Minitest::Test
     assert ok
     assert_equal "hello\n", out
   end
-end
 
 
 def test_the_device_is_left_on_the_normal_app_after_the_suite
   calls = []
+  original_path = DeviceFarm.method(:normal_apk_path)
   DeviceFarm.singleton_class.alias_method :orig_adb_for_test, :adb
   DeviceFarm.define_singleton_method(:adb) { |*args, **_| calls << args; ['Success', true] }
   Dir.mktmpdir do |dir|
@@ -326,10 +329,100 @@ def test_the_device_is_left_on_the_normal_app_after_the_suite
   refute_includes calls.flatten, 'uninstall'
 ensure
   DeviceFarm.singleton_class.alias_method :adb, :orig_adb_for_test
-  DeviceFarm.singleton_class.send(:remove_method, :normal_apk_path)
+  DeviceFarm.singleton_class.send(:define_method, :normal_apk_path, original_path) if original_path
 end
 
 def test_regression_reinstalls_the_normal_app_after_the_suite
   body = File.read(File.join(__dir__, 'device_farm.rb'))[/def self\.regression.*?\n  end\n/m]
-  assert_operator body.index('install_normal'), :>, body.index('suite_verdict(logcat)')
+  assert_operator body.rindex('install_normal'), :>, body.index('suite_verdict(logcat)')
+end
+
+# 2026-11-26: the monkey phase ran on the tablet while DeX/split screen showed the owner's other
+# apps and its touches landed in them. A phase touches a device only while the app is alone on it.
+PKG = DeviceFarm::PACKAGE
+
+def activities_dump(top: PKG, mode: 'fullscreen', resumed: 1)
+  rows = Array.new(resumed) { |i| "  mResumedActivity: ActivityRecord{#{i + 1} u0 #{top}/.MainActivity t7}" }
+  <<~DUMP
+    #{rows.join("\n")}
+      topResumedActivity=ActivityRecord{1 u0 #{top}/.MainActivity t7}
+      * Task{abc #7 type=standard mode=#{mode} A=10:#{top} U=0 visible=true}
+  DUMP
+end
+
+def window_dump(focus: PKG)
+  "  mCurrentFocus=Window{1 u0 #{focus}/#{focus}.MainActivity}\n  mFocusedApp=ActivityRecord{1 u0 #{focus}/.MainActivity t7}\n"
+end
+
+def test_a_fullscreen_app_alone_is_exclusive
+  ok, = DeviceFarm.exclusive_foreground?(activities_dump, window_dump)
+  assert ok
+end
+
+def test_another_app_in_front_is_not_exclusive
+  ok, reason = DeviceFarm.exclusive_foreground?(activities_dump(top: 'app.revanced.android.youtube'), window_dump(focus: 'app.revanced.android.youtube'))
+  refute ok
+  assert_equal 'foreground not exclusive', reason
+end
+
+def test_freeform_dex_and_split_screen_are_not_exclusive
+  %w[freeform multi-window split-screen-primary].each do |mode|
+    ok, = DeviceFarm.exclusive_foreground?(activities_dump(mode: mode), window_dump)
+    refute ok, mode
+  end
+  ok, = DeviceFarm.exclusive_foreground?(activities_dump(resumed: 2), window_dump)
+  refute ok
+end
+
+def test_focus_on_another_window_such_as_the_shade_is_not_exclusive
+  ok, = DeviceFarm.exclusive_foreground?(activities_dump, window_dump(focus: 'com.android.systemui'))
+  refute ok
+end
+
+def test_an_unreadable_dump_is_not_exclusive
+  ok, = DeviceFarm.exclusive_foreground?('', '')
+  refute ok
+end
+
+def with_fakes(fakes)
+  singleton = DeviceFarm.singleton_class
+  originals = fakes.keys.to_h { |name| [name, DeviceFarm.method(name)] }
+  fakes.each { |name, fake| singleton.define_method(name, &fake) }
+  yield
+ensure
+  originals&.each { |name, original| singleton.define_method(name, original) }
+end
+
+def test_every_phase_skips_when_the_foreground_is_not_exclusive
+  calls = []
+  with_fakes(
+    adb: ->(_s, *args, **) { calls << args.join(' '); ['', true] },
+    sleep: ->(*) {}, close_app: ->(*) {}, installed?: ->(*) { true },
+    install: ->(_s) { [true, 'Success'] },
+    foreground_exclusive: ->(_s) { [false, 'foreground not exclusive'] }
+  ) do
+    %i[monkey soak regression].each do |phase|
+      calls.clear
+      result = DeviceFarm.public_send(phase, 'serial', **(phase == :monkey ? {} : { minutes: 0 }))
+      assert result.ok, phase
+      assert_match(/SKIP foreground not exclusive/, result.detail)
+      refute(calls.any? { |c| c.include?('input') || c.include?('-v') }, "#{phase} touched the device: #{calls}")
+    end
+  end
+end
+
+def test_the_monkey_runs_in_batches_and_aborts_when_focus_leaves_the_app
+  calls = []
+  checks = 0
+  with_fakes(
+    adb: ->(_s, *args, **) { calls << args.join(' '); ['', true] },
+    close_app: ->(*) {},
+    foreground_exclusive: ->(_s) { checks += 1; checks <= 2 ? [true, nil] : [false, 'foreground not exclusive'] }
+  ) do
+    result = DeviceFarm.monkey('serial', events: 1500)
+    refute result.ok
+    assert_match(/aborted/, result.detail)
+    assert_equal 2, calls.count { |c| c.include?('monkey') && c.include?('-v') }
+  end
+end
 end
