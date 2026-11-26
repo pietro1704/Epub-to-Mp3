@@ -52,6 +52,7 @@ import 'library_screen.dart';
 import 'missing_narration_dialog.dart';
 import '../services/playback/playback_narration_resolver.dart';
 import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
+import '../views/reader_toc_audio_state.dart' show ReaderDownloadActions;
 import 'pdf_reader_screen.dart';
 
 part 'book_content_session.dart';
@@ -152,5 +153,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     onListeningPosition: (position) => _readerListeningPosition = position,
     onNarrationChanged: _narrationModelChanged,
     onListenFrom: _listenFrom,
+    downloadActions: ReaderDownloadActions(
+      downloadAll: _downloadAllAudio,
+      cancel: _cancelAudioDownloads,
+      retryFrom: _retryFailedAudio,
+    ),
   );
 }

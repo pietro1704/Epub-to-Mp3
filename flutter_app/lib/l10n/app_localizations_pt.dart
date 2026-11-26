@@ -875,6 +875,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get convertStart => 'Iniciar conversão';
 
   @override
+  String get tocDownloadAll => 'Baixar para uso offline';
+
+  @override
+  String get tocCancelDownloads => 'Cancelar downloads';
+
+  @override
+  String get tocRetryFailed => 'Tentar novamente os capítulos com falha';
+
+  @override
   String get tocRemoveDownloads => 'Remover downloads';
 
   @override

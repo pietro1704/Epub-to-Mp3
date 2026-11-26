@@ -48,6 +48,9 @@ class InstantReaderView extends ConsumerStatefulWidget {
   /// Starts listening at a position chosen with "Play from here".
   final Future<void> Function(ReaderListeningPosition position)? onListenFrom;
 
+  /// Download, cancel and retry of the book's chapter audio (contents menu).
+  final ReaderDownloadActions? downloadActions;
+
   const InstantReaderView({
     super.key,
     required this.fulltext,
@@ -59,6 +62,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
     this.bookId,
     this.onNarrationChanged,
     this.onListenFrom,
+    this.downloadActions,
   });
 
   @override

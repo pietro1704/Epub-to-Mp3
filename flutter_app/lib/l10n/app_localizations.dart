@@ -1648,6 +1648,24 @@ abstract class AppLocalizations {
   /// **'Start conversion'**
   String get convertStart;
 
+  /// No description provided for @tocDownloadAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Download for offline'**
+  String get tocDownloadAll;
+
+  /// No description provided for @tocCancelDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel downloads'**
+  String get tocCancelDownloads;
+
+  /// No description provided for @tocRetryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry failed chapters'**
+  String get tocRetryFailed;
+
   /// No description provided for @tocRemoveDownloads.
   ///
   /// In en, this message translates to:
