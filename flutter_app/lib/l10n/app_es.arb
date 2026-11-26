@@ -299,5 +299,6 @@
   "tocAudioFailed": "Falló el audio",
   "readerHighlight": "Resaltar",
   "readerAddNote": "Agregar nota",
-  "readerRemoveHighlight": "Eliminar resaltado"
+  "readerRemoveHighlight": "Eliminar resaltado",
+  "readerPassageLanguage": "Idioma del pasaje"
 }

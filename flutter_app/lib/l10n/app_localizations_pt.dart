@@ -882,4 +882,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readerRemoveHighlight => 'Remover marcação';
+
+  @override
+  String get readerPassageLanguage => 'Idioma do trecho';
 }

@@ -306,5 +306,6 @@
   "tocAudioFailed": "Audio failed",
   "readerHighlight": "Highlight",
   "readerAddNote": "Add Note",
-  "readerRemoveHighlight": "Remove highlight"
+  "readerRemoveHighlight": "Remove highlight",
+  "readerPassageLanguage": "Passage language"
 }
