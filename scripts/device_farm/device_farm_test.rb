@@ -427,16 +427,40 @@ def test_the_monkey_runs_in_batches_and_aborts_when_focus_leaves_the_app
 end
 
 # Pietro 2026-11-26: no random touches on the tablet; only regression and soak run there.
-def test_the_monkey_is_off_on_the_tablet_and_on_for_the_a8
-  assert DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'regression')
-  assert DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'soak')
-  refute DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'monkey')
-  assert DeviceFarm.phase_allowed?('52008714b40355ad', 'monkey')
+def hardware_adb(map)
+  ->(serial, *args, **) { args.include?('ro.serialno') && map.key?(serial) ? ["#{map[serial]}\n", true] : ['', false] }
+end
+
+TABLET_HW = 'RXGLA00Y4NL'
+
+def test_the_monkey_is_off_for_the_tablet_device_under_any_identifier
+  with_fakes(adb: hardware_adb('192.168.0.130:35429' => TABLET_HW, '192.168.0.130:41111' => TABLET_HW, '52008714b40355ad' => 'A8SERIAL')) do
+    ['mdns:adb-RXGLA00Y4NL-R37H85', '192.168.0.130:35429', '192.168.0.130:41111'].each do |id|
+      assert DeviceFarm.phase_allowed?(id, 'regression'), id
+      assert DeviceFarm.phase_allowed?(id, 'soak'), id
+      refute DeviceFarm.phase_allowed?(id, 'monkey'), id
+    end
+    assert DeviceFarm.phase_allowed?('52008714b40355ad', 'monkey')
+  end
+end
+
+def test_an_unidentifiable_device_gets_no_monkey
+  with_fakes(adb: hardware_adb({})) do
+    refute DeviceFarm.phase_allowed?('192.168.0.130:35429', 'monkey')
+  end
+end
+
+def test_the_tablet_is_found_by_its_hardware_serial_when_mdns_lists_nothing
+  reader = ->(address) { { '192.168.0.130:35429' => TABLET_HW, '52008714b40355ad' => 'A8SERIAL' }[address] }
+  found = DeviceFarm.pick_by_hardware('mdns:adb-RXGLA00Y4NL-R37H85', %w[52008714b40355ad 192.168.0.130:35429], reader)
+  assert_equal '192.168.0.130:35429', found
+  assert_nil DeviceFarm.pick_by_hardware('mdns:adb-OTHER-1', %w[52008714b40355ad], reader)
 end
 
 def test_a_round_never_starts_the_monkey_on_the_tablet
   started = []
   with_fakes(
+    adb: hardware_adb('52008714b40355ad' => 'A8SERIAL'),
     healthy_devices: ->(_report) { %w[52008714b40355ad mdns:adb-RXGLA00Y4NL-R37H85] },
     monkey: lambda { |serial, **|
       started << serial
