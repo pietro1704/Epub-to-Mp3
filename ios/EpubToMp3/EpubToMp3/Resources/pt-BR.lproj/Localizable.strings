@@ -650,3 +650,5 @@
 "discovery.rights.gutenberg" = "Domínio público nos EUA";
 "discovery.rights.brasiliana" = "Domínio público segundo a BBM/USP";
 "discovery.rights.camara" = "Download gratuito da editora · Direitos reservados no PDF";
+"settings.originalTypography" = "Tipografia original";
+"settings.originalTypography.restore" = "Restaurar";
