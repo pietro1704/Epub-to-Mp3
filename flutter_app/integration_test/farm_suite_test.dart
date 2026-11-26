@@ -43,6 +43,12 @@ void main() {
     bool mine(String journey) => shard == 'all' || shard == journey;
     app.main();
     await _settle(tester, 30);
+    // The app reopens the book that was last read, and the reader hides the navigation: leave it
+    // so the journeys start from the root shell on a device that was used by hand.
+    if (find.byIcon(Icons.library_books_outlined).evaluate().isEmpty) {
+      await tester.binding.handlePopRoute();
+      await _settle(tester, 4);
+    }
 
     // Both devices: the app starts and offers its three root destinations.
     expect(find.byIcon(Icons.library_books_outlined), findsWidgets);
