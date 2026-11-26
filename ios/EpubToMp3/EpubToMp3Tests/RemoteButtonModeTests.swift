@@ -77,3 +77,55 @@ final class RemoteButtonModeRowTests: XCTestCase {
     }
 }
 #endif
+
+/// AIRPODS-BACK-PRESS and REMOTE-JUMP-LOSES-FOLLOW: the path behind the system's next/previous-track commands.
+@MainActor
+final class RemoteTrackCommandPathTests: XCTestCase {
+    private var previousValues: [String: Any] = [:]
+    private let keys = [RemoteButtonMode.storageKey, AppSettings.playbackForwardSecondsKey,
+                        AppSettings.playbackBackwardSecondsKey]
+
+    override func setUp() {
+        super.setUp()
+        previousValues = [:]
+        for key in keys { previousValues[key] = UserDefaults.standard.object(forKey: key) }
+        UserDefaults.standard.set(30.0, forKey: AppSettings.playbackForwardSecondsKey)
+        UserDefaults.standard.set(15.0, forKey: AppSettings.playbackBackwardSecondsKey)
+    }
+
+    override func tearDown() {
+        for key in keys { UserDefaults.standard.set(previousValues[key], forKey: key) }
+        super.tearDown()
+    }
+
+    func testPreviousTrackGoesBackInBothModes() {
+        var calls: [String] = []
+        let session = PlaybackSystemSession(actions: .init(
+            play: {}, pause: {}, toggle: {}, next: { calls.append("next") },
+            previous: { calls.append("previous") }, seek: { _ in }, skip: { calls.append("skip \(Int($0))") },
+            setRate: { _ in }, interruption: { _, _ in }, routeChange: { _ in }, mediaServicesReset: {}))
+        UserDefaults.standard.set(RemoteButtonMode.skip.rawValue, forKey: RemoteButtonMode.storageKey)
+        session.handleTrackCommand(forward: false)
+        session.handleTrackCommand(forward: true)
+        UserDefaults.standard.set(RemoteButtonMode.chapter.rawValue, forKey: RemoteButtonMode.storageKey)
+        session.handleTrackCommand(forward: false)
+        session.handleTrackCommand(forward: true)
+        XCTAssertEqual(calls, ["skip -15", "skip 30", "previous", "next"])
+    }
+
+    func testEveryRemoteTrackCommandAnnouncesANarrationJumpSoTheReaderFollowsAgain() throws {
+        let suite = "remote-jumps-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        var jumps = 0
+        let subscription = player.narrationJumps.sink { jumps += 1 }
+        defer { subscription.cancel() }
+        for mode in RemoteButtonMode.allCases {
+            UserDefaults.standard.set(mode.rawValue, forKey: RemoteButtonMode.storageKey)
+            player.services.system.handleTrackCommand(forward: true)
+            player.services.system.handleTrackCommand(forward: false)
+        }
+        XCTAssertEqual(jumps, 4)
+    }
+}
