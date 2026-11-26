@@ -428,6 +428,14 @@ module DeviceFarm
   # it, without a launcher icon).
   PERSONAL_DEVICES = (ENV['DEVICE_FARM_PERSONAL'] || '52008714b40355ad').split(',').freeze
 
+  # Phases a device never runs, by serial (Pietro 2026-11-26: no random touches on the tablet).
+  PHASES_OFF = { 'mdns:adb-RXGLA00Y4NL-R37H85' => %w[monkey] }.freeze
+
+  def self.phase_allowed?(serial, phase)
+    names = aliases(serial)
+    PHASES_OFF.none? { |off, phases| phases.include?(phase) && (names.include?(off) || aliases(off).include?(serial)) }
+  end
+
   def self.uninstall_after_round?(serial)
     names = aliases(serial)
     PERSONAL_DEVICES.any? { |personal| names.include?(personal) || aliases(personal).include?(serial) }
@@ -527,6 +535,8 @@ module DeviceFarm
 
       threads = devices.map do |serial|
         Thread.new do
+          next skipped(serial, phase, "#{phase} is off on this device") unless phase_allowed?(serial, phase)
+
           case phase
           when 'regression' then regression(serial)
           when 'monkey' then monkey(serial)

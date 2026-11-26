@@ -425,4 +425,29 @@ def test_the_monkey_runs_in_batches_and_aborts_when_focus_leaves_the_app
     assert_equal 2, calls.count { |c| c.include?('monkey') && c.include?('-v') }
   end
 end
+
+# Pietro 2026-11-26: no random touches on the tablet; only regression and soak run there.
+def test_the_monkey_is_off_on_the_tablet_and_on_for_the_a8
+  assert DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'regression')
+  assert DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'soak')
+  refute DeviceFarm.phase_allowed?('mdns:adb-RXGLA00Y4NL-R37H85', 'monkey')
+  assert DeviceFarm.phase_allowed?('52008714b40355ad', 'monkey')
+end
+
+def test_a_round_never_starts_the_monkey_on_the_tablet
+  started = []
+  with_fakes(
+    healthy_devices: ->(_report) { %w[52008714b40355ad mdns:adb-RXGLA00Y4NL-R37H85] },
+    monkey: lambda { |serial, **|
+      started << serial
+      DeviceFarm::Result.new(serial, 'monkey', true, 'ok', nil, '')
+    },
+    remove_test_app: ->(*) {}
+  ) do
+    outcome = DeviceFarm.round(['monkey'])
+    assert_equal %w[52008714b40355ad], started
+    tablet = outcome[:results].find { |r| r[:device].include?('RXGLA') }
+    assert_match(/SKIP monkey is off on this device/, tablet[:detail])
+  end
+end
 end
