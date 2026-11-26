@@ -39,6 +39,18 @@ void main() {
     expect(geometry.edgeGuards(30, 100), (20 + ink, 10 + ink));
   });
 
+  test('the guard hides the cut line but never reaches the descenders of the last whole line', () {
+    // 20 px lines, 4 px leading; the viewport ends inside the fourth line.
+    final geometry = ReaderDocumentGeometry(200, [
+      for (var i = 0; i < 4; i++) Rect.fromLTWH(0, i * 24.0, 100, 20),
+    ], []);
+    const viewport = 90.0;
+    final (_, bottom) = geometry.edgeGuards(0, viewport);
+    expect(bottom, greaterThan(0), reason: 'the partly visible line must be covered');
+    const lastWholeLineBottom = 2 * 24.0 + 20;
+    expect(viewport - bottom, greaterThanOrEqualTo(lastWholeLineBottom), reason: 'g, j, p, q of the last whole line stay visible');
+  });
+
   test(
     'normalized text retains Unicode UTF-16 positions and repeated passages',
     () {
