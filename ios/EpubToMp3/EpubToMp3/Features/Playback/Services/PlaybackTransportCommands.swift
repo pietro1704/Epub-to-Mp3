@@ -273,9 +273,8 @@ final class PlaybackTransportCommands {
         guard let raw = reasonRaw,
               let reason = PlaybackSystemSession.RouteChangeReason(rawValue: raw) else { return }
         if PlaybackSystemSession.shouldPauseForRouteChange(reason: reason), isPlaying {
-            player?.pause()
-            isPlaying = false
-            actions.publish()
+            pause()
+            if isUsingSpeechFallback { actions.publish() }
         }
     }
 

@@ -16,21 +16,6 @@ final class NowPlayingPublication {
         self.location = location
     }
 
-    struct State {
-        let snapshot: JobSnapshot?
-        let effectiveChapterTitle: String
-        let positionSeconds: TimeInterval
-        let durationSeconds: TimeInterval
-        let isPlaying: Bool
-        let rate: PlaybackRate
-    /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
-    /// Now Playing widget so lock screen / Control Center / AirPods
-    /// menu show the book cover instead of a generic glyph.
-        let coverArtData: Data?
-        let currentChapterIndex: Int
-        let playbackPositionSeconds: TimeInterval
-        let playbackDurationSeconds: TimeInterval
-    }
     /// Last (bookId, chapterName, isPlaying) tuple pushed to the widget via
     /// the RELOADING `WidgetDataSync.updateNowPlaying`. `syncWidgetNowPlaying()`
     /// runs on every ~1Hz Now Playing refresh during playback, but
@@ -56,14 +41,14 @@ final class NowPlayingPublication {
     /// Updates system artwork only when the active book's cover changes.
     /// Both native shells call this as their library and playback pointers
     /// refresh, keeping macOS and iOS Now Playing metadata in sync.
-    func publish(_ state: State) {
+    func publish(_ state: PlaybackTransportState.Sample) {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = makeInfo(state)
         syncWidgetNowPlaying(state)
     }
-    func makeInfo(_ state: State) -> [String: Any] {
+    func makeInfo(_ state: PlaybackTransportState.Sample) -> [String: Any] {
         var info: [String: Any] = [:]
-        let bookTitle = state.snapshot?.bookTitle ?? "Epub-to-Mp3"
-        let chapterTitle = state.effectiveChapterTitle
+        let bookTitle = state.content.job?.bookTitle ?? "Epub-to-Mp3"
+        let chapterTitle = state.content.chapterTitle
         // The chapter is the primary Now Playing label; the book remains
         // secondary metadata so Control Center and the lock screen identify
         // the exact text currently being read.
@@ -72,46 +57,46 @@ final class NowPlayingPublication {
         // The system player should identify the audiobook author when
         // available. Falling back to the book title keeps older backend
         // snapshots useful without emitting an empty artist field.
-        info[MPMediaItemPropertyArtist] = state.snapshot?.bookAuthor ?? bookTitle
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = state.positionSeconds
-        info[MPMediaItemPropertyPlaybackDuration] = state.durationSeconds > 0 ? state.durationSeconds : 0
+        info[MPMediaItemPropertyArtist] = state.content.job?.bookAuthor ?? bookTitle
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = state.clock.positionSeconds
+        info[MPMediaItemPropertyPlaybackDuration] = state.clock.durationSeconds > 0 ? state.clock.durationSeconds : 0
         // Rate = 0 when paused; actual rate when playing. The system uses
         // this to animate the scrubber in real time on the lock screen.
-        info[MPNowPlayingInfoPropertyPlaybackRate] = state.isPlaying ? state.rate.rawValue : 0.0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = state.content.isPlaying ? state.content.rate.rawValue : 0.0
         // Default rate tells the lock-screen widget what "1x" means so
         // the rate indicator renders correctly at non-standard speeds.
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = Float(1.0)
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
 
-        if let coverArtData = state.coverArtData, let artwork = makeArtwork(from: coverArtData) {
+        if let coverArtData = state.content.coverArtData, let artwork = makeArtwork(from: coverArtData) {
             info[MPMediaItemPropertyArtwork] = artwork
         }
         return info
     }
 
-    private func syncWidgetNowPlaying(_ state: State) {
+    private func syncWidgetNowPlaying(_ state: PlaybackTransportState.Sample) {
         let appGroupDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
         guard let bookId = appGroupDefaults?.string(forKey: "currentlyPlayingBookId")
                 ?? location.playingBookID,
               !bookId.isEmpty else { return }
-        let progress = state.durationSeconds > 0
-            ? min(1, max(0, state.positionSeconds / state.durationSeconds))
+        let progress = state.clock.durationSeconds > 0
+            ? min(1, max(0, state.clock.positionSeconds / state.clock.durationSeconds))
             : 0
-        let chapters = state.snapshot?.playableChapters ?? []
-        let currentIndex = max(0, min(state.currentChapterIndex, max(chapters.count - 1, 0)))
+        let chapters = state.content.job?.playableChapters ?? []
+        let currentIndex = max(0, min(state.content.chapterIndex, max(chapters.count - 1, 0)))
         // Keep the widget on the same canonical title as the mini player and
         // Now Playing metadata. `currentChapterValue.displayTitle` can still
         // be the generated fallback when the reader has the real TOC title.
-        let chapterName = state.effectiveChapterTitle
+        let chapterName = state.content.chapterTitle
         let totalChapters = chapters.isEmpty ? nil : chapters.count
         let chapterRemaining = PlaybackChapterQueue.rateAdjustedDuration(
-            seconds: max(0, state.durationSeconds - state.positionSeconds), rate: state.rate
+            seconds: max(0, state.clock.durationSeconds - state.clock.positionSeconds), rate: state.content.rate
         )
         let followingRemaining = chapters.dropFirst(min(currentIndex + 1, chapters.count))
             .compactMap(\.durationSeconds)
             .filter { $0.isFinite && $0 > 0 }
             .reduce(0) { total, duration in
-                total + PlaybackChapterQueue.rateAdjustedDuration(seconds: duration, rate: state.rate)
+                total + PlaybackChapterQueue.rateAdjustedDuration(seconds: duration, rate: state.content.rate)
             }
         let bookRemaining = chapterRemaining + followingRemaining
         let timing = (
@@ -119,7 +104,7 @@ final class NowPlayingPublication {
             duration: state.playbackDurationSeconds,
                       chapterRemaining: chapterRemaining, bookRemaining: bookRemaining,
                       totalChapters: totalChapters)
-        let widgetState = (bookId: bookId, chapterName: chapterName, isPlaying: state.isPlaying)
+        let widgetState = (bookId: bookId, chapterName: chapterName, isPlaying: state.content.isPlaying)
 
         // Only pay for a `WidgetCenter.reloadTimelines` IPC round-trip when
         // the book, chapter, or transport state actually changed. A bare
@@ -140,9 +125,9 @@ final class NowPlayingPublication {
         WidgetDataSync.updateNowPlaying(
             bookId: bookId,
             chapterName: chapterName,
-            author: state.snapshot?.bookAuthor,
+            author: state.content.job?.bookAuthor,
             progress: progress,
-            isPlaying: state.isPlaying,
+            isPlaying: state.content.isPlaying,
             positionSeconds: timing.position,
             durationSeconds: timing.duration,
             chapterRemainingSeconds: timing.chapterRemaining,

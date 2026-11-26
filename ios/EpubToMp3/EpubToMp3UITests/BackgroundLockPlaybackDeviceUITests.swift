@@ -31,7 +31,8 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestPlaybackFixture", "-uiTestPlaybackLongChapters",
+        // Isolated defaults and App Group: the fixture binds its audio to the first library book.
+        app.launchArguments = ["-uiTestPlaybackFixture", "-uiTestPlaybackLongChapters", "-uiTestIsolatedSettings",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         var log: [String] = [

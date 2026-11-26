@@ -102,42 +102,40 @@ final class MacFullPlayerViewController: NSViewController {
             timeControls.widthAnchor.constraint(equalTo: content.widthAnchor),
         ])
         view = background
-        cancellable = player.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refresh() }
-        clockCancellable = player.playbackClock.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshClock() }
+        cancellable = player.transportContentUpdates.sink { [weak self] _ in self?.refresh() }
+        clockCancellable = player.transportUpdates.sink { [weak self] state in self?.refreshClock(state) }
         refresh()
     }
 
     private func refresh() {
+        let transport = player.transportState
+        let state = transport.content
         let bookID = player.location.playingBookID
             ?? player.location.readingBookID
         let book = bookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        titleLabel.stringValue = player.snapshot?.bookTitle ?? book?.resolvedTitle ?? L10n.string("player.nothingPlaying")
+        titleLabel.stringValue = state.job?.bookTitle ?? book?.resolvedTitle ?? L10n.string("player.nothingPlaying")
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:))
             ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
-        statusLabel.stringValue = player.isConverting
+        statusLabel.stringValue = state.isConverting
             ? L10n.string("player.preparingAudio")
-            : (player.snapshot == nil ? L10n.string("player.nothingPlaying") : player.effectiveChapterTitle)
-        if let voice = player.snapshot?.activeVoiceDisplayName { statusLabel.stringValue += "\n" + voice }
-        playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
-        playButton.setAccessibilityLabel(L10n.string(player.isPlaying ? "player.pause" : "player.play"))
-        playButton.toolTip = L10n.string(player.isPlaying ? "player.pause" : "player.play")
-        playButton.isHidden = player.isLoading
-        if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
-        playButton.isEnabled = player.snapshot != nil || bookID != nil
-        refreshClock()
+            : (state.job == nil ? L10n.string("player.nothingPlaying") : state.chapterTitle)
+        if let voice = state.job?.activeVoiceDisplayName { statusLabel.stringValue += "\n" + voice }
+        playButton.image = NSImage(systemSymbolName: state.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.setAccessibilityLabel(L10n.string(state.isPlaying ? "player.pause" : "player.play"))
+        playButton.toolTip = L10n.string(state.isPlaying ? "player.pause" : "player.play")
+        playButton.isHidden = state.isLoading
+        if state.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
+        playButton.isEnabled = state.job != nil || bookID != nil
+        refreshClock(transport)
     }
 
-    private func refreshClock() {
-        let duration = max(player.durationSeconds, 1)
+    private func refreshClock(_ state: PlaybackTransportState) {
+        let duration = max(state.clock.durationSeconds, 1)
         progressSlider.maxValue = duration
-        progressSlider.doubleValue = min(player.playbackPositionSeconds, duration)
-        progressSlider.isEnabled = player.durationSeconds > 0
-        elapsedLabel.stringValue = Self.formatTime(player.playbackPositionSeconds)
-        remainingLabel.stringValue = "−" + Self.formatTime(max(0, player.durationSeconds - player.playbackPositionSeconds))
+        progressSlider.doubleValue = min(state.playbackPositionSeconds, duration)
+        progressSlider.isEnabled = state.clock.durationSeconds > 0
+        elapsedLabel.stringValue = Self.formatTime(state.playbackPositionSeconds)
+        remainingLabel.stringValue = "−" + Self.formatTime(max(0, state.clock.durationSeconds - state.playbackPositionSeconds))
     }
 
     private static func formatTime(_ seconds: TimeInterval) -> String {

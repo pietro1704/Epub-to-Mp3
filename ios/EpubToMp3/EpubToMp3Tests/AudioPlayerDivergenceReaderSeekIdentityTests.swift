@@ -35,7 +35,7 @@ extension AudioPlayerDivergenceTests {
         player.setSnapshot(try pendingReaderSnapshot(jobID: originalJob))
         player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
         XCTAssertEqual(player.pendingNavigation?.jobID, originalJob)
-        player.updateSnapshot(try pendingReaderSnapshot(jobID: nextJob))
+        player.setSnapshot(try pendingReaderSnapshot(jobID: nextJob))
         XCTAssertNil(player.pendingNavigation, "Another job must discard the request before audio arrives")
         player.updateSnapshot(try playableReaderSnapshot(jobID: nextJob, url: url))
         try await waitForReaderState("new book's duration") { player.durationSeconds > 0 }
@@ -103,7 +103,9 @@ extension AudioPlayerDivergenceTests {
         player.setSnapshot(try pendingReaderSnapshot(jobID: previousJob))
         player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
         XCTAssertEqual(player.pendingNavigation?.jobID, previousJob)
-        player.updateSnapshot(try playableReaderSnapshot(jobID: nextJob, url: url))
+        let next = try playableReaderSnapshot(jobID: nextJob, url: url)
+        player.setSnapshot(next)   // a different job switches through setSnapshot; updateSnapshot ignores other jobs (D26)
+        player.updateSnapshot(next)
         XCTAssertNil(player.pendingNavigation)
         try await waitForReaderState("different book's first file") { player.durationSeconds > 0 }
         XCTAssertEqual(player.snapshot?.jobId, nextJob)

@@ -259,7 +259,6 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let controller = FullPlayerScreenController(
             player: player,
-            playbackClock: player.playbackClock,
             library: LibraryStore(),
             playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {}

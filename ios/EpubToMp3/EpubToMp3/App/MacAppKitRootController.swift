@@ -91,7 +91,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             playerBar.view.bottomAnchor.constraint(equalTo: detailContainer.view.bottomAnchor),
             playerBarHeight,
         ])
-        player.objectWillChange
+        player.transportContentUpdates
             .sink { [weak self] _ in self?.refreshPlayerBar() }
             .store(in: &cancellables)
         playerPresentation.objectWillChange

@@ -25,7 +25,9 @@ final class MacReaderPlaybackSession {
         }, makePlaybackControl: makePlaybackControl
     )
 
-    var localPlaybackBookID: String? { listening.listeningBookID }
+    /// The request is visible as soon as Play is pressed: the book being resolved counts until the shared session takes over.
+    private var resolvingBookID: String?
+    var localPlaybackBookID: String? { listening.listeningBookID ?? resolvingBookID }
     var localPlaybackGeneration: String? { listening.listeningJobID }
     var startingVoicePosition: ReaderVoiceChange? { listening.startingVoicePosition }
 
@@ -100,8 +102,11 @@ final class MacReaderPlaybackSession {
                                                voiceChange: ReaderVoiceChange?) {
         let token = UUID()
         languageResolution = token
+        resolvingBookID = book.id
         Task { [weak self, weak owner] in
             guard let self else { return }
+            // Not handed over (superseded, cancelled alert, deallocated owner): the pending book is dropped.
+            defer { if languageResolution == token || languageResolution == nil { resolvingBookID = nil } }
             let outcome = await LanguageModelPlayback.outcome(
                 for: book, settings: settings, hasExplicitSelection: false, dependencies: .live(library: library))
             let stillWanted = { [weak self] in
@@ -118,6 +123,7 @@ final class MacReaderPlaybackSession {
             }
             @MainActor func begin(_ options: ConversionOptions) {
                 languageResolution = nil
+                resolvingBookID = nil
                 // Explicit options: the resolver is skipped on this second pass.
                 start(owner: owner, optionsOverride: options, chapterOverride: chapterOverride,
                       pageRatioOverride: pageRatioOverride, pdfAnchor: pdfAnchor, voiceChange: voiceChange)
@@ -140,6 +146,7 @@ final class MacReaderPlaybackSession {
         guard incomingBookID == nil || incomingBookID != listening.listeningBookID else { return }
         recovery.invalidate()
         languageResolution = nil
+        resolvingBookID = nil
         guard listening.listeningJobID != nil else { return }
         listening.cancel()
         if stopPlayer {

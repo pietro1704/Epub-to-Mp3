@@ -277,7 +277,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         let fallback = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8))
         f.player.setSnapshot(fallback)
-        let controller = FullPlayerScreenController(player: f.player, playbackClock: f.player.playbackClock,
+        let controller = FullPlayerScreenController(player: f.player,
             library: f.library, playerPresentation: f.presentation, settings: AppSettings(defaults: f.defaults),
             onStartListening: {})
         func labels(in view: UIView) -> [String] {
