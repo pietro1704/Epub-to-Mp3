@@ -97,10 +97,26 @@ module DeviceFarm
     listing.lines.map(&:split).find { |cols| cols[0] == name && cols[1] == '_adb-tls-connect._tcp' }&.at(2)
   end
 
+  # When mdns lists nothing, the same device may still be attached by address: it is the ready
+  # device whose hardware serial the mdns name carries.
+  def self.pick_by_hardware(serial, candidates, reader)
+    wanted = serial[/\Amdns:adb-(.+)-[^-]+\z/, 1]
+    return nil unless wanted
+
+    candidates.find { |candidate| reader.call(candidate) == wanted }
+  end
+
   def self.resolve(serial)
     if serial.start_with?('mdns:')
       address = pick_mdns(serial, Open3.capture2e(env, 'adb', 'mdns', 'services').first)
-      return serial unless address
+      unless address
+        ready = Open3.capture2e(env, 'adb', 'devices').first.lines.filter_map do |line|
+          name, state = line.split
+          name if state == 'device' && name.include?(':')
+        end
+        reader = ->(candidate) { Open3.capture2e(env, 'adb', '-s', candidate, 'shell', 'getprop', 'ro.serialno').first.strip }
+        return pick_by_hardware(serial, ready, reader) || serial
+      end
       Open3.capture2e(env, 'adb', 'connect', address)
       return address
     end
@@ -428,12 +444,30 @@ module DeviceFarm
   # it, without a launcher icon).
   PERSONAL_DEVICES = (ENV['DEVICE_FARM_PERSONAL'] || '52008714b40355ad').split(',').freeze
 
-  # Phases a device never runs, by serial (Pietro 2026-11-26: no random touches on the tablet).
-  PHASES_OFF = { 'mdns:adb-RXGLA00Y4NL-R37H85' => %w[monkey] }.freeze
+  # Phases a device never runs, by the DEVICE's hardware serial (ro.serialno), never by the address
+  # it happens to be attached under (Pietro 2026-11-26: no random touches on the tablet).
+  PHASES_OFF = { 'RXGLA00Y4NL' => %w[monkey] }.freeze
 
+  # `mdns:adb-<hardware serial>-<suffix>` names carry it; any other identifier is asked of the
+  # device. nil when it cannot be read.
+  def self.hardware_serial(serial)
+    named = serial[/\Amdns:adb-(.+)-[^-]+\z/, 1]
+    return named if named
+
+    out, ok = adb(serial, 'shell', 'getprop', 'ro.serialno', timeout: 20)
+    value = out.to_s.strip
+    ok && !value.empty? ? value : nil
+  end
+
+  # An unidentifiable device never gets a phase that is switched off somewhere.
   def self.phase_allowed?(serial, phase)
-    names = aliases(serial)
-    PHASES_OFF.none? { |off, phases| phases.include?(phase) && (names.include?(off) || aliases(off).include?(serial)) }
+    off_somewhere = PHASES_OFF.values.flatten.include?(phase)
+    return true unless off_somewhere
+
+    hardware = hardware_serial(serial)
+    return false unless hardware
+
+    !PHASES_OFF.fetch(hardware, []).include?(phase)
   end
 
   def self.uninstall_after_round?(serial)
