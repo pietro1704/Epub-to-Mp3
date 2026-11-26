@@ -385,6 +385,21 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_operator deps, :<, build
   end
 
+  # Failure 7: the publish job failed with "apksigner executable not found on PATH"
+  # (runs 45517638568 and 45813662154); only the android job installed build-tools.
+  def test_publish_installs_the_android_build_tools_before_verifying_the_apk
+    job = @jobs.fetch("publish")
+    steps = job.fetch("steps")
+    install = index(steps) { |step| step.fetch("run", "").include?("build-tools;35.0.0") }
+    verify = index(steps) { |step| step.fetch("run", "").include?("verify_android_release_signature.rb release-assets/EpubToMp3_android.apk") }
+    assert_operator install, :<, verify
+    assert_includes steps[install].fetch("run"), 'mise exec -- sdkmanager "build-tools;35.0.0"'
+    assert_includes steps[install].fetch("env").fetch("MISE_ENABLE_TOOLS").split(","), "android-sdk"
+    assert_includes steps[install].fetch("run"), "mise exec -- sdkmanager --licenses"
+    embedded = File.read(File.expand_path("../mise.toml", __dir__))
+    assert_includes embedded, "build-tools;35.0.0", "same build-tools version as android:embedded-deps"
+  end
+
   # Failure 3: "failed to run custom build command for ort-sys" - only the CI
   # Windows job provisioned the pinned ONNX Runtime.
   def test_windows_release_provisions_the_same_onnx_runtime_as_ci
