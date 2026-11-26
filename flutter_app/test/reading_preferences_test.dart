@@ -138,6 +138,19 @@ void main() {
       expect(container.read(bookReadingOverridesProvider('book-a')).isEmpty, isTrue);
     });
 
+    testWidgets('the book switch turned off stays off when the panel is opened again', (tester) async {
+      final (container, prefs) = await _container();
+      await _pump(tester, container, bookId: 'book-a');
+      await tester.tap(find.byKey(const ValueKey('reading-mode-default')));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      final (reopened, _) = await _container(seed: {for (final k in prefs.getKeys()) k: prefs.get(k)!});
+      await _pump(tester, reopened, bookId: 'book-a');
+      await tester.tap(find.byKey(const ValueKey('reading-theme-dark')));
+      await tester.pumpAndSettle();
+      expect(reopened.read(bookReadingOverridesProvider('book-a')).isEmpty, isTrue, reason: 'still editing the default');
+    });
+
     testWidgets('switching the mode to default edits the default even from a book', (tester) async {
       final (container, prefs) = await _container();
       await _pump(tester, container, bookId: 'book-a');
