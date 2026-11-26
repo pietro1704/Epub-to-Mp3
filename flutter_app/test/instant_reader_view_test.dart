@@ -8,6 +8,9 @@ import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/instant_reader_view.dart';
+import 'package:flutter_app/views/reader_view.dart';
+import 'package:flutter_app/models/job_snapshot.dart';
+import 'support/fake_audio_player_service.dart';
 
 EbookFulltext _sampleFulltext() => EbookFulltext.fromJson({
       'jobId': 'test-job',
@@ -335,5 +338,40 @@ void main() {
       expect(recent(Icons.notes), findsOneWidget, reason: 'the remembered tool returns with notes');
     });
 
+
+    testWidgets('the estimated sentence stays highlighted while paused', (t) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService()..currentBookId = 'b1';
+      await player.setQueue([
+        const ChapterProgress(index: 0, name: 'Introduction', status: 'completed', durationSeconds: 20),
+      ]);
+      await t.pumpWidget(_wrap(
+        prefs,
+        InstantReaderView(fulltext: _sampleFulltext(), bookId: 'b1', player: player),
+      ));
+      await t.pump();
+      final container = ProviderScope.containerOf(t.element(find.byType(InstantReaderView)));
+      final engine = container.read(syncEngineProvider('b1'));
+      engine.load(_sampleFulltext().chapters.first, 20);
+      await player.play();
+      await player.seek(const Duration(seconds: 3));
+      await t.pump();
+      await t.pump();
+      String? shown() => t.widget<ReaderView>(find.byType(ReaderView)).currentSentenceId;
+      expect(shown(), isNotNull, reason: 'playing shows the estimated sentence');
+      final playing = shown();
+      await player.pause();
+      await t.pump();
+      expect(shown(), playing, reason: 'pausing keeps the passage');
+      await player.seek(const Duration(seconds: 15));
+      await t.pump();
+      await t.pump();
+      expect(shown(), isNull, reason: 'a seek while paused clears it, as the measured path does');
+      await player.play();
+      await t.pump();
+      await t.pump();
+      expect(shown(), isNotNull);
+      expect(shown(), isNot(playing), reason: 'playing again paints the new place');
+    });
   });
 }

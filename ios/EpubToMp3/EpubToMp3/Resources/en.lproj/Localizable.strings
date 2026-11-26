@@ -472,6 +472,8 @@
 "error.conversionFailed" = "The book could not be converted to audio. Please try again. Technical details are available in the logs.";
 "error.bookLanguageUncertain" = "The language of this text could not be identified reliably. Choose the language and try again.";
 "error.pdfOcrRequired" = "This PDF has no selectable text on any page (it looks scanned). It cannot be narrated until that text is recognized (OCR).";
+"convert.activeVoice" = "Active voice: %@";
+"convert.activeVoice.system" = "Active voice: %@ (system voice)";
 "convert.pdfPagesSkipped.one" = "We skipped 1 PDF page without selectable text (cover, image, or blank page). We narrate the rest of the book.";
 "convert.pdfPagesSkipped.many" = "We skipped %d PDF pages without selectable text (cover, images, or blank pages). We narrate the rest of the book.";
 "error.edgeConsentRequired" = "Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.";

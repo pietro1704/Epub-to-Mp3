@@ -474,4 +474,15 @@ def test_a_round_never_starts_the_monkey_on_the_tablet
     assert_match(/SKIP monkey is off on this device/, tablet[:detail])
   end
 end
+  def test_the_adb_server_is_chosen_by_the_server_that_lists_the_device
+    listings = {
+      '5073' => "List of devices attached\n192.168.0.130:35429\tdevice\n",
+      '5037' => "List of devices attached\n52008714b40355ad\tdevice\n"
+    }
+    reader = ->(port) { listings.fetch(port) }
+    assert_equal '5037', DeviceFarm.pick_server('52008714b40355ad', %w[5073 5037], reader)
+    assert_equal '5073', DeviceFarm.pick_server('192.168.0.130:35429', %w[5073 5037], reader)
+    assert_equal '5073', DeviceFarm.pick_server('52008714b40355ad', %w[5073], ->(_) { "List of devices attached\n" }),
+                 'unknown device falls back to the first (default) server'
+  end
 end

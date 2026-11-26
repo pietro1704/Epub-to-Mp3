@@ -19,6 +19,8 @@ final class ReaderPDFPresentation {
     private var latestAudio: PlaybackAudioOutput.Position?
     private var audioObservedAt: TimeInterval = 0
     private var searchSelection: PDFSelection?
+    /// The last narrated passage, shown again while paused to mark where narration resumes.
+    private var heldAudioSelection: PDFSelection?
     private var hasLoaded = false
     private var viewportPage: PDFPage?
     private var viewportOffset: CGPoint?
@@ -51,6 +53,11 @@ final class ReaderPDFPresentation {
             MainActor.assumeIsolated { if view?.currentSelection != nil { view?.clearSelection() } }
         }.store(in: &observers)
         if let player {
+            player.narrationJumps.sink { [weak self] in
+                self?.heldAudioSelection = nil
+                self?.latestAudio = nil
+                self?.paintAudio()
+            }.store(in: &observers)
             player.playbackClock.audioOutput.$position.sink { [weak self] position in
                 self?.latestAudio = position
                 self?.audioObservedAt = ProcessInfo.processInfo.systemUptime
@@ -71,6 +78,7 @@ final class ReaderPDFPresentation {
     func load(document: PDFDocument?, metadata: Data?) {
         hasLoaded = false
         audioMap = nil
+        heldAudioSelection = nil
         if let document, let metadata {
             audioMap = try? PDFReadingAudioMap(metadata: metadata,
                 pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
@@ -344,6 +352,7 @@ final class ReaderPDFPresentation {
                   let result = view.document?.findString(query, withOptions: .caseInsensitive).first else { return }
             view.go(to: result)
             searchSelection = result
+            heldAudioSelection = nil
             result.color = .systemYellow
             view.highlightedSelections = [result]
             publishPosition()
@@ -362,9 +371,10 @@ final class ReaderPDFPresentation {
     }
 
     private func paintAudio() {
+        if player?.isSeeking == true || settings?.readerAudioTrackingEnabled != true { heldAudioSelection = nil }
         guard let player, player.isPlaying, !player.isSeeking, player.isPlaybackForReaderBook(bookID),
               settings?.readerAudioTrackingEnabled == true, let map = audioMap else {
-            view.highlightedSelections = searchSelection.map { [$0] }; return
+            paintPausedPassage(); return
         }
         let chapterIndex: Int
         let range: NSRange?
@@ -390,13 +400,20 @@ final class ReaderPDFPresentation {
                 measuredWord = true
                 range = ReaderSpokenTextResolver.word(measured.word, passage: measured.passage, chapterText: text, renderedText: text)
             } else { range = approximateSentence(position, map: map) }
-        } else { view.highlightedSelections = searchSelection.map { [$0] }; return }
+        } else { paintPausedPassage(); return }
         guard let range, let match = map.displayRange(chapter: chapterIndex, range: range),
               let page = view.document?.page(at: match.page), let selection = page.selection(for: match.range) else {
-            view.highlightedSelections = searchSelection.map { [$0] }; return
+            paintPausedPassage(); return
         }
         selection.color = UIColor.systemYellow.withAlphaComponent(measuredWord ? 0.65 : 0.2)
+        heldAudioSelection = selection
         view.highlightedSelections = [selection]
+    }
+
+    /// Erases the narration paint, except for the passage where a paused narration will resume.
+    private func paintPausedPassage() {
+        let paused = player.map { !$0.isPlaying && $0.isPlaybackForReaderBook(bookID) } ?? false
+        view.highlightedSelections = ((paused ? heldAudioSelection : nil) ?? searchSelection).map { [$0] }
     }
     private func approximateSentence(_ position: PlaybackAudioOutput.Position, map: PDFReadingAudioMap) -> NSRange? {
         let index = position.chapterIndex

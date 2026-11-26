@@ -78,6 +78,12 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   StreamSubscription<String?>? _sentenceSub;
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
+
+  /// Paused narration keeps its sentence painted (it marks where it resumes) and
+  /// drops it on a seek, like the measured path and the Apple reader.
+  bool _sentenceReleased = false;
+  double _heldSeconds = 0;
+  StreamSubscription<bool>? _playingSub;
   MeasuredPlaybackBinding? _measuredBinding;
   StreamSubscription<TextRange?>? _measuredSubscription;
   TextRange? _measuredRange;
@@ -152,7 +158,18 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     _sentenceSync = SentenceSyncCoordinator(engine);
     _positionSub = player.position.listen((pos) {
       if (!mounted) return;
-      _sentenceSync?.updatePosition(pos.inMilliseconds / 1000.0);
+      final seconds = pos.inMilliseconds / 1000.0;
+      _sentenceSync?.updatePosition(seconds);
+      if (player.isPlaying) {
+        _heldSeconds = seconds;
+      } else if (!_sentenceReleased && (seconds - _heldSeconds).abs() > 0.25) {
+        setState(() => _sentenceReleased = true);
+      }
+    });
+    _playingSub = player.playing.listen((playing) {
+      if (!mounted || !playing) return;
+      _heldSeconds = player.positionSeconds;
+      if (_sentenceReleased) setState(() => _sentenceReleased = false);
     });
     _attachSentenceStream(engine);
   }
@@ -172,6 +189,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     _measuredBinding?.dispose();
     _measuredSubscription?.cancel();
     _positionSub?.cancel();
+    _playingSub?.cancel();
     _sentenceSub?.cancel();
     // Always restore the system chrome when leaving the reader so other
     // screens are not left in immersive mode.
@@ -430,7 +448,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
               spans: spans,
               // Live sentence id (driven by SyncEngine + position stream
               // through slice 25) takes precedence over the static prop.
-              currentSentenceId: ownsHighlight
+              currentSentenceId: ownsHighlight && !_sentenceReleased
                   ? _liveSentenceId ?? widget.activeSentenceId
                   : null,
               onAdvanceChapter: advanceToNextChapter,
