@@ -87,8 +87,7 @@ final class MacSettingsViewController: NSViewController {
             subtitle: L10n.string("settings.readingPreferencesSubtitle"), symbol: "textformat",
             identifier: "settings.readingPreferences.disclosure",
             target: self, action: #selector(showReadingPreferences))
-        let form = NSStackView(views: [
-            MacSettingsSections.card([models.row]),
+        let preferences: [NSView] = [
             MacSettingsSections.header(L10n.string("settings.reader")),
             MacSettingsSections.card([readingPreferences.row] + readerToggleRows()),
             MacSettingsSections.footer(L10n.string("settings.readerFooter")),
@@ -101,15 +100,17 @@ final class MacSettingsViewController: NSViewController {
             MacSettingsSections.card(advancedRows()),
             MacSettingsSections.header(L10n.string("settings.about")),
             MacSettingsSections.card(aboutRows()),
+        ]
+        let columns = MacSettingsColumns(narration: [MacSettingsSections.card([models.row])],
+                                         preferences: preferences)
+        columns.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(columns)
+        NSLayoutConstraint.activate([
+            columns.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            columns.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            columns.topAnchor.constraint(equalTo: view.topAnchor),
+            columns.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        form.orientation = .vertical
-        form.alignment = .leading
-        form.spacing = 8
-        for view in form.arrangedSubviews {
-            view.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
-            if view is MacSettingsCard { form.setCustomSpacing(14, after: view) }
-        }
-        MacScrollableStack.install(form, in: view, maximumWidth: 680)
     }
 
     private func readerToggleRows() -> [NSView] {
