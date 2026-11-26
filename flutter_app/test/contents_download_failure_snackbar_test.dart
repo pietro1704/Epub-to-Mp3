@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
-import 'package:flutter_app/models/book_language_corrections.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/screens/book_open_screen.dart';
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
