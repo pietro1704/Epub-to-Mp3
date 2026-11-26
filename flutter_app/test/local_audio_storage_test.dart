@@ -37,6 +37,17 @@ void main() {
     },
   );
 
+  test('a book folder without any audio bytes is not listed, like the 16e', () async {
+    final docs = await Directory.systemTemp.createTemp('audio-storage-empty-');
+    addTearDown(() => docs.delete(recursive: true));
+    await Directory('${docs.path}/audiobooks/empty/streaming').create(recursive: true);
+    final kept = File('${docs.path}/audiobooks/kept/chapter.mp3');
+    await kept.parent.create(recursive: true);
+    await kept.writeAsBytes([1]);
+    final entries = await LocalAudioStorage(docs).scan();
+    expect(entries.map((e) => e.id), ['kept']);
+  });
+
   test('symlink roots never expose or delete external files', () async {
     final root = await Directory.systemTemp.createTemp('audio-symlink-');
     addTearDown(() => root.delete(recursive: true));

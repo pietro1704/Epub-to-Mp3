@@ -31,6 +31,8 @@ class LocalAudioStorage {
         )) {
           if (entity is File) bytes += await entity.length();
         }
+        // The 16e lists only books that really hold audio files.
+        if (bytes == 0) continue;
         entries.add(
           LocalAudioEntry(
             category,
