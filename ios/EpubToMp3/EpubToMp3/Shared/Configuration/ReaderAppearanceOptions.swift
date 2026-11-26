@@ -205,6 +205,10 @@ enum PageTurnStyle: String, CaseIterable, Identifiable {
         case .none:  return L10n.string("pageTurn.none")
         }
     }
+
+    /// AppKit has no page curl, so the Mac offers Slide and None and reads a stored Flip as Slide.
+    static let macCases: [PageTurnStyle] = [.slide, .none]
+    var onMac: PageTurnStyle { self == .flip ? .slide : self }
 }
 
 /// Horizontal alignment for reader body text. The default `.justified`

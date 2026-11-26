@@ -3,6 +3,20 @@ import AppKit
 import PDFKit
 import Combine
 
+/// Clips the sliding pages and lets every click reach the reader underneath.
+private final class MacPageSlideView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// Owns Mac chapter mounting and saved-position restoration after committed layout.
 @MainActor
 final class MacReaderTextPresentation {
@@ -235,25 +249,79 @@ final class MacReaderTextPresentation {
         }
         if forward && atEnd, selectedChapter + 1 < (fulltext?.chapters.count ?? 0) {
             persistReadingProgress()
+            let outgoing = pageSlideSnapshot()
             selectedChapter += 1
             showChapter(selectedChapter)
+            slidePage(from: outgoing, forward: true)
             selectCurrentTOCRow()
             persistReadingProgress()
             return
         }
         if !forward && atStart, selectedChapter > 0 {
             persistReadingProgress()
+            let outgoing = pageSlideSnapshot()
             selectedChapter -= 1
             showChapter(selectedChapter, scrollToEnd: true)
+            slidePage(from: outgoing, forward: false)
             selectCurrentTOCRow()
             persistReadingProgress()
             return
         }
         let offset = forward ? page : -page
         let nextY = min(max(visibleBounds.origin.y + offset, 0), maximumY)
+        let outgoing = nextY == visibleBounds.origin.y ? nil : pageSlideSnapshot()
         clipView.scroll(to: NSPoint(x: visibleBounds.origin.x, y: nextY))
         contentScrollView.reflectScrolledClipView(clipView)
+        slidePage(from: outgoing, forward: forward)
         persistReadingProgress()
+    }
+
+    // MARK: - Page turn
+
+    private weak var pageSlide: NSView?
+
+    /// The page on screen, or nil when the turn must be instant. A turn that interrupts a slide ends it first.
+    private func pageSlideSnapshot() -> NSImage? {
+        pageSlide?.removeFromSuperview()
+        guard settings.readerLayout == .paginated, settings.pageTurnStyle.onMac == .slide,
+              !reducesMotion() else { return nil }
+        return visiblePageImage()
+    }
+
+    private func visiblePageImage() -> NSImage? {
+        let bounds = contentScrollView.bounds
+        guard !bounds.isEmpty, let bitmap = contentScrollView.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        contentScrollView.cacheDisplay(in: bounds, to: bitmap)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+
+    /// The destination is already committed; two pictures slide over it, so reading state never waits for motion.
+    private func slidePage(from outgoing: NSImage?, forward: Bool) {
+        guard let outgoing, let host = contentScrollView.superview else { return }
+        contentScrollView.layoutSubtreeIfNeeded()
+        guard let incoming = visiblePageImage() else { return }
+        let overlay = MacPageSlideView(frame: contentScrollView.frame)
+        overlay.layer?.backgroundColor = settings.readerColors.background.cgColor
+        let travel = forward ? overlay.bounds.width : -overlay.bounds.width
+        let old = NSImageView(frame: overlay.bounds)
+        old.image = outgoing
+        old.setAccessibilityIdentifier("reader.pageSlide.outgoing")
+        let new = NSImageView(frame: overlay.bounds.offsetBy(dx: travel, dy: 0))
+        new.image = incoming
+        overlay.addSubview(old)
+        overlay.addSubview(new)
+        host.addSubview(overlay, positioned: .above, relativeTo: contentScrollView)
+        pageSlide = overlay
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            old.animator().setFrameOrigin(NSPoint(x: -travel, y: 0))
+            new.animator().setFrameOrigin(.zero)
+        }, completionHandler: { [weak overlay] in
+            MainActor.assumeIsolated { overlay?.removeFromSuperview() }
+        })
     }
 
     // MARK: - Pagination (viewport snap) + progress restoration

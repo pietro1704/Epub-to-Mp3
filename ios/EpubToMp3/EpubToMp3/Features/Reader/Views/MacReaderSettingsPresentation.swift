@@ -13,6 +13,7 @@ final class MacReaderSettingsPresentation: NSObject {
     private let settings: AppSettings
     private let settingsPopover: NSPopover
     private weak var pageNumbersToggle: NSButton?
+    private var pageTurnControls: [NSView] = []
     private let bookPreferences: BookReadingPreferencesStore
 
     init(settings: AppSettings, popover: NSPopover, bookPreferences: BookReadingPreferencesStore = .shared) {
@@ -103,6 +104,16 @@ final class MacReaderSettingsPresentation: NSObject {
         pageNumbers.isHidden = settings.readerLayout != .paginated
         pageNumbersToggle = pageNumbers
 
+        let pageTurn = NSPopUpButton()
+        pageTurn.addItems(withTitles: PageTurnStyle.macCases.map(\.displayName))
+        pageTurn.selectItem(at: PageTurnStyle.macCases.firstIndex(of: settings.pageTurnStyle.onMac) ?? 0)
+        pageTurn.setAccessibilityLabel(L10n.string("readerSettings.pageTurnStyle"))
+        pageTurn.setAccessibilityIdentifier("readerSettings.pageTurnStyle")
+        pageTurn.target = self
+        pageTurn.action = #selector(pageTurnChanged(_:))
+        pageTurnControls = [label("readerSettings.pageTurnStyle"), pageTurn]
+        pageTurnControls.forEach { $0.isHidden = settings.readerLayout != .paginated }
+
         let columns = NSPopUpButton()
         columns.addItems(withTitles: ["1", "2", "3", "4"])
         columns.selectItem(withTitle: String(settings.readerColumns))
@@ -111,7 +122,7 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, pageNumbers, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout] + pageTurnControls + [pageNumbers, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -156,10 +167,15 @@ final class MacReaderSettingsPresentation: NSObject {
         let selected = ReaderLayout.allCases[sender.indexOfSelectedItem]
         settings.readerLayout = selected
         pageNumbersToggle?.isHidden = selected != .paginated
+        pageTurnControls.forEach { $0.isHidden = selected != .paginated }
     }
 
     @objc private func alignmentChanged(_ sender: NSPopUpButton) {
         settings.readerTextAlignment = ReaderTextAlignment.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func pageTurnChanged(_ sender: NSPopUpButton) {
+        settings.pageTurnStyle = PageTurnStyle.macCases[sender.indexOfSelectedItem]
     }
 
     @objc private func pageNumbersChanged(_ sender: NSButton) {
