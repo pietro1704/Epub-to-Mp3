@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/services/playback/audio_player_service.dart';
 
@@ -199,6 +200,26 @@ void main() {
       expect(find.byKey(const ValueKey('seek.forward.15')), findsOneWidget);
       expect(find.text('1.0x'), findsOneWidget);
       expect(find.text('Sleep'), findsOneWidget);
+      player.dispose();
+    });
+
+    testWidgets('the idle sleep timer pill is localized, not a fixed English word', (t) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService();
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+          child: MaterialApp(
+            locale: const Locale('pt'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(body: FullPlayerSheet(player: player, bookTitle: 'Livro')),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Sleep'), findsNothing);
+      expect(find.text('Timer de sono'), findsWidgets);
       player.dispose();
     });
 

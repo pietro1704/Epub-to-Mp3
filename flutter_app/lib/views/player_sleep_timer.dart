@@ -32,7 +32,7 @@ class PlayerSleepTimer extends StatelessWidget {
             },
             child: pill(
               context,
-              remaining > 0 ? formatTime(remaining) : 'Sleep',
+              remaining > 0 ? formatTime(remaining) : (t?.sleepTimer ?? 'Sleep'),
               icon: Icons.nightlight_round,
             ),
           ),
