@@ -400,6 +400,14 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         }
     }
 
+    private func goToReading(bookID: String) {
+        guard library.books.contains(where: { $0.id == bookID }) else { return }
+        if player.location.readingBookID != bookID || !(detailController is MacReaderViewController) {
+            showReader(bookID: bookID)
+        }
+        (detailController as? MacReaderViewController)?.goToNarration()
+    }
+
     private func refreshFullPlayer() {
         guard isViewLoaded else { return }
         if playerPresentation.showingFullPlayer {
@@ -408,7 +416,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 player: player,
                 library: library,
                 presentation: playerPresentation,
-                onStartPlayback: { [weak self] in self?.playFromCurrentReaderPosition() }
+                onStartPlayback: { [weak self] in self?.playFromCurrentReaderPosition() },
+                onGoToReading: { [weak self] bookID in self?.goToReading(bookID: bookID) }
             )
             // Full-size content bounds include the titlebar; the sheet hangs below it.
             controller.preferredContentSize = view.window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 700)
