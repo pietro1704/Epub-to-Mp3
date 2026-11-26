@@ -17,6 +17,7 @@ final class MacReaderNarrationFollowing {
     private let isUserInput: () -> Bool
     private var observations: Set<AnyCancellable> = []
     private var isObserving = false
+    private var goToNarrationTask: Task<Void, Never>?
     private lazy var follower = ReaderNarrationFollower(
         jumps: player.narrationJumps.eraseToAnyPublisher(),
         isNarrating: { [weak self] in
@@ -51,6 +52,24 @@ final class MacReaderNarrationFollowing {
 
     var isSuspended: Bool { follower.isSuspended }
 
+    /// "Go to reading": shows the spoken passage even while paused. A reader that was just opened waits for its
+    /// saved position to be restored first, so the restore does not move it away again.
+    func goToNarration() {
+        follower.userAskedToGoToReading()
+        goToNarrationTask?.cancel()
+        goToNarrationTask = Task { [weak self] in
+            for _ in 0..<100 {
+                guard let self, !Task.isCancelled else { return }
+                if self.document.hasRestoredInitialPosition, !self.document.isRestoringInitialPosition {
+                    self.followNarration()
+                    self.refresh()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+    }
+
     func observe() {
         guard !isObserving else { return }
         isObserving = true
@@ -82,6 +101,7 @@ final class MacReaderNarrationFollowing {
     }
 
     func stop() {
+        goToNarrationTask?.cancel()
         observations.removeAll()
         follower.stop()
         highlight.stop()

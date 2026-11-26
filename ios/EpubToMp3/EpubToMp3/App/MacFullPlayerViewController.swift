@@ -13,13 +13,24 @@ final class MacFullPlayerViewController: NSViewController {
     private let coverView = NSImageView()
     private let playButton = NSButton()
     private let playSpinner = NSProgressIndicator()
+    private let onGoToReading: (String) -> Void
+    private let skipBackButton = NSButton()
+    private let skipForwardButton = NSButton()
+    private let ratePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let sleepPopUp = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let contentsButton = NSButton()
+    private let goToReadingButton = NSButton()
+    private static let sleepMinutes = [0, 5, 15, 30, 45, 60]
     private let progressSlider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let elapsedLabel = NSTextField(labelWithString: "0:00")
     private let remainingLabel = NSTextField(labelWithString: "-0:00")
     private var cancellable: AnyCancellable?
     private var clockCancellable: AnyCancellable?
+    private var pairingCancellable: AnyCancellable?
 
-    init(player: AudioPlayer, library: LibraryStore, presentation: PlayerPresentation, onStartPlayback: @escaping () -> Void) {
+    init(player: AudioPlayer, library: LibraryStore, presentation: PlayerPresentation, onStartPlayback: @escaping () -> Void,
+         onGoToReading: @escaping (String) -> Void = { _ in }) {
+        self.onGoToReading = onGoToReading
         self.player = player
         self.library = library
         self.presentation = presentation
@@ -78,14 +89,20 @@ final class MacFullPlayerViewController: NSViewController {
         next.setAccessibilityLabel(L10n.string("player.nextChapter"))
         next.toolTip = L10n.string("player.nextChapter")
         playButton.setAccessibilityIdentifier("fullPlayer.playPause")
+        previous.bezelStyle = .texturedRounded
+        next.bezelStyle = .texturedRounded
         let close = NSButton(title: L10n.string("common.close"), target: self, action: #selector(closePlayer))
         let playControls = NSStackView(views: [playButton, playSpinner])
         playControls.orientation = .horizontal
         playControls.alignment = .centerY
-        let controls = NSStackView(views: [previous, playControls, next])
+        let controls = NSStackView(views: [previous, skipBackButton, playControls, skipForwardButton, next])
         controls.spacing = 12
         controls.alignment = .centerY
-        let content = NSStackView(views: [coverView, titleLabel, statusLabel, timeControls, controls, close])
+        configureSecondaryControls()
+        let options = NSStackView(views: [ratePopUp, contentsButton, sleepPopUp])
+        options.spacing = 12
+        options.alignment = .centerY
+        let content = NSStackView(views: [coverView, titleLabel, statusLabel, timeControls, controls, options, goToReadingButton, close])
         content.orientation = .vertical
         content.alignment = .centerX
         content.spacing = 12
@@ -103,6 +120,9 @@ final class MacFullPlayerViewController: NSViewController {
         ])
         view = background
         cancellable = player.transportContentUpdates.sink { [weak self] _ in self?.refresh() }
+        pairingCancellable = player.readerPairing.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
         clockCancellable = player.transportUpdates.sink { [weak self] state in self?.refreshClock(state) }
         refresh()
     }
@@ -124,9 +144,83 @@ final class MacFullPlayerViewController: NSViewController {
         playButton.setAccessibilityLabel(L10n.string(state.isPlaying ? "player.pause" : "player.play"))
         playButton.toolTip = L10n.string(state.isPlaying ? "player.pause" : "player.play")
         playButton.isHidden = state.isLoading
+        // A stopped spinner is invisible but still takes room between the transport buttons.
+        playSpinner.isHidden = !state.isLoading
         if state.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         playButton.isEnabled = state.job != nil || bookID != nil
+        refreshSecondaryControls(state, bookID: book?.id)
         refreshClock(transport)
+    }
+
+    private func configureSecondaryControls() {
+        for (button, identifier, action) in [
+            (skipBackButton, "fullPlayer.skipBack", #selector(skipBack)),
+            (skipForwardButton, "fullPlayer.skipForward", #selector(skipForward)),
+        ] {
+            button.imagePosition = .imageOnly
+            button.bezelStyle = .texturedRounded
+            button.target = self
+            button.action = action
+            button.setAccessibilityIdentifier(identifier)
+        }
+        for (button, identifier, key, symbol, action) in [
+            (contentsButton, "fullPlayer.tableOfContents", "player.toc", "list.bullet", #selector(showContents)),
+            (goToReadingButton, "fullPlayer.goToReading", "player.goToReading", "book", #selector(goToReading)),
+        ] {
+            button.title = L10n.string(key)
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            button.imagePosition = .imageLeading
+            button.bezelStyle = .texturedRounded
+            button.target = self
+            button.action = action
+            button.setAccessibilityIdentifier(identifier)
+            button.setAccessibilityLabel(L10n.string(key))
+        }
+        ratePopUp.setAccessibilityIdentifier("fullPlayer.playbackRateButton")
+        ratePopUp.setAccessibilityLabel(L10n.string("player.speed"))
+        ratePopUp.toolTip = L10n.string("player.speed")
+
+        sleepPopUp.setAccessibilityIdentifier("fullPlayer.sleepTimer")
+        sleepPopUp.setAccessibilityLabel(L10n.string("player.sleepTimer"))
+        // A pull-down shows its first item as the button title.
+        sleepPopUp.addItem(withTitle: L10n.string("player.sleepTimer"))
+        for minutes in Self.sleepMinutes {
+            let key = minutes == 0 ? "off" : String(minutes)
+            let item = NSMenuItem(title: L10n.string("player.sleepTimerOption.\(key)"),
+                                  action: #selector(selectSleepTimer(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = minutes
+            sleepPopUp.menu?.addItem(item)
+        }
+    }
+
+    private func refreshSecondaryControls(_ state: PlaybackTransportState.Content, bookID: String?) {
+        let backward = Int(PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey))
+        let forward = Int(PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))
+        for (button, symbol, key, seconds) in [
+            (skipBackButton, "gobackward", "player.skipBack.seconds", backward),
+            (skipForwardButton, "goforward", "player.skipForward.seconds", forward),
+        ] {
+            button.image = NSImage(systemSymbolName: "\(symbol).\(seconds)", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            button.setAccessibilityLabel(L10n.string(key, seconds))
+            button.toolTip = L10n.string(key, seconds)
+            button.isEnabled = state.job != nil
+        }
+        let rates = PlaybackRate.menuRates(selected: player.rate)
+        if ratePopUp.itemTitles != rates.map(\.shortLabel) {
+            ratePopUp.removeAllItems()
+            for rate in rates {
+                let item = NSMenuItem(title: rate.shortLabel, action: #selector(selectRate(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = rate.rawValue
+                ratePopUp.menu?.addItem(item)
+            }
+        }
+        ratePopUp.selectItem(withTitle: player.rate.shortLabel)
+        contentsButton.isEnabled = state.job?.playableChapters.isEmpty == false
+        // Offered whenever no reader is showing the narrated passage and there is a book to open there.
+        goToReadingButton.isHidden = player.readerPairing.isPaired || bookID == nil
     }
 
     private func refreshClock(_ state: PlaybackTransportState) {
@@ -157,6 +251,45 @@ final class MacFullPlayerViewController: NSViewController {
     @objc private func previousChapter() { player.previousChapter() }
     @objc private func nextChapter() { player.nextChapter() }
     @objc private func closePlayer() { presentation.dismissFullPlayer() }
+    @objc private func skipBack() { player.skipBackward(); refresh() }
+    @objc private func skipForward() { player.skipForward(); refresh() }
+
+    @objc private func selectRate(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? Float, let rate = PlaybackRate(rawValue: raw) { player.setRate(rate) }
+        refresh()
+    }
+
+    @objc private func selectSleepTimer(_ sender: NSMenuItem) {
+        if sender.tag == 0 { player.setSleepTimer(seconds: 0) } else { player.startSleepTimer(minutes: sender.tag) }
+        refresh()
+    }
+
+    @objc private func showContents() {
+        guard let snapshot = player.snapshot else { return }
+        let menu = NSMenu()
+        for (position, chapter) in snapshot.playableChapters.enumerated() {
+            let item = NSMenuItem(title: chapter.displayTitle, action: #selector(selectChapter(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = position
+            item.representedObject = snapshot.jobId
+            item.state = position == player.currentChapterIndex ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: contentsButton.bounds.maxY), in: contentsButton)
+    }
+
+    @objc private func selectChapter(_ sender: NSMenuItem) {
+        guard let snapshot = player.snapshot, snapshot.jobId == sender.representedObject as? String,
+              snapshot.playableChapters.indices.contains(sender.tag) else { return }
+        player.play(snapshot: snapshot, startingAt: sender.tag)
+        refresh()
+    }
+
+    @objc private func goToReading() {
+        guard let bookID = player.location.playingBookID ?? player.location.readingBookID else { return }
+        presentation.dismissFullPlayer()
+        onGoToReading(bookID)
+    }
 }
 
 #endif

@@ -178,4 +178,46 @@ private final class PlayerAccessibilityFixture {
         }
     }
 }
+
+/// PARITY-MAC-READER-4: the Mac full player offers the same controls as the iPhone full player.
+@MainActor
+final class MacFullPlayerParityTests: XCTestCase {
+    func testMacFullPlayerOffersTheiPhoneControls() throws {
+        let suite = "MacFullPlayerParity.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer { player.stop() }
+        player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from:
+            Data(#"{"jobId":"full-player-parity","state":"completed","bookTitle":"Synthetic parity"}"#.utf8)))
+        let controller = MacFullPlayerViewController(player: player,
+            library: LibraryStore(defaults: defaults, defaultsKey: "library"),
+            presentation: PlayerPresentation(defaults: defaults), onStartPlayback: {})
+
+        func control(_ identifier: String, in view: NSView) -> NSControl? {
+            if let control = view as? NSControl, control.accessibilityIdentifier() == identifier { return control }
+            return view.subviews.lazy.compactMap { control(identifier, in: $0) }.first
+        }
+        let identifiers = ["fullPlayer.skipBack", "fullPlayer.skipForward", "fullPlayer.playbackRateButton",
+                           "fullPlayer.sleepTimer", "fullPlayer.tableOfContents", "fullPlayer.goToReading"]
+        let missing = identifiers.filter { control($0, in: controller.view) == nil }
+        XCTAssertEqual(missing, [], "Controls the iPhone full player has")
+        guard missing.isEmpty else { return }
+
+        for identifier in ["fullPlayer.skipBack", "fullPlayer.skipForward",
+                           "fullPlayer.tableOfContents", "fullPlayer.goToReading"] {
+            let button = try XCTUnwrap(control(identifier, in: controller.view) as? NSButton)
+            XCTAssertNotNil(button.action, "\(identifier) must be wired")
+            XCTAssertFalse((button.accessibilityLabel() ?? "").isEmpty, "\(identifier) needs a label")
+        }
+        let rate = try XCTUnwrap(control("fullPlayer.playbackRateButton", in: controller.view) as? NSPopUpButton)
+        let faster = try XCTUnwrap(rate.itemTitles.firstIndex(of: "1.5x"))
+        try XCTUnwrap(rate.menu).performActionForItem(at: faster)
+        XCTAssertEqual(player.rate, .x150)
+
+        let sleep = try XCTUnwrap(control("fullPlayer.sleepTimer", in: controller.view) as? NSPopUpButton)
+        let options = ["off", "5", "15", "30", "45", "60"].map { L10n.string("player.sleepTimerOption.\($0)") }
+        XCTAssertEqual(sleep.itemTitles.filter { options.contains($0) }, options)
+    }
+}
 #endif

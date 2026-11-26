@@ -171,6 +171,8 @@ final class MacReaderViewController: NSViewController {
         observeOpenStage("reader_view_did_load_completed")
     }
 
+    func goToNarration() { narrationFollowing.goToNarration() }
+
     func setBook(_ bookID: String?) {
         // READING-PREFERENCES: the book's own reading preferences apply while it is open.
         if let bookID { settings.enterBookScope(bookID) } else { settings.leaveBookScope() }
