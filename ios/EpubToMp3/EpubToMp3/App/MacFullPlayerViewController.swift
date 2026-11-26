@@ -89,6 +89,8 @@ final class MacFullPlayerViewController: NSViewController {
         next.setAccessibilityLabel(L10n.string("player.nextChapter"))
         next.toolTip = L10n.string("player.nextChapter")
         playButton.setAccessibilityIdentifier("fullPlayer.playPause")
+        previous.bezelStyle = .texturedRounded
+        next.bezelStyle = .texturedRounded
         let close = NSButton(title: L10n.string("common.close"), target: self, action: #selector(closePlayer))
         let playControls = NSStackView(views: [playButton, playSpinner])
         playControls.orientation = .horizontal
@@ -142,6 +144,8 @@ final class MacFullPlayerViewController: NSViewController {
         playButton.setAccessibilityLabel(L10n.string(state.isPlaying ? "player.pause" : "player.play"))
         playButton.toolTip = L10n.string(state.isPlaying ? "player.pause" : "player.play")
         playButton.isHidden = state.isLoading
+        // A stopped spinner is invisible but still takes room between the transport buttons.
+        playSpinner.isHidden = !state.isLoading
         if state.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         playButton.isEnabled = state.job != nil || bookID != nil
         refreshSecondaryControls(state, bookID: book?.id)
