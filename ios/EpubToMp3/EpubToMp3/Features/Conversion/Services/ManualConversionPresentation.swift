@@ -25,6 +25,13 @@ enum ManualConversionPresentation {
         if session.isRunning, let progress = session.progress, progress.chaptersTotal > 0 {
             lines.append(L10n.string("convert.chapterProgress", progress.chaptersCompleted, progress.chaptersTotal))
         }
+        if let voice = session.activeVoice, let engine = voice.engine,
+           session.isRunning || session.phase == .completed {
+            let name = SpeechModelPresentationStore.shared.displayName(
+                engine: engine, modelID: voice.modelId, voice: voice.voice) ?? engine
+            lines.append(L10n.string(engine == TtsSelection.systemEngine
+                ? "convert.activeVoice.system" : "convert.activeVoice", name))
+        }
         if session.skippedPages > 0, session.isRunning || session.phase == .completed {
             lines.append(session.skippedPages == 1 ? L10n.string("convert.pdfPagesSkipped.one")
                 : L10n.string("convert.pdfPagesSkipped.many", session.skippedPages))

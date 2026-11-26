@@ -13,6 +13,8 @@ final class ManualConversionSession: ObservableObject {
     @Published private(set) var errorMessage: String?
     /// PDF pages without selectable text, which the core leaves out of narration.
     @Published private(set) var skippedPages = 0
+    /// Last progress event that named a provider; later events without one do not erase it.
+    @Published private(set) var activeVoice: RustConversionCoordinator.ConversionProgressEvent?
     private(set) var failure: Error?
     private(set) var requestID = UUID()
 
@@ -31,6 +33,7 @@ final class ManualConversionSession: ObservableObject {
     func reportValidationFailure(_ message: String) {
         guard !isRunning else { return }
         skippedPages = 0
+        activeVoice = nil
         requestID = UUID()
         failure = nil
         result = nil
@@ -49,6 +52,7 @@ final class ManualConversionSession: ObservableObject {
         progress = nil
         errorMessage = nil
         skippedPages = 0
+        activeVoice = nil
         phase = .preparing
         let executor = self.executor
         let pending = Task { @MainActor [weak self] in
@@ -112,6 +116,7 @@ final class ManualConversionSession: ObservableObject {
         guard activeJobID == jobID, event.jobId == jobID, isRunning,
               phase != .cancelling, task?.isCancelled != true else { return }
         progress = event
+        if event.engine != nil { activeVoice = event }
         phase = .converting
     }
 }
