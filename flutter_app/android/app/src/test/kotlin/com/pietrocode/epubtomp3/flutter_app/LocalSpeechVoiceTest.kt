@@ -35,4 +35,26 @@ class LocalSpeechVoiceTest {
         assertNull(selectLocalSpeechVoice(voices.take(1), "pt-BR"))
         assertNull(selectLocalSpeechVoice(voices, "en"))
     }
+
+    @Test fun keepsDefaultEngineWhenItHasAnOfflineVoice() {
+        val engines = listOf(
+            SpeechEngineVoices("samsung", listOf(LocalSpeechVoice("s", "pt-BR", false))),
+            SpeechEngineVoices("google", listOf(LocalSpeechVoice("g", "pt-BR", false))),
+        )
+        assertEquals(SpeechEngineChoice("samsung", "s"), chooseSpeechEngine("samsung", engines, "pt-BR"))
+    }
+
+    @Test fun fallsBackToInstalledEngineWithOfflineVoice() {
+        val engines = listOf(
+            SpeechEngineVoices("samsung", listOf(LocalSpeechVoice("n", "pt-BR", true))),
+            SpeechEngineVoices("google", listOf(LocalSpeechVoice("g", "pt-BR", false))),
+        )
+        assertEquals(SpeechEngineChoice("google", "g"), chooseSpeechEngine("samsung", engines, "pt-BR"))
+        assertNull(chooseSpeechEngine("samsung", engines.take(1), "pt-BR"))
+    }
+
+    @Test fun failureReasonNamesEnginesAndAction() {
+        val reason = noOfflineVoiceReason("pt-BR", "samsung", listOf("samsung", "google"))
+        assertEquals(true, reason.contains("pt-BR") && reason.contains("samsung") && reason.contains("google") && reason.contains("Install"))
+    }
 }

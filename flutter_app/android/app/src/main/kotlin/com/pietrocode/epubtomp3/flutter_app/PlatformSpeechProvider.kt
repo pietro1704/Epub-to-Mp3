@@ -32,6 +32,23 @@ internal fun selectLocalSpeechVoice(voices: List<LocalSpeechVoice>, language: St
         .thenBy { it.latency }.thenBy { it.name }).firstOrNull()?.name
 }
 
+internal data class SpeechEngineVoices(val packageName: String, val voices: List<LocalSpeechVoice>)
+internal data class SpeechEngineChoice(val packageName: String, val voice: String)
+
+/** The default engine wins when it has an offline voice; otherwise the first installed engine that does. */
+internal fun chooseSpeechEngine(defaultEngine: String?, engines: List<SpeechEngineVoices>, language: String): SpeechEngineChoice? {
+    val ordered = engines.sortedBy { if (it.packageName == defaultEngine) 0 else 1 }
+    for (engine in ordered) {
+        selectLocalSpeechVoice(engine.voices, language)?.let { return SpeechEngineChoice(engine.packageName, it) }
+    }
+    return null
+}
+
+internal fun noOfflineVoiceReason(language: String, defaultEngine: String?, installedEngines: List<String>): String =
+    "No installed offline speech voice for $language. Default engine: ${defaultEngine ?: "none"}; " +
+        "installed engines: ${installedEngines.joinToString().ifEmpty { "none" }}. " +
+        "Install an offline $language voice in Android text-to-speech settings, or use Piper."
+
 /** A synchronous WAV adapter for Rust workers; Android operations run on the main thread. */
 internal class PlatformSpeechProvider(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
@@ -40,6 +57,7 @@ internal class PlatformSpeechProvider(private val context: Context) {
     private var engine: TextToSpeech? = null
     @Volatile private var closed = false
     private var started = false
+    private var fallbackEngine: TextToSpeech? = null
     private val requestGate = SpeechRequestGate()
 
     fun synthesize(text: String, language: String, path: String, cancelled: () -> Boolean, onVoiceSelected: () -> Unit) {
@@ -65,6 +83,7 @@ internal class PlatformSpeechProvider(private val context: Context) {
         initError.get()?.let { throw IllegalStateException(it) }
         check(!closed) { "Native speech provider is closed" }
         require(text.isNotBlank() && text.length <= TextToSpeech.getMaxSpeechInputLength()) { "Native speech chunk exceeds Android's input limit" }
+        resolveEngine(language, cancelled)
         val finished = CountDownLatch(1)
         val error = AtomicReference<String?>(null)
         val file = File(path)
@@ -74,13 +93,9 @@ internal class PlatformSpeechProvider(private val context: Context) {
         handler.post {
             try {
                 check(!closed) { "Native speech provider is closed" }
-                val tts = checkNotNull(engine) { "Android speech engine is unavailable" }
-                val voices = tts.voices.orEmpty()
-                val selected = selectLocalSpeechVoice(voices.map {
-                    LocalSpeechVoice(it.name, it.locale.toLanguageTag(), it.isNetworkConnectionRequired,
-                        !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED), it.latency)
-                }, language) ?: error("No installed offline speech voice for $language")
-                check(tts.setVoice(voices.first { it.name == selected }) == TextToSpeech.SUCCESS) { "Could not select offline speech voice" }
+                val tts = fallbackEngine ?: checkNotNull(engine) { "Android speech engine is unavailable" }
+                val chosen = checkNotNull(chosenVoice) { "Android speech voice is unavailable" }
+                check(tts.setVoice(tts.voices.orEmpty().first { it.name == chosen }) == TextToSpeech.SUCCESS) { "Could not select offline speech voice" }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
                     override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
@@ -111,11 +126,57 @@ internal class PlatformSpeechProvider(private val context: Context) {
         } catch (failure: Exception) {
             // Drain the main-thread stop before another worker can acquire this provider.
             val stopped = CountDownLatch(1)
-            handler.post { engine?.stop(); engine?.setOnUtteranceProgressListener(null); file.delete(); stopped.countDown() }
+            handler.post { (fallbackEngine ?: engine)?.stop(); (fallbackEngine ?: engine)?.setOnUtteranceProgressListener(null); file.delete(); stopped.countDown() }
             if (!stopped.await(5, TimeUnit.SECONDS)) closed = true
             throw failure
         }
     }
+
+    @Volatile private var chosenVoice: String? = null
+    @Volatile private var resolvedLanguage: String? = null
+
+    /** Worker thread: keep the default engine if it has an offline voice, else probe other installed engines. */
+    private fun resolveEngine(language: String, cancelled: () -> Boolean) {
+        if (resolvedLanguage == language && chosenVoice != null) return
+        fun <T> onMain(block: () -> T): T {
+            val done = CountDownLatch(1); val out = AtomicReference<Result<T>>()
+            handler.post { out.set(runCatching(block)); done.countDown() }
+            await(done, cancelled, 10, "Speech engine query")
+            return out.get().getOrThrow()
+        }
+        val base = checkNotNull(engine) { "Android speech engine is unavailable" }
+        val defaultEngine = onMain { base.defaultEngine }
+        val names = onMain { base.engines.map { it.name } }
+        val baseVoices = onMain { base.voices.orEmpty().map(::toLocalVoice) }
+        val choices = mutableListOf(SpeechEngineVoices(defaultEngine ?: "", baseVoices))
+        val probes = mutableMapOf<String, TextToSpeech>()
+        if (selectLocalSpeechVoice(baseVoices, language) == null) {
+            for (name in names.filter { it != defaultEngine }) {
+                val ready = CountDownLatch(1); val ok = AtomicReference(false)
+                val probe = onMain { TextToSpeech(context.applicationContext, { ok.set(it == TextToSpeech.SUCCESS); ready.countDown() }, name) }
+                val up = try { await(ready, cancelled, 5, "Speech engine $name initialization"); ok.get() } catch (e: IllegalStateException) { false }
+                if (!up) { handler.post { probe.shutdown() }; continue }
+                probes[name] = probe
+                choices += SpeechEngineVoices(name, onMain { probe.voices.orEmpty().map(::toLocalVoice) })
+            }
+        }
+        val pick = chooseSpeechEngine(defaultEngine, choices, language)
+            ?: run { probes.values.forEach { p -> handler.post { p.shutdown() } }
+                     throw IllegalStateException(noOfflineVoiceReason(language, defaultEngine, names)) }
+        val keep = probes[pick.packageName]
+        probes.filterKeys { it != pick.packageName }.values.forEach { p -> handler.post { p.shutdown() } }
+        fallbackEngine?.let { old -> handler.post { old.shutdown() } }
+        fallbackEngine = keep
+        chosenVoice = pick.voice; resolvedLanguage = language
+        activeEngineName = pick.packageName
+    }
+
+    /** Engine package that actually speaks, for UI reporting. */
+    @Volatile var activeEngineName: String? = null
+        private set
+
+    private fun toLocalVoice(it: android.speech.tts.Voice) = LocalSpeechVoice(it.name, it.locale.toLanguageTag(), it.isNetworkConnectionRequired,
+        !it.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED), it.latency)
 
     private fun await(latch: CountDownLatch, cancelled: () -> Boolean, seconds: Long, operation: String) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
@@ -129,6 +190,6 @@ internal class PlatformSpeechProvider(private val context: Context) {
     fun close() {
         closed = true
         initialized.countDown()
-        handler.post { engine?.stop(); engine?.shutdown(); engine = null }
+        handler.post { engine?.stop(); engine?.shutdown(); engine = null; fallbackEngine?.shutdown(); fallbackEngine = null }
     }
 }
