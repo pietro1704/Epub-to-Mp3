@@ -40,6 +40,7 @@ final class ReaderSettingsPresentation {
     /// Reader typography/theme/layout controls, presented as a floating
     /// modal sheet (mirrors `presentTOC()` / `showFootnotes()`).
     func presentReaderSettings() {
+        settings.useBookScopeByDefault()
         let controller = ReaderSettingsScreenController(settings: settings, isPDF: composition.contentSurface.kind == .pdf)
         controller.onChange = { [weak self] in
             self?.scheduleReaderSettingsUpdate()

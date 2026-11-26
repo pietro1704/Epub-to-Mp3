@@ -38,3 +38,4 @@ TocDownloadRefreshTests
 TocScreenControllerTests
 VoiceModelSettingsNavigationTests
 WCAGContrastTests
+BookReadingPreferencesTests
