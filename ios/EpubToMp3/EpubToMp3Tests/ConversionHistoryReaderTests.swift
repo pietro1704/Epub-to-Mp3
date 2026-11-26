@@ -32,6 +32,15 @@ final class ConversionHistoryReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.sessions.map(\.timestamp), ["new"])
     }
 
+    func testMissingHistoryFileIsAnEmptyHistory() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("history-missing-\(UUID().uuidString)/conversions.jsonl")
+        let snapshot = try ConversionHistoryReader.readLatest(from: url)
+        XCTAssertTrue(snapshot.sessions.isEmpty)
+        XCTAssertEqual(snapshot.bytesRead, 0)
+        XCTAssertFalse(snapshot.budgetExhausted)
+    }
+
     func testZeroLimitDoesNotOpenTheSource() throws {
         let snapshot = try ConversionHistoryReader.readLatest(from: URL(fileURLWithPath: "/unused-history-source"), limit: 0)
         XCTAssertTrue(snapshot.sessions.isEmpty)
