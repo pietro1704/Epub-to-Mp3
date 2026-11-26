@@ -27,6 +27,17 @@ final class MacReaderNarrationFollowing {
 
     private var scrollView: NSScrollView { composition.contentScrollView }
 
+    private lazy var highlight = ReaderAudioHighlightPresentation(
+        player: player, settings: settings,
+        surface: .init(
+            bookID: { [weak self] in self?.document.currentBookId },
+            chapter: { [weak self] in self.flatMap { $0.document.chapter(at: $0.document.selectedChapter) } },
+            renderedText: { [weak self] in (self?.scrollView.documentView as? NSTextView)?.string },
+            paint: { [weak self] sentence, word in
+                guard let self else { return }
+                MacNarrationPaint.apply(sentence: sentence, word: word, to: self.composition.textView)
+            }))
+
     init(document: MacReaderDocument, composition: MacReaderViewComposition, player: AudioPlayer,
          settings: AppSettings, showChapterIndex: @escaping (Int) -> Void,
          isUserInput: @escaping () -> Bool = MacReaderNarrationFollowing.currentEventIsUserInput) {
@@ -44,6 +55,7 @@ final class MacReaderNarrationFollowing {
         guard !isObserving else { return }
         isObserving = true
         follower.start { [weak self] in self?.refresh() }
+        highlight.observe()
         player.playbackClock.audioOutput.$position
             .throttle(for: .milliseconds(400), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.refresh() }
@@ -72,6 +84,7 @@ final class MacReaderNarrationFollowing {
     func stop() {
         observations.removeAll()
         follower.stop()
+        highlight.stop()
         isObserving = false
         player.readerPairing.release(owner: ObjectIdentifier(self))
     }
@@ -190,6 +203,36 @@ final class MacReaderNarrationFollowing {
         guard viewportHeight > 0 else { return 0 }
         let start = paginated ? (lineY / viewportHeight).rounded(.down) * viewportHeight : lineY - viewportHeight * 0.15
         return min(max(start, 0), maximum)
+    }
+}
+
+/// Temporary layout attributes tint the narrated passage without touching the text storage, so saved
+/// highlights, typography and the scroll position stay as they are.
+@MainActor
+private enum MacNarrationPaint {
+    static func apply(sentence: NSRange?, word: NSRange?, to textView: NSTextView) {
+        guard let manager = textView.layoutManager, let length = textView.textStorage?.length else { return }
+        manager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: length))
+        for (range, alpha) in [(sentence, 0.20), (word, 0.65)] {
+            guard let range, NSMaxRange(range) <= length else { continue }
+            manager.addTemporaryAttribute(.backgroundColor,
+                value: NSColor.systemYellow.withAlphaComponent(contrastSafeAlpha(alpha, at: range.location, in: textView)),
+                forCharacterRange: range)
+        }
+    }
+
+    private static func contrastSafeAlpha(_ preferred: Double, at location: Int, in textView: NSTextView) -> CGFloat {
+        let text = (textView.textStorage?.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor)
+            ?? textView.textColor ?? .labelColor
+        var components: (WCAGContrast.RGB?, WCAGContrast.RGB?, WCAGContrast.RGB?)
+        textView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            components = (text.srgbComponents, textView.backgroundColor.srgbComponents,
+                          NSColor.systemYellow.srgbComponents)
+        }
+        guard let foreground = components.0, let background = components.1, let tint = components.2 else {
+            return preferred
+        }
+        return ReaderHighlightContrast.alpha(preferred: preferred, tint: tint, text: foreground, background: background)
     }
 }
 #endif
