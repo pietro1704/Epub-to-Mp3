@@ -12,6 +12,7 @@ IOSMainReaderControllerTests
 InlineImageQuotingTests
 LanguageModelPlaybackTests
 LocalAudioSettingsScreenControllerTests
+ModelsByLanguageModelTests
 ModelsByLanguageTests
 ModelsLanguagePageTests
 ModelsLanguagesScreenIOSTests
@@ -39,4 +40,3 @@ TocDownloadRefreshTests
 TocScreenControllerTests
 VoiceModelSettingsNavigationTests
 WCAGContrastTests
-ModelsByLanguageModelTests
