@@ -70,6 +70,56 @@ final class MacReaderPageNumbersTests: XCTestCase {
         }
     }
 
+    /// MAC-READER-IMAGE-AFTER-HEADING-CLIP: a figure scaled to the page height that follows a heading must be shown
+    /// whole on one page, never cut at the bottom of the heading's page.
+    func testTallFigureAfterAHeadingIsNeverCut() async throws {
+        try await withReader(columns: 1) { textView, _ in
+            let scroll = try XCTUnwrap(textView.enclosingScrollView)
+            let window = try XCTUnwrap(textView.window)
+            let attachment = NSTextAttachment()
+            attachment.image = NSImage(size: NSSize(width: 653, height: 2200), flipped: false) { rect in
+                NSColor.systemOrange.setFill(); rect.fill()
+                return true
+            }
+            let chapter = NSMutableAttributedString(string: "Synthetic heading\n",
+                                                    attributes: [.font: NSFont.boldSystemFont(ofSize: 24)])
+            chapter.append(NSAttributedString(attachment: attachment))
+            chapter.append(NSAttributedString(
+                string: "\n" + String(repeating: "Text after the figure. ", count: 400),
+                attributes: [.font: NSFont.systemFont(ofSize: 18)]))
+            textView.textStorage?.setAttributedString(chapter)
+            // A real resize drives the reader's own fit and page mask.
+            window.setContentSize(NSSize(width: 1100, height: 660))
+            window.layoutIfNeeded()
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let manager = try XCTUnwrap(textView.layoutManager)
+            let container = try XCTUnwrap(textView.textContainer)
+            manager.ensureLayout(for: container)
+            let index = (textView.string as NSString).range(of: "\u{FFFC}").location
+            let glyph = manager.glyphIndexForCharacter(at: index)
+            let origin = textView.textContainerOrigin
+            let location = manager.location(forGlyphAt: glyph)
+            let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let figure = NSRect(x: origin.x + line.minX + location.x,
+                                y: origin.y + line.minY + location.y - attachment.bounds.height,
+                                width: attachment.bounds.width, height: attachment.bounds.height)
+            var wholeViews = 0
+            for page in 1...3 {
+                let visible = scroll.contentView.documentVisibleRect
+                let mask = textView.subviews.first { $0.accessibilityIdentifier() == "reader.pageMask" && !$0.isHidden }
+                let bottom = min(visible.maxY, mask?.frame.minY ?? visible.maxY)
+                if figure.maxY > visible.minY + 0.5, figure.minY < bottom - 0.5 {
+                    let whole = figure.minY >= visible.minY - 0.5 && figure.maxY <= bottom + 0.5
+                    XCTAssertTrue(whole, "page \(page): figure \(figure) is cut by the readable area \(visible.minY)...\(bottom)")
+                    if whole { wholeViews += 1 }
+                }
+                XCTAssertEqual(textView.onPageTap?(true), true)
+                try await Task.sleep(nanoseconds: 200_000_000)
+            }
+            XCTAssertEqual(wholeViews, 1, "the figure is shown whole exactly once")
+        }
+    }
+
     func testIndicatorFollowsTheSwitchAndTheLayout() async throws {
         try await withReader(showsNumbers: false) { _, indicator in
             XCTAssertNil(indicator(), "switched off")
