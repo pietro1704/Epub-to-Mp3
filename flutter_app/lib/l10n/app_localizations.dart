@@ -1647,6 +1647,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Audio failed'**
   String get tocAudioFailed;
+
+  /// No description provided for @readerHighlight.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlight'**
+  String get readerHighlight;
+
+  /// No description provided for @readerAddNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Note'**
+  String get readerAddNote;
+
+  /// No description provided for @readerRemoveHighlight.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove highlight'**
+  String get readerRemoveHighlight;
 }
 
 class _AppLocalizationsDelegate

@@ -873,4 +873,13 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get tocAudioFailed => 'Áudio com falha';
+
+  @override
+  String get readerHighlight => 'Marcar trecho';
+
+  @override
+  String get readerAddNote => 'Adicionar nota';
+
+  @override
+  String get readerRemoveHighlight => 'Remover marcação';
 }

@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/app_settings.dart';
 
 import '../models/ebook_fulltext.dart';
+import '../models/bookmark.dart';
+import '../l10n/app_localizations.dart';
 import '../services/reader/viewport_paginator.dart';
 
 import '../state/providers.dart';
@@ -35,6 +37,9 @@ class ReaderView extends ConsumerStatefulWidget {
 
   /// Source UTF-16 offset chosen with "Play from here" on selected text.
   final ValueChanged<int>? onPlayFromHere;
+
+  /// Enables saved highlights and notes on selected text for this book.
+  final String? bookId;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
@@ -58,6 +63,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.measuredHighlight,
     this.onVisibleTextOffset,
     this.onPlayFromHere,
+    this.bookId,
     required this.spans,
     this.currentSentenceId,
     this.onJumpToSentence,
@@ -253,6 +259,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               headingStyle: headingStyle,
               onVisibleTextOffset: widget.onVisibleTextOffset,
               onPlayFromHere: widget.onPlayFromHere,
+              savedHighlights: _savedHighlights(),
+              onHighlight: widget.bookId == null ? null : _saveHighlight,
+              onAddNote: widget.bookId == null ? null : _saveNote,
+              onRemoveHighlight: widget.bookId == null
+                  ? null
+                  : ref.read(bookmarkStoreProvider).remove,
               onCenterTap: widget.onCenterTap,
               onAutoHideChrome: widget.onAutoHideChrome,
               onNextChapter: widget.onAdvanceChapter,
@@ -402,6 +414,72 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         const SizedBox(height: 12),
       ],
     );
+  }
+
+  List<ReaderSavedHighlight> _savedHighlights() {
+    final book = widget.bookId;
+    if (book == null) return const [];
+    return [
+      for (final h in ref
+          .watch(bookmarkStoreProvider)
+          .bookmarksForChapter(book, widget.chapter.index)
+          .where((b) => b.isHighlight))
+        ReaderSavedHighlight(
+          id: h.id,
+          range: TextRange(start: h.startChar, end: h.endChar),
+          color: _highlightColor(h.color),
+        ),
+    ];
+  }
+
+  static Color _highlightColor(HighlightColor color) => switch (color) {
+    HighlightColor.yellow => const Color(0x66ffcc00),
+    HighlightColor.blue => const Color(0x6642a5f5),
+    HighlightColor.green => const Color(0x6666bb6a),
+    HighlightColor.pink => const Color(0x66f06292),
+    HighlightColor.orange => const Color(0x66ff9800),
+  };
+
+  Bookmark? _saveHighlight(TextRange range) {
+    final book = widget.bookId;
+    final text = widget.chapter.text;
+    if (book == null || range.end > text.length) return null;
+    return ref.read(bookmarkStoreProvider).addBookmark(
+      bookId: book,
+      chapterIndex: widget.chapter.index,
+      chapterTitle: widget.chapter.displayTitle,
+      startChar: range.start,
+      endChar: range.end,
+      selectedText: text.substring(range.start, range.end),
+    );
+  }
+
+  Future<void> _saveNote(TextRange range) async {
+    final controller = TextEditingController();
+    final t = AppLocalizations.of(context)!;
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(t.readerAddNote),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: null,
+          decoration: InputDecoration(hintText: t.addNoteHint),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog), child: Text(t.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, controller.text.trim()),
+            child: Text(t.save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (note == null || note.isEmpty) return;
+    final saved = _saveHighlight(range);
+    if (saved != null) ref.read(bookmarkStoreProvider).updateNote(saved.id, note);
   }
 
   TextRange? _richHighlight() {

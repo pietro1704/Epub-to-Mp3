@@ -396,6 +396,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                                 .getInt('readPos_offset_${widget.bookId}') ??
                             0
                       : 0),
+              bookId: widget.bookId,
               onPlayFromHere: widget.onListenFrom == null
                   ? null
                   : (utf16) => _playFromHere(chapter, utf16),

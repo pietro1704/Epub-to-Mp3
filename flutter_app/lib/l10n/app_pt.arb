@@ -296,5 +296,8 @@
   "tocRemoveDownloadsMessage": "Todos os MP3s baixados deste livro serão deletados.",
   "tocAudioReady": "Áudio pronto",
   "tocAudioConverting": "Convertendo áudio",
-  "tocAudioFailed": "Áudio com falha"
+  "tocAudioFailed": "Áudio com falha",
+  "readerHighlight": "Marcar trecho",
+  "readerAddNote": "Adicionar nota",
+  "readerRemoveHighlight": "Remover marcação"
 }

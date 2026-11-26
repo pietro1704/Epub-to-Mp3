@@ -203,6 +203,92 @@ void main() {
         reason: 'the start of the second paragraph, not the first');
   });
 
+  Future<void> pumpSelectionMenu(
+    WidgetTester tester, {
+    List<ReaderSavedHighlight> saved = const [],
+    ValueChanged<TextRange>? onHighlight,
+    ValueChanged<TextRange>? onAddNote,
+    ValueChanged<String>? onRemoveHighlight,
+  }) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    const html = '<p>First paragraph is here.</p><p>Second paragraph follows now.</p>';
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: RichReaderSurface(
+              chapter: FulltextChapter(index: 0, text: text, html: html),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 20),
+              headingStyle: const TextStyle(fontSize: 24),
+              onPlayFromHere: (_) {},
+              savedHighlights: saved,
+              onHighlight: onHighlight,
+              onAddNote: onAddNote,
+              onRemoveHighlight: onRemoveHighlight,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final second = tester.getRect(find.textContaining('Second', findRichText: true));
+    final word = second.centerLeft + const Offset(20, 0);
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    await tester.tapAt(word, buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('selected text offers Highlight and Add Note with the selected source range', (tester) async {
+    final highlighted = <TextRange>[];
+    final noted = <TextRange>[];
+    await pumpSelectionMenu(tester, onHighlight: highlighted.add, onAddNote: noted.add);
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    final start = text.indexOf('Second');
+
+    await tester.tap(find.text('Highlight'));
+    await tester.pumpAndSettle();
+    expect(highlighted, [TextRange(start: start, end: start + 'Second'.length)]);
+
+    await pumpSelectionMenu(tester, onHighlight: highlighted.add, onAddNote: noted.add);
+    await tester.tap(find.text('Add Note'));
+    await tester.pumpAndSettle();
+    expect(noted, [TextRange(start: start, end: start + 'Second'.length)]);
+  });
+
+  testWidgets('a selection over a saved highlight offers Remove highlight instead', (tester) async {
+    final removed = <String>[];
+    const text = 'First paragraph is here.\nSecond paragraph follows now.';
+    final start = text.indexOf('Second');
+    await pumpSelectionMenu(
+      tester,
+      saved: [
+        ReaderSavedHighlight(
+          id: 'h1',
+          range: TextRange(start: start, end: start + 6),
+          color: const Color(0x66ffcc00),
+        ),
+      ],
+      onHighlight: (_) {},
+      onRemoveHighlight: removed.add,
+    );
+    expect(find.text('Highlight'), findsNothing);
+    await tester.tap(find.text('Remove highlight'));
+    await tester.pumpAndSettle();
+    expect(removed, ['h1']);
+  });
+
   // Linux run 2026-11-25: in the default paginated layout a double-click or a drag on the
   // text never selected it, so Play from here was unreachable with a mouse.
   testWidgets('paginated layout: a single mouse click on the page centre toggles the chrome once the double-click window passes', (tester) async {
