@@ -48,7 +48,7 @@ final class ReaderFontChoiceController: UITableViewController {
         guard family.isAvailable(in: ReaderFontCatalog.availableFamilies) else { return }
         settings.readerFontFamily = family
         onSelection()
-        tableView.reloadData()
+        navigationController?.popViewController(animated: true)
     }
 }
 #endif
