@@ -19,6 +19,8 @@ private struct SourceFingerprint: Equatable {
 @MainActor
 final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     let form = MacConversionForm()
+    /// Opens the conversions list, which has no tab of its own.
+    var onShowJobs: () -> Void = {}
     private let settings: AppSettings
     private let library: LibraryStore
     private let viewModel: ConvertViewModel
@@ -71,7 +73,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         super.viewDidLoad()
         for (button, action) in [(form.pickFile, #selector(pickFile)), (form.pronunciation, #selector(editPronunciation)),
                                  (form.submit, #selector(startConversion)), (form.cancel, #selector(cancelConversion)),
-                                 (form.revealResult, #selector(revealResult))] {
+                                 (form.revealResult, #selector(revealResult)), (form.history, #selector(showJobs))] {
             button.target = self
             button.action = action
         }
@@ -334,6 +336,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         for label in [form.status, form.failure, form.result] { label.isHidden = label.stringValue.isEmpty }
     }
 
+    @objc private func showJobs() { onShowJobs() }
     @objc private func pickFile() {
         guard !viewModel.isSubmitting, !isPreparingSource, let window = view.window else { return }
         let panel = NSOpenPanel()

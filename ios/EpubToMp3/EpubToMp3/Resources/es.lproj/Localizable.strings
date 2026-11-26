@@ -254,7 +254,6 @@
 
 /* === Navegación (barra lateral / pestañas) === */
 "nav.library" = "Biblioteca";
-"nav.conversions" = "Conversiones";
 "nav.settings" = "Ajustes";
 "nav.toggleSidebar" = "Mostrar u ocultar navegación";
 
