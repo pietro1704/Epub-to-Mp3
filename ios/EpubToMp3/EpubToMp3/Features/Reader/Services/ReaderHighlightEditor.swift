@@ -58,7 +58,12 @@ final class ReaderHighlightEditor {
 
     @discardableResult
     func addNote(_ selection: Selection, note: String?) -> Bookmark {
-        write(selection, note: note)
+        // A note inside a saved highlight belongs to it; a second record would paint twice.
+        if let existing = selection.existing {
+            guard let note, !note.isEmpty else { return existing }
+            if let updated = store.setNote(note, id: existing.id) { return updated }
+        }
+        return write(selection, note: note)
     }
 
     /// Playing from inside a saved highlight starts at the whole highlight, not at the

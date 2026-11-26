@@ -8,6 +8,25 @@ import UIKit
 
 @MainActor
 final class ReaderSelectionWiringTests: XCTestCase {
+    /// READER-REOPEN-DOUBLE-HIGHLIGHT: a note on a highlighted passage must not leave two overlapping saved marks.
+    func testAddingANoteInsideAHighlightKeepsOneSavedMark() throws {
+        let suite = "note-inside-highlight-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let editor = ReaderHighlightEditor(store: BookmarkStore(defaults: defaults))
+        let text = NSAttributedString(string: "Before selected passage after.")
+        func select(_ part: String) throws -> ReaderHighlightEditor.Selection {
+            try XCTUnwrap(editor.selection(range: (text.string as NSString).range(of: part), in: text,
+                                           bookID: "synthetic", chapterIndex: 0, chapterTitle: "One"))
+        }
+        editor.toggleHighlight(try select("selected passage"))
+        editor.addNote(try select("passage"), note: "a note")
+        let marks = editor.highlights(bookID: "synthetic", chapterIndex: 0)
+        XCTAssertEqual(marks.count, 1, "one mark on the passage")
+        XCTAssertEqual(marks.first?.selectedText, "selected passage")
+        XCTAssertEqual(marks.first?.note, "a note")
+    }
+
     func testNativeHighlightActionPersistsTheDisplayedSelectionAndRepaintsIt() throws {
         let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Before selected passage after.")])
         harness.installTeardown(in: self)
