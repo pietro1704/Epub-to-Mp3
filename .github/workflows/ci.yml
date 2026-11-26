@@ -106,7 +106,7 @@ jobs:
                 path.match?(/\Ascripts\/(?:native_[a-z_]+|test_native_[a-z_]+|mac_build_budget|test_mac_build_budget|test_device_workflow_entrypoint|ios_simulator_smoke)\.(?:rb|swift)\z/)
               gate_script = %w[scripts/fetch_onnxruntime_macos.rb scripts/prepare_onnxruntime_macos.rb scripts/capture_native_test_metadata.rb].include?(path)
               scopes['native_host'] ||= native_host
-              scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || native_host || gate_script || path.start_with?('ios/EpubToMp3/') || path == '.github/workflows/ios-simulator-tests.yml'
+              scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || native_host || gate_script || path.start_with?('ios/EpubToMp3/') || %w[.github/workflows/ios-simulator-tests.yml .github/ios-simulator-test-classes.txt].include?(path)
               scopes['lockfile'] ||= path == 'Cargo.lock' || path.end_with?('Cargo.toml') || path == '.github/workflows/rust-dependency-audit.yml'
             end
           end

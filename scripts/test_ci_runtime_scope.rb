@@ -129,6 +129,7 @@ class CiRuntimeScopeTest < Minitest::Test
       'ruby_app/rails_gateway/config/routes.rb' => %w[rails], 'scripts/host_tool.rb' => [], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
+      '.github/ios-simulator-test-classes.txt' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
       'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
       'Cargo.lock' => %w[rust apple flutter android rails lockfile],

@@ -308,9 +308,9 @@ plus an iOS compile do not cover it. On 2026-11-23, #1353 passed that evidence
 and crashed on the iPhone 16e at the first tap, because UIKit rejects two cancel
 actions. The PR gate now includes `iOS Simulator UIKit tests` (an iPhone Simulator on a hosted
 runner, selected by the `apple` scope), which runs the UIKit controller/alert test
-classes listed in `.github/workflows/ios-simulator-tests.yml`. Add a new iOS-only test
-class to that list; code with no test there still needs a device run and a place in the
-device plan.
+classes listed in `.github/ios-simulator-test-classes.txt` (one per line, sorted). Add a
+new iOS-only test class to that file; code with no test there still needs a device run and
+a place in the device plan.
 
 Attach the visual evidence for a visible change before opening its PR ready,
 because ready PRs merge automatically.
