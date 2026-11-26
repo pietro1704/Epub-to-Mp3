@@ -137,6 +137,11 @@ module DeviceFarm
     { 'ANDROID_ADB_SERVER_PORT' => ADB_PORT }
   end
 
+  # STUB (red): always the default server.
+  def self.pick_server(_serial, ports, _reader)
+    ports.first
+  end
+
   def self.adb(serial, *args, timeout: 60)
     safe!(args)
     capture(env, ['adb', '-s', resolve(serial), *args], timeout: timeout, label: "adb -s #{serial} #{args.join(' ')}")
