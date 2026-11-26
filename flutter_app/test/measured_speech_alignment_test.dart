@@ -110,6 +110,7 @@ void main() {
       await player.setQueue([
         const ChapterProgress(index: 7, name: 'Seven', status: 'completed'),
       ]);
+      await player.play(); // a passage is painted only for narration that has played
       final first = Completer<MeasuredSpeechAlignment>();
       final second = Completer<MeasuredSpeechAlignment>();
       final binding = MeasuredPlaybackBinding(
@@ -214,6 +215,66 @@ void main() {
           isNull,
         );
       }
+    });
+  });
+
+  // Parity with the Apple reader (#1636): the narrated passage stays painted while paused and goes
+  // only on a jump or seek (the book/chapter change and follow-audio-off cases are covered above).
+  group('highlight while paused', () {
+    Future<(ItemPlayer, MeasuredPlaybackBinding, List<TextRange?>)> rig() async {
+      final player = ItemPlayer()
+        ..item = Uri.file('/a.mp3')
+        ..currentBookId = 'book';
+      await player.setQueue([
+        const ChapterProgress(index: 7, name: 'Seven', status: 'completed'),
+      ]);
+      final binding = MeasuredPlaybackBinding(
+        player: player,
+        bookId: 'book',
+        chapterIndex: 7,
+        source: 'Ação 🐧',
+        read: (_) async => MeasuredSpeechAlignment.parse(tag([passage()])),
+      );
+      final changes = <TextRange?>[];
+      binding.changes.listen(changes.add);
+      binding.update(2.2);
+      await Future<void>.delayed(Duration.zero);
+      return (player, binding, changes);
+    }
+
+    test('pausing keeps the narrated passage painted', () async {
+      final (player, binding, changes) = await rig();
+      await player.play();
+      await player.seek(const Duration(milliseconds: 2200));
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.last, const TextRange(start: 0, end: 4));
+      await player.pause();
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.last, const TextRange(start: 0, end: 4));
+      await binding.dispose();
+    });
+
+    test('a seek while paused clears it, and playing again paints the new place', () async {
+      final (player, binding, changes) = await rig();
+      await player.play();
+      await player.seek(const Duration(milliseconds: 2200));
+      await player.pause();
+      await Future<void>.delayed(Duration.zero);
+      await player.seek(const Duration(milliseconds: 2700));
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.last, isNull);
+      await player.play();
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.last, const TextRange(start: 5, end: 7));
+      await binding.dispose();
+    });
+
+    test('a book that was never narrated shows no passage while paused', () async {
+      final (player, binding, changes) = await rig();
+      await player.seek(const Duration(milliseconds: 2200));
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.whereType<TextRange>(), isEmpty);
+      await binding.dispose();
     });
   });
 }
