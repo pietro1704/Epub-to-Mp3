@@ -1156,6 +1156,18 @@ abstract class AppLocalizations {
   /// **'Allow configured secondary for this conversion'**
   String get ttsAllowJobSecondary;
 
+  /// No description provided for @activeVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Active voice: {name}'**
+  String activeVoice(String name);
+
+  /// No description provided for @activeVoiceSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Active voice: {name} (system voice)'**
+  String activeVoiceSystem(String name);
+
   /// No description provided for @ttsActualVoices.
   ///
   /// In en, this message translates to:
