@@ -221,6 +221,8 @@ extension _InstantReaderTools on _InstantReaderViewState {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (widget.downloadActions != null)
+                      _downloadMenu(audio),
                     if (audio.isNotEmpty && bookId != null)
                       IconButton(
                         tooltip: t.tocRemoveDownloads,
@@ -278,6 +280,40 @@ extension _InstantReaderTools on _InstantReaderViewState {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _downloadMenu(Map<int, ChapterAudioState> audio) {
+    final t = AppLocalizations.of(context)!;
+    final actions = contentsDownloadActions(audio, widget.fulltext.chapters.length);
+    if (actions.isEmpty) return const SizedBox.shrink();
+    final bulk = widget.downloadActions!;
+    return PopupMenuButton<ContentsDownloadAction>(
+      key: const ValueKey('contents-download-menu'),
+      icon: const Icon(Icons.more_vert),
+      onSelected: (action) {
+        switch (action) {
+          case ContentsDownloadAction.downloadAll:
+            unawaited(bulk.downloadAll());
+          case ContentsDownloadAction.cancel:
+            unawaited(bulk.cancel());
+          case ContentsDownloadAction.retryFailed:
+            final first = firstFailedChapter(audio);
+            if (first != null) unawaited(bulk.retryFrom(first));
+        }
+        Navigator.pop(context);
+      },
+      itemBuilder: (_) => [
+        for (final action in actions)
+          PopupMenuItem(
+            value: action,
+            child: Text(switch (action) {
+              ContentsDownloadAction.downloadAll => t.tocDownloadAll,
+              ContentsDownloadAction.cancel => t.tocCancelDownloads,
+              ContentsDownloadAction.retryFailed => t.tocRetryFailed,
+            }),
+          ),
+      ],
     );
   }
 

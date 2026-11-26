@@ -14,6 +14,7 @@ class _BookReaderBody extends ConsumerWidget {
     required this.onListeningPosition,
     required this.onNarrationChanged,
     required this.onListenFrom,
+    this.downloadActions,
   });
 
   final String bookId;
@@ -32,6 +33,7 @@ class _BookReaderBody extends ConsumerWidget {
   )
   onNarrationChanged;
   final Future<void> Function(ReaderListeningPosition position) onListenFrom;
+  final ReaderDownloadActions? downloadActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -126,6 +128,7 @@ class _BookReaderBody extends ConsumerWidget {
                   fulltext: fulltext!,
                   onNarrationChanged: onNarrationChanged,
                   onListenFrom: onListenFrom,
+                  downloadActions: downloadActions,
                   onVisibleTextOffset: (chapter, offset) {
                     if (offset == null ||
                         chapter < 0 ||

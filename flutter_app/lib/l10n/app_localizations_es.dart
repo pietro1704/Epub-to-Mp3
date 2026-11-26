@@ -876,6 +876,15 @@ class AppLocalizationsEs extends AppLocalizations {
   String get convertStart => 'Iniciar conversión';
 
   @override
+  String get tocDownloadAll => 'Descargar sin conexión';
+
+  @override
+  String get tocCancelDownloads => 'Cancelar descargas';
+
+  @override
+  String get tocRetryFailed => 'Reintentar capítulos fallidos';
+
+  @override
   String get tocRemoveDownloads => 'Quitar descargas';
 
   @override

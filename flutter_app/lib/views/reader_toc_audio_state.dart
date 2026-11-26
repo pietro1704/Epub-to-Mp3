@@ -21,3 +21,43 @@ Map<int, ChapterAudioState> chapterAudioStates(LocalConversionJob? job) {
   }
   return states;
 }
+
+/// What the reader needs from the playback session for the contents menu.
+class ReaderDownloadActions {
+  const ReaderDownloadActions({
+    required this.downloadAll,
+    required this.cancel,
+    required this.retryFrom,
+  });
+  final Future<void> Function() downloadAll;
+  final Future<void> Function() cancel;
+  final Future<void> Function(int chapterIndex) retryFrom;
+}
+
+/// Bulk audio actions of the contents menu (mirrors the 16e contents "more" menu).
+enum ContentsDownloadAction { downloadAll, cancel, retryFailed }
+
+/// The actions that apply to [states] for a book of [chapterCount] chapters:
+/// Cancel while a chapter converts (Download waits for it to end), Download
+/// while some chapter has no audio, Retry when a chapter failed.
+List<ContentsDownloadAction> contentsDownloadActions(
+  Map<int, ChapterAudioState> states,
+  int chapterCount,
+) {
+  final converting = states.containsValue(ChapterAudioState.converting);
+  final ready = states.values.where((s) => s == ChapterAudioState.ready).length;
+  return [
+    if (converting) ContentsDownloadAction.cancel,
+    if (!converting && ready < chapterCount) ContentsDownloadAction.downloadAll,
+    if (states.containsValue(ChapterAudioState.failed)) ContentsDownloadAction.retryFailed,
+  ];
+}
+
+/// The lowest 0-based chapter index whose conversion failed, if any.
+int? firstFailedChapter(Map<int, ChapterAudioState> states) {
+  final failed = [
+    for (final e in states.entries)
+      if (e.value == ChapterAudioState.failed) e.key,
+  ]..sort();
+  return failed.isEmpty ? null : failed.first;
+}

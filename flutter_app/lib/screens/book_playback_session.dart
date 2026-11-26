@@ -92,6 +92,18 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
 
   /// "Play from here": listening restarts at the chosen position, replacing a
   /// job that is already running, exactly like a Play press from the reader.
+  /// Converts the whole book without starting playback (contents menu).
+  Future<void> _downloadAllAudio() =>
+      _startLocalConversion(playbackChapterIndex: 0, prepareOnly: true);
+
+  Future<void> _cancelAudioDownloads() async {
+    await _activeConversionService?.cancel();
+  }
+
+  /// Converts again from the first chapter that failed, without playing.
+  Future<void> _retryFailedAudio(int chapterIndex) =>
+      _startLocalConversion(playbackChapterIndex: chapterIndex, prepareOnly: true);
+
   Future<void> _listenFrom(ReaderListeningPosition position) async {
     _readerListeningPosition = position;
     await _startConversion();

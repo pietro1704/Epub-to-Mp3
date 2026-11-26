@@ -874,6 +874,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get convertStart => 'Start conversion';
 
   @override
+  String get tocDownloadAll => 'Download for offline';
+
+  @override
+  String get tocCancelDownloads => 'Cancel downloads';
+
+  @override
+  String get tocRetryFailed => 'Retry failed chapters';
+
+  @override
   String get tocRemoveDownloads => 'Remove downloads';
 
   @override

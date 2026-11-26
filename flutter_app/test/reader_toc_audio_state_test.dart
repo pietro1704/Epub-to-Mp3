@@ -33,4 +33,29 @@ void main() {
     );
     expect(chapterAudioStates(null), isEmpty);
   });
+
+  group('contents download actions', () {
+    const r = ChapterAudioState.ready, c = ChapterAudioState.converting, f = ChapterAudioState.failed;
+
+    test('nothing downloaded offers only Download', () {
+      expect(contentsDownloadActions(const {}, 3), [ContentsDownloadAction.downloadAll]);
+    });
+
+    test('converting offers Cancel and Download stays hidden while it runs', () {
+      expect(contentsDownloadActions({0: r, 1: c}, 3), [ContentsDownloadAction.cancel]);
+    });
+
+    test('failed chapters add Retry and the first failed chapter is known', () {
+      expect(contentsDownloadActions({0: r, 1: f}, 3), [
+        ContentsDownloadAction.downloadAll,
+        ContentsDownloadAction.retryFailed,
+      ]);
+      expect(firstFailedChapter({0: r, 2: f, 1: f}), 1);
+      expect(firstFailedChapter({0: r}), isNull);
+    });
+
+    test('a fully ready book offers no download', () {
+      expect(contentsDownloadActions({0: r, 1: r}, 2), isEmpty);
+    });
+  });
 }
