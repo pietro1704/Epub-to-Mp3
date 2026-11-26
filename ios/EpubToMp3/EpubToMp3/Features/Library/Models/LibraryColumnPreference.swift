@@ -8,6 +8,9 @@ struct LibraryColumnPreference {
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    /// The count the user picked, or `nil` while the default density applies.
+    var chosenColumns: Int? { defaults.object(forKey: Self.key) == nil ? nil : requestedColumns }
+
     var requestedColumns: Int {
         get {
             guard defaults.object(forKey: Self.key) != nil else { return 2 }

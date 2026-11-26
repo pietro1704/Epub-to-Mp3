@@ -3,7 +3,10 @@ import AppKit
 
 /// Responsive requested columns, including the width of a non-overlay scroller.
 final class MacLibraryCollectionLayout: NSCollectionViewFlowLayout {
-    var requestedColumns = 2
+    /// The column count picked in the menu; `nil` lets the window width decide.
+    var requestedColumns: Int?
+    /// With no picked count, a wider window adds columns so tiles never grow past this.
+    static let maximumAutomaticTileWidth: CGFloat = 220
     override init() {
         super.init()
         minimumInteritemSpacing = 18
@@ -19,8 +22,11 @@ final class MacLibraryCollectionLayout: NSCollectionViewFlowLayout {
         guard let collectionView else { return }
         let viewportWidth = collectionView.enclosingScrollView?.contentView.bounds.width
             ?? collectionView.bounds.width
-        let metrics = LibraryGridLayoutMetrics(spacing: minimumInteritemSpacing,
-            sectionInset: max(sectionInset.left, sectionInset.right), requestedColumns: requestedColumns)
+        let inset = max(sectionInset.left, sectionInset.right)
+        let capped = ((viewportWidth - 2 * inset + minimumInteritemSpacing)
+            / (Self.maximumAutomaticTileWidth + minimumInteritemSpacing)).rounded(.up)
+        let metrics = LibraryGridLayoutMetrics(spacing: minimumInteritemSpacing, sectionInset: inset,
+            requestedColumns: requestedColumns ?? max(2, Int(capped)))
         let columns = metrics.columnCount(forWidth: viewportWidth)
         let width = floor(metrics.tileWidth(forWidth: viewportWidth, columns: columns))
         let size = NSSize(width: width, height: width * 1.5 + 110)

@@ -294,3 +294,37 @@ final class MacLibraryCollectionLayoutTests: XCTestCase, NSCollectionViewDataSou
     }
 }
 #endif
+
+#if os(macOS)
+@MainActor
+final class MacLibraryTileSizeTests: XCTestCase {
+    /// MAC-LIBRARY-TILE-SIZE: with the default density, a wide window adds columns instead of growing the tiles.
+    func testWideWindowAddsColumnsAndCapsTheTileWidth() {
+        for width: CGFloat in [1100, 1440, 2560] {
+            let size = itemSize(forWidth: width)
+            XCTAssertLessThanOrEqual(size.width, 240, "tile width in a \(width) pt window")
+            XCTAssertGreaterThan(size.width, 160, "tiles stay readable in a \(width) pt window")
+        }
+    }
+
+    func testNarrowWindowKeepsTwoColumns() {
+        XCTAssertEqual(itemSize(forWidth: 390).width, floor((390 - 40 - 18) / 2))
+    }
+
+    /// A column count picked in the menu is rendered as picked.
+    func testExplicitColumnChoiceIsKeptOnAWideWindow() {
+        XCTAssertEqual(itemSize(forWidth: 1440, requested: 2).width, floor((1440 - 40 - 18) / 2))
+    }
+
+    private func itemSize(forWidth width: CGFloat, requested: Int? = nil) -> NSSize {
+        let layout = MacLibraryCollectionLayout()
+        if let requested { layout.requestedColumns = requested }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 800))
+        let collection = NSCollectionView(frame: scroll.bounds)
+        collection.collectionViewLayout = layout
+        scroll.documentView = collection
+        layout.updateItemSize()
+        return layout.itemSize
+    }
+}
+#endif
