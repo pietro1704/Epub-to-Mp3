@@ -135,7 +135,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.delegate = self
         collectionView.dataSource = self
         let layout = MacLibraryCollectionLayout()
-        layout.requestedColumns = columns.requestedColumns
+        layout.requestedColumns = columns.chosenColumns
         collectionView.collectionViewLayout = layout
         scrollView.documentView = collectionView
         view.addSubview(scrollView)
@@ -205,7 +205,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
                                   action: #selector(changeColumns(_:)), keyEquivalent: "")
             item.target = self
             item.tag = count
-            item.state = columns.requestedColumns == count ? .on : .off
+            item.state = columns.chosenColumns == count ? .on : .off
             columnMenu.addItem(item)
         }
         let columnItem = NSMenuItem(title: L10n.string("library.columns"), action: nil, keyEquivalent: "")
