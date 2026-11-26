@@ -84,7 +84,7 @@ final class MacReaderPageNumbersTests: XCTestCase {
         for (style, slides) in [(PageTurnStyle.slide, true), (.flip, true), (.none, false)] {
             try await withReader(turnStyle: style) { textView, indicator in
                 let root = try XCTUnwrap(textView.window?.contentView)
-                func outgoing() -> NSView? { self.descendant(of: root, identifier: "reader.pageSlide.outgoing") }
+                @MainActor func outgoing() -> NSView? { self.descendant(of: root, identifier: "reader.pageSlide.outgoing") }
                 let first = try XCTUnwrap(indicator()).stringValue
                 XCTAssertEqual(textView.onPageTap?(true), true)
                 XCTAssertEqual(outgoing() != nil, slides, "style \(style.rawValue)")
