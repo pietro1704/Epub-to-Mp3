@@ -163,6 +163,20 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         XCTAssertNil(control(in: controller.view, identifier: "settings.pageNumbers"))
     }
 
+    /// PARITY-MAC-SETTINGS-5: Playback has the audio rate, kept for the next launch, as on Linux.
+    func testPlaybackSectionKeepsTheChosenAudioRate() throws {
+        let settings = AppSettings(defaults: defaults)
+        let (controller, window) = host(settings)
+        defer { window.close() }
+        let popup = try XCTUnwrap(control(in: controller.view, identifier: "settings.audioRate") as? NSPopUpButton,
+                                  "missing audio rate")
+        XCTAssertEqual(popup.titleOfSelectedItem, PlaybackRate.x100.label)
+        popup.selectItem(withTitle: PlaybackRate.x150.label)
+        popup.sendAction(popup.action, to: popup.target)
+        XCTAssertEqual(AppSettings(defaults: defaults).playbackRate, .x150)
+        attach(window, name: "mac-settings-audio-rate")
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),
