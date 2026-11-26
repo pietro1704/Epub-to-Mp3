@@ -11,13 +11,29 @@ final class ReaderFontChoiceControllerTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var selections = 0
-        let previous = UIViewController()
+        let previous = ReaderSettingsScreenController(settings: AppSettings(defaults: defaults))
         let navigation = UINavigationController(rootViewController: previous)
         let picker = ReaderFontChoiceController(settings: AppSettings(defaults: defaults)) { selections += 1 }
         navigation.pushViewController(picker, animated: false)
         picker.loadViewIfNeeded()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        func capture(_ name: String) {
+            RunLoop.main.run(until: Date().addingTimeInterval(1))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        capture("font-picker-open")
         picker.tableView(picker.tableView, didSelectRowAt: IndexPath(row: 0, section: 0))
         RunLoop.main.run(until: Date().addingTimeInterval(1))
+        capture("font-picker-after-choice")
         XCTAssertEqual(selections, 1)
         XCTAssertTrue(navigation.topViewController === previous, "the picker must close after the choice")
     }
