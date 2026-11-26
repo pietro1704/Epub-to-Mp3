@@ -79,6 +79,63 @@ final class MacReaderNarrationFollowingTests: XCTestCase {
         return TextRig(harness: harness, following: following, input: input)
     }
 
+    private final class OutputItem {}
+
+    /// Two advancing samples: the first only arms the cursor, the second confirms audible output.
+    private func output(_ player: AudioPlayer, item: OutputItem, at seconds: TimeInterval) {
+        for time in [seconds, seconds + 0.1] {
+            player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: time, isOutputting: true,
+                position: .init(chapterIndex: 0, seconds: time, duration: 3_000, sentenceID: nil,
+                                itemSeconds: time, itemDuration: 3_000))
+        }
+    }
+
+    /// MAC-NARRATION-HIGHLIGHT: the follow-audio setting had no effect because the Mac reader never highlighted.
+    func testTextReaderHighlightsTheNarratedSentenceOnlyWhileFollowAudioIsEnabled() async throws {
+        let rig = try makeTextRig()
+        let player = rig.harness.player, settings = rig.harness.settings
+        let savedTracking = settings.readerAudioTrackingEnabled
+        addTeardownBlock { @MainActor in settings.readerAudioTrackingEnabled = savedTracking }
+        settings.readerAudioTrackingEnabled = true
+        let text = rig.harness.composition.textView
+        let manager = try XCTUnwrap(text.layoutManager)
+        func isHighlighted(_ location: Int) -> Bool {
+            manager.temporaryAttribute(.backgroundColor, atCharacterIndex: location, effectiveRange: nil) != nil
+        }
+        let item = OutputItem()
+        try narrate(player, bookID: rig.harness.id, textOffset: 0)
+        var time = 0.1
+        let highlighted = await eventually {
+            time += 0.2
+            output(player, item: item, at: time)
+            return isHighlighted(0)
+        }
+        XCTAssertTrue(highlighted, "The sentence being narrated must be highlighted")
+        XCTAssertFalse(isHighlighted(text.string.utf16.count - 3), "Only the narrated passage is highlighted")
+
+        settings.readerAudioTrackingEnabled = false
+        let cleared = await eventually {
+            time += 0.2
+            output(player, item: item, at: time)
+            return !isHighlighted(0)
+        }
+        XCTAssertTrue(cleared, "Turning follow audio off must remove the highlight")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        output(player, item: item, at: time + 0.2)
+        XCTAssertFalse(isHighlighted(0), "No highlight may come back while follow audio is off")
+
+        settings.readerAudioTrackingEnabled = true
+        let restored = await eventually {
+            time += 0.2
+            output(player, item: item, at: time + 0.2)
+            return isHighlighted(0)
+        }
+        XCTAssertTrue(restored)
+
+        rig.following.stop()
+        XCTAssertFalse(isHighlighted(0), "Closing the reader must leave no highlight behind")
+    }
+
     func testTextViewportFollowsTheNarrationForwardAndBackward() async throws {
         let rig = try makeTextRig()
         let player = rig.harness.player, id = rig.harness.id

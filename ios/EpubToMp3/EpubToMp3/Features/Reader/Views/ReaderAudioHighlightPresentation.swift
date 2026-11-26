@@ -1,14 +1,24 @@
-#if os(iOS)
 import Combine
+import Foundation
+#if os(iOS)
 import UIKit
+#endif
 
 /// Paint-only TextKit attributes preserve annotations, typography and the raw
 /// reader offset. Clock samples may never navigate or repaginate the reader.
 @MainActor
 final class ReaderAudioHighlightPresentation {
-    private let document: ReaderBookDocument
+    /// What one native reader shows and how it paints the narrated passage.
+    struct Surface {
+        let bookID: @MainActor () -> String?
+        let chapter: @MainActor () -> EbookFulltext.Chapter?
+        /// `nil` while no text surface is on screen.
+        let renderedText: @MainActor () -> String?
+        let paint: @MainActor (_ sentence: NSRange?, _ word: NSRange?) -> Void
+    }
+
     private let player: AudioPlayer
-    private weak var textView: UITextView?
+    private let surface: Surface
     private var observation: AnyCancellable?
     private var speechObservation: AnyCancellable?
     private var transportObservation: AnyCancellable?
@@ -26,11 +36,10 @@ final class ReaderAudioHighlightPresentation {
     private var measuredPassage: SpeechAudioAlignment.Passage?
     private var measuredWordRanges: [Int: NSRange] = [:]
 
-    init(document: ReaderBookDocument, player: AudioPlayer, textView: UITextView, settings: AppSettings) {
-        self.document = document
+    init(player: AudioPlayer, settings: AppSettings, surface: Surface) {
         self.player = player
-        self.textView = textView
         self.settings = settings
+        self.surface = surface
         self.trackingEnabled = settings.readerAudioTrackingEnabled
     }
 
@@ -65,13 +74,6 @@ final class ReaderAudioHighlightPresentation {
         clear()
     }
 
-    private var currentChapter: EbookFulltext.Chapter? {
-        if let chapters = document.fulltext?.chapters, chapters.indices.contains(document.selectedChapter) {
-            return chapters[document.selectedChapter]
-        }
-        return document.activePreparedChapter?.chapter
-    }
-
     private func render(_ position: PlaybackAudioOutput.Position?) {
         latestPosition = position
         observedAt = ProcessInfo.processInfo.systemUptime
@@ -103,9 +105,10 @@ final class ReaderAudioHighlightPresentation {
     }
 
     private func paintPosition(_ position: PlaybackAudioOutput.Position?) {
-        guard trackingEnabled, let position, player.isPlaying, !player.isSeeking, player.isPlaybackForReaderBook(document.book.id),
-              let textView,
-              let chapter = currentChapter,
+        guard trackingEnabled, let position, player.isPlaying, !player.isSeeking,
+              let bookID = surface.bookID(), player.isPlaybackForReaderBook(bookID),
+              let renderedText = surface.renderedText(),
+              let chapter = surface.chapter(),
               chapter.zeroBasedEpubIndex == position.chapterIndex else { clear(); return }
         if chapter != loadedChapter || position.duration != loadedDuration {
             sync.load(chapter: chapter, chapterDurationSeconds: position.duration)
@@ -113,9 +116,9 @@ final class ReaderAudioHighlightPresentation {
             loadedChapter = chapter
             loadedDuration = position.duration
         }
-        if resolvedText != textView.text {
-            resolvedText = textView.text
-            resolvedSentences = Self.sentenceRanges(spans: sync.spans, in: textView.text as NSString)
+        if resolvedText != renderedText {
+            resolvedText = renderedText
+            resolvedSentences = Self.sentenceRanges(spans: sync.spans, in: renderedText as NSString)
             measuredPassage = nil
             measuredWordRanges.removeAll()
         }
@@ -123,7 +126,7 @@ final class ReaderAudioHighlightPresentation {
             if measuredPassage != measured.passage {
                 measuredPassage = measured.passage
                 measuredWordRanges = ReaderSpokenTextResolver.ranges(passage: measured.passage,
-                    chapterText: chapter.text, renderedText: textView.text)
+                    chapterText: chapter.text, renderedText: renderedText)
             }
             if let word = measuredWordRanges[measured.word.location] {
                 let sentence = resolvedSentences.values.first { NSIntersectionRange($0, word).length > 0 }
@@ -158,10 +161,10 @@ final class ReaderAudioHighlightPresentation {
 
     private func renderSpeech(_ output: SpeechFallbackPlayer.SpokenWord?) {
         guard trackingEnabled, let output, player.isUsingSpeechFallback, player.isPlaying, !player.isSeeking,
-              player.isPlaybackForReaderBook(document.book.id), let textView,
-              let chapter = currentChapter,
+              let bookID = surface.bookID(), player.isPlaybackForReaderBook(bookID),
+              let renderedText = surface.renderedText(), let chapter = surface.chapter(),
               output.chapterIndex == chapter.zeroBasedEpubIndex else { clear(); return }
-        let rendered = textView.text as NSString
+        let rendered = renderedText as NSString
         let base = rendered.range(of: output.text)
         guard base.location != NSNotFound, output.range.location >= 0,
               NSMaxRange(output.range) <= base.length else { clear(); return }
@@ -176,7 +179,25 @@ final class ReaderAudioHighlightPresentation {
     }
 
     private func paint(sentence: NSRange?, word: NSRange?) {
-        (textView?.layoutManager as? ReaderPlaybackLayoutManager)?.paint(sentence: sentence, word: word)
+        surface.paint(sentence, word)
+    }
+}
+
+#if os(iOS)
+extension ReaderAudioHighlightPresentation {
+    convenience init(document: ReaderBookDocument, player: AudioPlayer, textView: UITextView, settings: AppSettings) {
+        self.init(player: player, settings: settings, surface: Surface(
+            bookID: { document.book.id },
+            chapter: {
+                if let chapters = document.fulltext?.chapters, chapters.indices.contains(document.selectedChapter) {
+                    return chapters[document.selectedChapter]
+                }
+                return document.activePreparedChapter?.chapter
+            },
+            renderedText: { [weak textView] in textView?.text },
+            paint: { [weak textView] sentence, word in
+                (textView?.layoutManager as? ReaderPlaybackLayoutManager)?.paint(sentence: sentence, word: word)
+            }))
     }
 }
 
