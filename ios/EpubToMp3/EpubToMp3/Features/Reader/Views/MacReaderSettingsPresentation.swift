@@ -73,6 +73,16 @@ final class MacReaderSettingsPresentation: NSObject {
             identifier: "readerSettings.fontSize") { [weak settings] value in
                 settings?.readerFontSize = PointPresetScale.nearestIndex(to: value, in: PointPresetScale.font)
             }
+        let alignment = NSPopUpButton()
+        alignment.addItems(withTitles: ReaderTextAlignment.allCases.map(\.displayName))
+        alignment.selectItem(at: ReaderTextAlignment.allCases.firstIndex(of: settings.readerTextAlignment) ?? 0)
+        alignment.setAccessibilityLabel(L10n.string("readerSettings.alignment"))
+        alignment.setAccessibilityIdentifier("readerSettings.alignment")
+        alignment.target = self
+        alignment.action = #selector(alignmentChanged(_:))
+        let lineSpacing = MacPointPresetControl(presets: PointPresetScale.lineSpacing,
+            current: settings.readerLineSpacing, title: L10n.string("readerSettings.lineSpacing"),
+            identifier: "readerSettings.lineSpacing") { [weak settings] in settings?.readerLineSpacing = $0 }
         let margin = MacPointPresetControl(presets: PointPresetScale.macMargin,
             current: settings.readerMargin, title: L10n.string("reader.margins"),
             identifier: "readerSettings.margin") { [weak settings] in settings?.readerMargin = $0 }
@@ -88,7 +98,7 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = NSStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -127,6 +137,10 @@ final class MacReaderSettingsPresentation: NSObject {
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func alignmentChanged(_ sender: NSPopUpButton) {
+        settings.readerTextAlignment = ReaderTextAlignment.allCases[sender.indexOfSelectedItem]
     }
 
     @objc private func columnsChanged(_ sender: NSPopUpButton) {
