@@ -309,6 +309,32 @@ module DeviceFarm
     File.join(STATE, 'apk', 'farm-suite.apk')
   end
 
+  # The normal debug build of the same package: what a person tests by hand. The suite APK's
+  # entrypoint is the integration test, so after the suite a hand test must not be left on it
+  # (its touches fail with "No widgets found").
+  def self.normal_apk_path
+    File.join(STATE, 'apk', 'farm-normal.apk')
+  end
+
+  def self.build_normal
+    env = { 'EPUB2MP3_ANDROID_VERIFICATION' => '1' }
+    ok = system(env, 'mise', 'exec', '--', 'flutter', 'build', 'apk', '--debug',
+                '--target-platform', 'android-arm64', chdir: FLUTTER_APP)
+    built = File.join(FLUTTER_APP, 'build/app/outputs/flutter-apk/app-debug.apk')
+    FileUtils.cp(built, normal_apk_path) if ok && File.file?(built)
+    ok && File.file?(normal_apk_path)
+  end
+
+  # `install -r` again, data kept, so the device is left on the normal app. Never fatal.
+  def self.install_normal(serial)
+    return [false, 'no normal APK built'] unless File.file?(normal_apk_path)
+
+    adb(serial, 'shell', 'settings', 'put', 'global', 'verifier_verify_adb_installs', '0', timeout: 20)
+    out, ok = adb(serial, 'install', '-r', '-t', normal_apk_path, timeout: 300)
+    adb(serial, 'shell', 'settings', 'put', 'global', 'verifier_verify_adb_installs', '1', timeout: 20)
+    [ok, out.lines.last.to_s.strip]
+  end
+
   def self.build
     FileUtils.mkdir_p(File.dirname(apk_path))
     env = { 'EPUB2MP3_ANDROID_VERIFICATION' => '1' }
@@ -316,7 +342,9 @@ module DeviceFarm
                 '--target-platform', 'android-arm64', chdir: FLUTTER_APP)
     built = File.join(FLUTTER_APP, 'build/app/outputs/flutter-apk/app-debug.apk')
     FileUtils.cp(built, apk_path) if ok && File.file?(built)
-    ok && File.file?(apk_path)
+    suite_ok = ok && File.file?(apk_path)
+    build_normal
+    suite_ok
   end
 
   # `install -r` keeps the app's data; the verifier toggle is restored right after.
@@ -388,6 +416,7 @@ module DeviceFarm
       break if verdict
     end
     close_app(serial)
+    install_normal(serial)
     present = installed?(serial)
     ok = verdict == :passed && present
     failed = logcat.lines.grep(/\[E\]|Expected|finder|Bad state|EXCEPTION/).first.to_s.strip.sub(/^\S+\s+\S+\s+\d+\s+\d+\s+\w\s+/, '')

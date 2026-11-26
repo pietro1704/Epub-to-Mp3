@@ -309,3 +309,27 @@ class DeviceFarmTest < Minitest::Test
     assert_equal "hello\n", out
   end
 end
+
+
+def test_the_device_is_left_on_the_normal_app_after_the_suite
+  calls = []
+  DeviceFarm.singleton_class.alias_method :orig_adb_for_test, :adb
+  DeviceFarm.define_singleton_method(:adb) { |*args, **_| calls << args; ['Success', true] }
+  Dir.mktmpdir do |dir|
+    normal = File.join(dir, 'farm-normal.apk')
+    File.write(normal, 'x')
+    DeviceFarm.define_singleton_method(:normal_apk_path) { normal }
+    ok, = DeviceFarm.install_normal('serial')
+    assert ok
+    assert_includes calls.map { |c| c[1..] }, ['install', '-r', '-t', normal]
+  end
+  refute_includes calls.flatten, 'uninstall'
+ensure
+  DeviceFarm.singleton_class.alias_method :adb, :orig_adb_for_test
+  DeviceFarm.singleton_class.send(:remove_method, :normal_apk_path)
+end
+
+def test_regression_reinstalls_the_normal_app_after_the_suite
+  body = File.read(File.join(__dir__, 'device_farm.rb'))[/def self\.regression.*?\n  end\n/m]
+  assert_operator body.index('install_normal'), :>, body.index('suite_verdict(logcat)')
+end
