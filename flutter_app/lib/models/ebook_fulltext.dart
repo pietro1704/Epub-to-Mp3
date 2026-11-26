@@ -164,6 +164,9 @@ abstract class EbookFulltext with _$EbookFulltext {
 
     /// The book's own contents list (nav/NCX); empty when the book has none.
     @Default(<FulltextTocEntry>[]) List<FulltextTocEntry> toc,
+
+    /// PDF pages without selectable text that the shared parser left out; 0 for EPUBs.
+    @Default(0) @JsonKey(name: 'skipped_pages') int skippedPages,
   }) = _EbookFulltext;
 
   factory EbookFulltext.fromJson(Map<String, dynamic> json) =>

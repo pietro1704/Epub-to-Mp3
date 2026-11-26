@@ -673,6 +673,18 @@ class AppLocalizationsPt extends AppLocalizations {
       'Este PDF não tem texto selecionável em nenhuma página (parece digitalizado). Ele só pode ser narrado depois que o texto for reconhecido (OCR).';
 
   @override
+  String pdfPagesSkipped(num count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Pulamos $count páginas do PDF sem texto selecionável (capa, imagens ou páginas em branco). Narramos o restante do livro.',
+      one: 'Pulamos 1 página do PDF sem texto selecionável (capa, imagem ou página em branco). Narramos o restante do livro.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get errorNoReadableText =>
       'Não foi possível extrair texto legível deste livro.';
 

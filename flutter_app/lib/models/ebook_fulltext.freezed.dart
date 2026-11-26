@@ -2068,6 +2068,10 @@ mixin _$EbookFulltext {
   /// The book's own contents list (nav/NCX); empty when the book has none.
   List<FulltextTocEntry> get toc;
 
+  /// PDF pages without selectable text that the shared parser left out; 0 for EPUBs.
+  @JsonKey(name: 'skipped_pages')
+  int get skippedPages;
+
   /// Create a copy of EbookFulltext
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2097,7 +2101,9 @@ mixin _$EbookFulltext {
               other.chapters,
               _this.chapters,
             ) &&
-            const DeepCollectionEquality().equals(other.toc, _this.toc));
+            const DeepCollectionEquality().equals(other.toc, _this.toc) &&
+            (identical(other.skippedPages, _this.skippedPages) ||
+                other.skippedPages == _this.skippedPages));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2111,13 +2117,14 @@ mixin _$EbookFulltext {
       _this.bookAuthor,
       const DeepCollectionEquality().hash(_this.chapters),
       const DeepCollectionEquality().hash(_this.toc),
+      _this.skippedPages,
     );
   }
 
   @override
   String toString() {
     final _this = this as EbookFulltext;
-    return 'EbookFulltext(jobId: ${_this.jobId}, bookTitle: ${_this.bookTitle}, bookAuthor: ${_this.bookAuthor}, chapters: ${_this.chapters}, toc: ${_this.toc})';
+    return 'EbookFulltext(jobId: ${_this.jobId}, bookTitle: ${_this.bookTitle}, bookAuthor: ${_this.bookAuthor}, chapters: ${_this.chapters}, toc: ${_this.toc}, skippedPages: ${_this.skippedPages})';
   }
 }
 
@@ -2134,6 +2141,7 @@ abstract mixin class $EbookFulltextCopyWith<$Res> {
     String? bookAuthor,
     List<FulltextChapter> chapters,
     List<FulltextTocEntry> toc,
+    @JsonKey(name: 'skipped_pages') int skippedPages,
   });
 }
 
@@ -2155,6 +2163,7 @@ class _$EbookFulltextCopyWithImpl<$Res>
     Object? bookAuthor = freezed,
     Object? chapters = null,
     Object? toc = null,
+    Object? skippedPages = null,
   }) {
     return _then(
       EbookFulltext(
@@ -2178,6 +2187,10 @@ class _$EbookFulltextCopyWithImpl<$Res>
             ? _self.toc
             : toc // ignore: cast_nullable_to_non_nullable
                   as List<FulltextTocEntry>,
+        skippedPages: null == skippedPages
+            ? _self.skippedPages
+            : skippedPages // ignore: cast_nullable_to_non_nullable
+                  as int,
       ),
     );
   }
@@ -2282,6 +2295,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookAuthor,
       List<FulltextChapter> chapters,
       List<FulltextTocEntry> toc,
+      @JsonKey(name: 'skipped_pages') int skippedPages,
     )?
     $default, {
     required TResult orElse(),
@@ -2295,6 +2309,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookAuthor,
           _that.chapters,
           _that.toc,
+          _that.skippedPages,
         );
       case _:
         return orElse();
@@ -2322,6 +2337,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookAuthor,
       List<FulltextChapter> chapters,
       List<FulltextTocEntry> toc,
+      @JsonKey(name: 'skipped_pages') int skippedPages,
     )
     $default,
   ) {
@@ -2334,6 +2350,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookAuthor,
           _that.chapters,
           _that.toc,
+          _that.skippedPages,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -2360,6 +2377,7 @@ extension EbookFulltextPatterns on EbookFulltext {
       String? bookAuthor,
       List<FulltextChapter> chapters,
       List<FulltextTocEntry> toc,
+      @JsonKey(name: 'skipped_pages') int skippedPages,
     )?
     $default,
   ) {
@@ -2372,6 +2390,7 @@ extension EbookFulltextPatterns on EbookFulltext {
           _that.bookAuthor,
           _that.chapters,
           _that.toc,
+          _that.skippedPages,
         );
       case _:
         return null;
@@ -2388,6 +2407,7 @@ class _EbookFulltext implements EbookFulltext {
     this.bookAuthor,
     required List<FulltextChapter> chapters,
     List<FulltextTocEntry> toc = const <FulltextTocEntry>[],
+    @JsonKey(name: 'skipped_pages') this.skippedPages = 0,
   }) : _chapters = chapters,
        _toc = toc;
   factory _EbookFulltext.fromJson(Map<String, dynamic> json) =>
@@ -2419,6 +2439,11 @@ class _EbookFulltext implements EbookFulltext {
     return EqualUnmodifiableListView(_toc);
   }
 
+  /// PDF pages without selectable text that the shared parser left out; 0 for EPUBs.
+  @override
+  @JsonKey(name: 'skipped_pages')
+  final int skippedPages;
+
   /// Create a copy of EbookFulltext
   /// with the given fields replaced by the non-null parameter values.
   @override
@@ -2443,7 +2468,9 @@ class _EbookFulltext implements EbookFulltext {
             (identical(other.bookAuthor, bookAuthor) ||
                 other.bookAuthor == bookAuthor) &&
             const DeepCollectionEquality().equals(other.chapters, _chapters) &&
-            const DeepCollectionEquality().equals(other.toc, _toc));
+            const DeepCollectionEquality().equals(other.toc, _toc) &&
+            (identical(other.skippedPages, skippedPages) ||
+                other.skippedPages == skippedPages));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2456,12 +2483,13 @@ class _EbookFulltext implements EbookFulltext {
       bookAuthor,
       const DeepCollectionEquality().hash(_chapters),
       const DeepCollectionEquality().hash(_toc),
+      skippedPages,
     );
   }
 
   @override
   String toString() {
-    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters, toc: $toc)';
+    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters, toc: $toc, skippedPages: $skippedPages)';
   }
 }
 
@@ -2480,6 +2508,7 @@ abstract mixin class _$EbookFulltextCopyWith<$Res>
     String? bookAuthor,
     List<FulltextChapter> chapters,
     List<FulltextTocEntry> toc,
+    @JsonKey(name: 'skipped_pages') int skippedPages,
   });
 }
 
@@ -2501,6 +2530,7 @@ class __$EbookFulltextCopyWithImpl<$Res>
     Object? bookAuthor = freezed,
     Object? chapters = null,
     Object? toc = null,
+    Object? skippedPages = null,
   }) {
     return _then(
       _EbookFulltext(
@@ -2524,6 +2554,10 @@ class __$EbookFulltextCopyWithImpl<$Res>
             ? _self._toc
             : toc // ignore: cast_nullable_to_non_nullable
                   as List<FulltextTocEntry>,
+        skippedPages: null == skippedPages
+            ? _self.skippedPages
+            : skippedPages // ignore: cast_nullable_to_non_nullable
+                  as int,
       ),
     );
   }
