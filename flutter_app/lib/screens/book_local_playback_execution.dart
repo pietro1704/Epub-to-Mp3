@@ -51,7 +51,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       var ttsSnapshot = settings.ttsPreferences;
       final converter = ref.read(embeddedConverterProvider);
       final isNewJob = existingJob == null ||
-          existingJob.status == LocalConversionJobStatus.cancelled;
+          existingJob.status == LocalConversionJobStatus.cancelled ||
+          existingJob.needsFreshVoiceSnapshot;
       if (isNewJob) {
         final configured = settings.configuredTtsPreferences;
         if (converter is ListeningScheduleFactory) {
@@ -111,8 +112,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
         bookId: widget.bookId,
       );
       late LocalConversionJob job;
-      if (existingJob == null ||
-          existingJob.status == LocalConversionJobStatus.cancelled) {
+      if (isNewJob) {
         job = await coordinator.createJob(
           bookId: widget.bookId,
           jobId: jobId,
