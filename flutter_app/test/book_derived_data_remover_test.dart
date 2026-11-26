@@ -114,4 +114,20 @@ void main() {
     await remover.remove(_book, player: unrelated);
     expect(unrelated.currentBookId, _other);
   });
+
+  test('removeAudio deletes only the generated audio and conversion job of one book', () async {
+    await _write('${root.path}/audiobooks/$_book/local-$_book/0001.mp3');
+    await _write('${root.path}/audiobooks/$_other/local-$_other/0001.mp3');
+    final playing = FakeAudioPlayerService()..currentBookId = _book;
+
+    await remover.removeAudio(_book, player: playing);
+
+    expect(Directory('${root.path}/audiobooks/$_book').existsSync(), isFalse);
+    expect(File('${root.path}/audiobooks/$_other/local-$_other/0001.mp3').existsSync(), isTrue);
+    expect(playing.currentBookId, isNull);
+    expect(prefs.containsKey('local-conversion.v1:$_book:local-$_book'), isFalse);
+    expect(prefs.containsKey('local-conversion.v1:$_other:local-$_other'), isTrue);
+    expect(prefs.containsKey('readPos_ch_$_book'), isTrue, reason: 'reading position stays');
+    expect(prefs.getString('readerTheme'), 'sepia');
+  });
 }

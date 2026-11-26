@@ -25,6 +25,7 @@ import 'reader_theme_colors.dart';
 import 'reader_view.dart';
 
 import 'reader_toc_rows.dart';
+import 'reader_toc_audio_state.dart';
 part 'instant_reader_tools.dart';
 
 typedef Chapter = FulltextChapter;

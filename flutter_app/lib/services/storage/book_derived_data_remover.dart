@@ -55,6 +55,28 @@ class BookDerivedDataRemover {
     await _removeAudiobooks(bookId);
   }
 
+  /// Removes only the generated narration audio and its conversion jobs for
+  /// [bookId]; the text, positions and the book itself stay.
+  Future<void> removeAudio(String bookId, {AudioPlayerInterface? player}) async {
+    if (!_plainId.hasMatch(bookId)) return;
+    if (player != null && player.currentBookId == bookId) {
+      try {
+        await player.pause();
+        await player.setQueue(const []);
+      } catch (_) {
+        // The files below are removed regardless.
+      }
+      player.currentBookId = null;
+    }
+    for (final key in prefs
+        .getKeys()
+        .where((key) => key.startsWith('local-conversion.v1:$bookId:'))
+        .toList()) {
+      await prefs.remove(key);
+    }
+    await _removeAudiobooks(bookId);
+  }
+
   Future<void> _removeAudiobooks(String bookId) async {
     try {
       final target = Directory('${(await documents()).path}/audiobooks/$bookId');

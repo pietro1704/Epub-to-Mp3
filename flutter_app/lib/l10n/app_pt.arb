@@ -291,5 +291,10 @@
   "convertOptionsManagedLocally": "As opções de capa e de processamento de áudio são definidas pelo conversor local.",
   "convertIncludeCover": "Incluir capa",
   "convertNormalizeAudio": "Normalizar áudio",
-  "convertStart": "Iniciar conversão"
+  "convertStart": "Iniciar conversão",
+  "tocRemoveDownloads": "Remover downloads",
+  "tocRemoveDownloadsMessage": "Todos os MP3s baixados deste livro serão deletados.",
+  "tocAudioReady": "Áudio pronto",
+  "tocAudioConverting": "Convertendo áudio",
+  "tocAudioFailed": "Áudio com falha"
 }

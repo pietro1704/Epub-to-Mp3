@@ -185,9 +185,15 @@ extension _InstantReaderTools on _InstantReaderViewState {
     }
   }
 
-  void _showContents() {
+  Future<void> _showContents() async {
     final t = AppLocalizations.of(context)!;
     final rows = readerTocRows(widget.fulltext);
+    final bookId = widget.bookId;
+    final job = bookId == null
+        ? null
+        : await ref.read(localConversionJobStoreProvider).load(bookId, 'local-$bookId');
+    if (!mounted) return;
+    final audio = chapterAudioStates(job);
     _showPanel(
       Material(
         child: SafeArea(
@@ -195,10 +201,21 @@ extension _InstantReaderTools on _InstantReaderViewState {
             children: [
               ListTile(
                 title: Text(t.tableOfContents),
-                trailing: IconButton(
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (audio.isNotEmpty && bookId != null)
+                      IconButton(
+                        tooltip: t.tocRemoveDownloads,
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _confirmRemoveAudio(bookId),
+                      ),
+                    IconButton(
+                      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
@@ -215,6 +232,21 @@ extension _InstantReaderTools on _InstantReaderViewState {
                       selected: index == _currentChapterIndex,
                       enabled: index != null,
                       title: Text(row.title),
+                      trailing: switch (index == null ? null : audio[index]) {
+                        ChapterAudioState.ready => Icon(
+                          Icons.check_circle_outline,
+                          semanticLabel: t.tocAudioReady,
+                        ),
+                        ChapterAudioState.converting => Icon(
+                          Icons.hourglass_empty,
+                          semanticLabel: t.tocAudioConverting,
+                        ),
+                        ChapterAudioState.failed => Icon(
+                          Icons.error_outline,
+                          semanticLabel: t.tocAudioFailed,
+                        ),
+                        null => null,
+                      },
                       onTap: index == null
                           ? null
                           : () {
@@ -230,6 +262,26 @@ extension _InstantReaderTools on _InstantReaderViewState {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRemoveAudio(String bookId) async {
+    final t = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(t.tocRemoveDownloads),
+        content: Text(t.tocRemoveDownloadsMessage),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(t.cancel)),
+          TextButton(onPressed: () => Navigator.pop(dialog, true), child: Text(t.remove)),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref
+        .read(bookDerivedDataRemoverProvider)
+        .removeAudio(bookId, player: ref.read(globalAudioPlayerProvider));
+    if (mounted) Navigator.pop(context);
   }
 
   void _showFootnotes(Chapter chapter) {
