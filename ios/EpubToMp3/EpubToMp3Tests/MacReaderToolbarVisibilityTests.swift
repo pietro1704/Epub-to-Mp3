@@ -63,6 +63,16 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
                                "\(button.title.isEmpty ? String(describing: button.image) : button.title) must stay visible")
             }
         }
+        // MAC-READER-TOOLBAR-TITLE-AMBIGUOUS: one possible title position, centred between the controls.
+        let title = try XCTUnwrap(descendants(controller.view)
+            .first { $0.accessibilityIdentifier() == "reader.title" })
+        let toolbar = try XCTUnwrap(title.superview as? NSStackView)
+        let index = try XCTUnwrap(toolbar.arrangedSubviews.firstIndex(of: title))
+        let before = toolbar.arrangedSubviews[index - 1], after = toolbar.arrangedSubviews[index + 1]
+        XCTAssertEqual(before.frame.width, after.frame.width, accuracy: 1, "the title must not drift to a side")
+        for view in [before, title, after] {
+            XCTAssertFalse(view.hasAmbiguousLayout, "ambiguous reader header layout")
+        }
         attachCapture(of: controller.view, name: "mac-reader-toolbar-after-page-click")
     }
 
