@@ -98,6 +98,31 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         XCTAssertEqual(platform.stringValue, "macOS")
     }
 
+    /// PARITY-MAC-SETTINGS-2: as on Linux, from 960 points Models and the preferences
+    /// scroll in two side-by-side columns; narrower, they stay in one.
+    func testWideSettingsShowModelsAndPreferencesInTwoColumns() throws {
+        let (controller, window) = host(AppSettings(defaults: defaults))
+        defer { window.close() }
+
+        for (width, columns) in [(CGFloat(1200), true), (900, false), (1100, true)] {
+            window.setContentSize(NSSize(width: width, height: 700))
+            controller.view.layoutSubtreeIfNeeded()
+            let models = try XCTUnwrap(control(in: controller.view, identifier: "settings.speechModels.disclosure"))
+            let reader = try XCTUnwrap(control(in: controller.view, identifier: "settings.reader.autoScroll"))
+            let modelsScroll = try XCTUnwrap(models.enclosingScrollView)
+            let readerScroll = try XCTUnwrap(reader.enclosingScrollView)
+            XCTAssertEqual(modelsScroll !== readerScroll, columns, "two columns at \(width)")
+            if columns {
+                let left = modelsScroll.convert(modelsScroll.bounds, to: controller.view)
+                let right = readerScroll.convert(readerScroll.bounds, to: controller.view)
+                XCTAssertLessThanOrEqual(left.maxX, right.minX, "Models on the left at \(width)")
+                XCTAssertEqual(left.width, right.width, accuracy: 2, "equal columns at \(width)")
+                XCTAssertEqual(right.maxX, controller.view.bounds.maxX, accuracy: 2)
+            }
+            XCTAssertEqual(window.contentView?.bounds.width ?? 0, width, accuracy: 1, "layout must not resize the window")
+        }
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),

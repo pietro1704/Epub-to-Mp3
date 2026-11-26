@@ -22,6 +22,73 @@ final class MacSettingsCard: NSView {
     }
 }
 
+/// One scrolling column or, from `breakpoint` points, two independently scrolling
+/// ones, like the Linux client's `AdaptiveSettingsLayout` (PARITY-MAC-SETTINGS-2).
+final class MacSettingsColumns: NSView {
+    static let breakpoint: CGFloat = 960
+    private let narration: [NSView]
+    private let preferences: [NSView]
+    private var showsTwoColumns: Bool?
+
+    init(narration: [NSView], preferences: [NSView]) {
+        self.narration = narration
+        self.preferences = preferences
+        super.init(frame: .zero)
+        arrange(twoColumns: false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        arrange(twoColumns: bounds.width >= Self.breakpoint)
+        super.layout()
+    }
+
+    private func arrange(twoColumns: Bool) {
+        guard twoColumns != showsTwoColumns else { return }
+        showsTwoColumns = twoColumns
+        (narration + preferences).forEach { $0.removeFromSuperview() }
+        subviews.forEach { $0.removeFromSuperview() }
+        guard twoColumns else {
+            install(narration + preferences, in: self)
+            return
+        }
+        let left = NSView()
+        let divider = NSBox()
+        divider.boxType = .separator
+        let right = NSView()
+        for view in [left, divider, right] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+            view.topAnchor.constraint(equalTo: topAnchor).isActive = true
+            view.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            left.leadingAnchor.constraint(equalTo: leadingAnchor),
+            divider.leadingAnchor.constraint(equalTo: left.trailingAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            right.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+            right.trailingAnchor.constraint(equalTo: trailingAnchor),
+            left.widthAnchor.constraint(equalTo: right.widthAnchor),
+        ])
+        install(narration, in: left)
+        install(preferences, in: right)
+    }
+
+    private func install(_ views: [NSView], in host: NSView) {
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        for view in views {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            if view is MacSettingsCard { stack.setCustomSpacing(14, after: view) }
+        }
+        MacScrollableStack.install(stack, in: host, maximumWidth: 680)
+    }
+}
+
 @MainActor
 enum MacSettingsSections {
     static func header(_ text: String) -> NSTextField {
