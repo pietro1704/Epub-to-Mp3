@@ -2,6 +2,7 @@ import '../../l10n/app_localizations.dart';
 import 'book_language_uncertain.dart';
 
 const _codeOpen = '[[error_code_v1]]';
+final _noOfflineVoice = RegExp('No installed offline speech voice', caseSensitive: false);
 const _codeClose = '[[/error_code_v1]]';
 
 /// The stable failure code the shared Rust converter appends to a conversion
@@ -74,6 +75,9 @@ String? localizedConversionFailure(AppLocalizations t, Object error) {
       return prefixed(t.errorInputUnreadable);
     case 'unsupported_input':
       return prefixed(t.errorUnsupportedInput);
+    case 'synthesis_failed' || 'platform_speech_failed'
+        when _noOfflineVoice.hasMatch(error.toString()):
+      return prefixed(t.errorNoOfflineVoice);
     case 'invalid_audio' ||
         'synthesis_failed' ||
         'platform_speech_failed' ||

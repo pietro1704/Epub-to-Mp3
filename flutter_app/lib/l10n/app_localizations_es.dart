@@ -686,6 +686,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'El modelo de narración seleccionado no está instalado. Instálalo en Ajustes.';
 
   @override
+  String get errorNoOfflineVoice =>
+      'No hay ninguna voz sin conexión para el idioma de este libro en este dispositivo. Instala un modelo de voz en Ajustes o añade una voz del sistema sin conexión.';
+
+  @override
   String get errorModelLanguage =>
       'Este modelo no admite el idioma de este libro. Elige un modelo compatible.';
 

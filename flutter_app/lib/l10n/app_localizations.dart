@@ -1324,6 +1324,12 @@ abstract class AppLocalizations {
   /// **'The selected narration model is not installed. Install it in Settings.'**
   String get errorModelMissing;
 
+  /// No description provided for @errorNoOfflineVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'No offline voice for this book\'s language is installed on this device. Install a voice model in Settings, or add an offline system voice.'**
+  String get errorNoOfflineVoice;
+
   /// No description provided for @errorModelLanguage.
   ///
   /// In en, this message translates to:
