@@ -34,9 +34,13 @@ class ReaderSearchOverlay extends StatefulWidget {
     required this.onJumpToChapter,
     required this.onClose,
     this.onJumpToPosition,
+    this.startAtChapter = 0,
   });
 
   final List<FulltextChapter> chapters;
+
+  /// Chapter list position the results start from; earlier chapters follow last (as on the 16e).
+  final int startAtChapter;
   final void Function(int chapterIndex) onJumpToChapter;
   final VoidCallback onClose;
 
@@ -95,7 +99,11 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
     final lowered = query.toLowerCase();
     final found = <_SearchResult>[];
 
-    for (final (chapterIndex, ch) in widget.chapters.indexed) {
+    final count = widget.chapters.length;
+    final origin = count == 0 ? 0 : widget.startAtChapter.clamp(0, count - 1);
+    for (var step = 0; step < count; step++) {
+      final chapterIndex = (origin + step) % count;
+      final ch = widget.chapters[chapterIndex];
       final text = ch.text;
       final lower = text.toLowerCase();
       var searchStart = 0;

@@ -323,6 +323,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
     _showPanel(
       ReaderSearchOverlay(
         chapters: widget.fulltext.chapters,
+        startAtChapter: _currentChapterIndex,
         onJumpToChapter: _jumpToChapter,
         onJumpToPosition: (chapter, offset) {
           _jumpToChapter(chapter);
