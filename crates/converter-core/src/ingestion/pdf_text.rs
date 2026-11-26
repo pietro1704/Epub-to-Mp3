@@ -96,7 +96,7 @@ impl PdfTextIngestion {
         for (position, (start, title, level)) in starts.iter().enumerate() {
             let end = starts.get(position + 1).map_or(text.len(), |next| next.0);
             let content = text[*start..end].join("\n\n");
-            let paragraph_ends = paragraph_ends(&content);
+            let (content, paragraph_ends) = reflow_paragraphs(&content);
             chapters.push(Chapter {
                 index: (position + 1).to_string(),
                 name: title.clone(),
@@ -187,17 +187,78 @@ fn has_drawn_content(doc: &Document, page: pdf_extract::ObjectId) -> Result<bool
         .any(|operation| matches!(operation.operator.as_str(), "Do" | "BI")))
 }
 
-fn paragraph_ends(text: &str) -> Vec<usize> {
+/// Lines shorter than this share of the typical line width may end a paragraph.
+const SHORT_LINE_RATIO: f64 = 0.7;
+
+/// `pdf_extract` emits one `\n` per visual line. A lone `\n` is a soft wrap (joined with a
+/// space, or glued back when a hyphenated word is split) unless it is a real paragraph end:
+/// the next line opens with a dialogue dash, or the line is well short of the page width and
+/// ends a sentence. Runs of two or more `\n` stay paragraph breaks. Returns the reflowed text
+/// and its paragraph ends (in chars), consistent with that text.
+fn reflow_paragraphs(text: &str) -> (String, Vec<usize>) {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut widths: Vec<usize> = lines
+        .iter()
+        .map(|line| line.trim().chars().count())
+        .filter(|width| *width > 0)
+        .collect();
+    widths.sort_unstable();
+    let typical = widths
+        .get(widths.len().saturating_mul(3) / 4)
+        .copied()
+        .unwrap_or(0) as f64;
+    let mut out = String::new();
     let mut ends = Vec::new();
-    let mut previous = false;
-    for (i, ch) in text.chars().enumerate() {
-        if ch == '\n' && !previous {
-            ends.push(i);
+    let mut count = 0usize;
+    let push = |out: &mut String, count: &mut usize, piece: &str| {
+        out.push_str(piece);
+        *count += piece.chars().count();
+    };
+    for (i, line) in lines.iter().enumerate() {
+        let line = line.trim_end_matches('\r');
+        push(&mut out, &mut count, line);
+        let Some(next) = lines.get(i + 1) else {
+            break;
+        };
+        let current = line.trim_end();
+        let next_start = next.trim_start();
+        if line.trim().is_empty() || next_start.is_empty() {
+            // Part of a blank-line run: keep the separators verbatim.
+            if !line.trim().is_empty() && ends.last() != Some(&count) {
+                ends.push(count);
+            }
+            push(&mut out, &mut count, "\n");
+            continue;
         }
-        previous = ch == '\n';
+        let hyphenated = current.ends_with('-')
+            && current
+                .chars()
+                .rev()
+                .nth(1)
+                .is_some_and(char::is_alphabetic)
+            && next_start.chars().next().is_some_and(char::is_lowercase);
+        let dialogue = next_start.starts_with('\u{2014}');
+        let short_sentence_end = (current.chars().count() as f64) < typical * SHORT_LINE_RATIO
+            && current.ends_with(['.', '!', '?', ':', '\u{2026}']);
+        if dialogue || short_sentence_end {
+            ends.push(count);
+            push(&mut out, &mut count, "\n");
+        } else if hyphenated {
+            out.truncate(out.trim_end().len() - 1);
+            count = out.chars().count();
+        } else {
+            out.truncate(out.trim_end().len());
+            count = out.chars().count();
+            push(&mut out, &mut count, " ");
+            // The soft wrap carried no paragraph end; the trailing space keeps words apart.
+        }
     }
-    ends.push(text.chars().count());
-    ends
+    // A blank-line run ends the paragraph before it, handled above; close the final one.
+    let total = out.chars().count();
+    if ends.last() != Some(&total) {
+        ends.push(total);
+    }
+    (out, ends)
 }
 fn info(doc: &Document, key: &[u8]) -> Option<String> {
     let value = doc.trailer.get(b"Info").ok()?;
@@ -212,5 +273,29 @@ pub(super) fn invalid(message: &str) -> IngestionError {
 fn extraction_error(error: impl std::fmt::Display) -> IngestionError {
     IngestionError::ExtractionFailed {
         message: format!("PDF text extraction failed: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reflow_paragraphs;
+
+    #[test]
+    fn a_dialogue_dash_opens_a_new_paragraph() {
+        let (text, ends) = reflow_paragraphs(
+            "Ele disse isto e foi embora\n\u{2014} Fala dela.\n\u{2014} Outra fala.",
+        );
+        assert_eq!(
+            text,
+            "Ele disse isto e foi embora\n\u{2014} Fala dela.\n\u{2014} Outra fala."
+        );
+        assert_eq!(ends, vec![27, 40, text.chars().count()]);
+    }
+
+    #[test]
+    fn hyphen_before_uppercase_keeps_the_hyphen_and_the_blank_run_stays() {
+        let (text, ends) = reflow_paragraphs("Rio-\nBranco segue\n\nFim");
+        assert_eq!(text, "Rio- Branco segue\n\nFim");
+        assert_eq!(ends, vec![17, 22]);
     }
 }

@@ -316,3 +316,55 @@ fn pdf_without_any_text_page_fails_with_the_ocr_required_code() {
         .message_with_code()
         .ends_with("[[error_code_v1]]pdf_ocr_required[[/error_code_v1]]"));
 }
+
+fn ingest(text: &str) -> converter_core::epub::Chapter {
+    let book = converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(
+        std::path::Path::new("lines.pdf"),
+        &fixture::pdf(false, &[text, "", ""]),
+    )
+    .unwrap();
+    book.chapters.into_iter().next().unwrap()
+}
+
+fn ends_text(chapter: &converter_core::epub::Chapter) -> Vec<String> {
+    let chars: Vec<char> = chapter.text.chars().collect();
+    let mut start = 0;
+    chapter
+        .paragraph_ends
+        .iter()
+        .map(|end| {
+            let piece: String = chars[start..*end].iter().collect();
+            start = *end;
+            piece.trim().to_string()
+        })
+        .filter(|piece| !piece.is_empty())
+        .collect()
+}
+
+#[test]
+fn pdf_visual_line_breaks_are_soft_and_do_not_split_paragraphs() {
+    let chapter = ingest(
+        "Era uma vez um reino muito distante onde\nviviam pessoas que gostavam de ler e de con-\nversar sobre os livros antigos da biblioteca.\nOutra frase continua aqui no mesmo paragrafo.",
+    );
+    assert_eq!(
+        ends_text(&chapter),
+        vec!["Era uma vez um reino muito distante onde viviam pessoas que gostavam de ler e de conversar sobre os livros antigos da biblioteca. Outra frase continua aqui no mesmo paragrafo."]
+    );
+}
+
+#[test]
+fn pdf_keeps_short_sentence_endings_as_paragraph_breaks() {
+    let chapter = ingest(
+        "Uma linha longa o bastante para ocupar quase toda a largura tipica da pagina inteira.\nOutra linha longa o bastante para ocupar quase toda a largura tipica da pagina inteira.\nFim curto.\nNovo paragrafo comeca aqui e segue ate ocupar a largura tipica da pagina inteira ok.",
+    );
+    let ends = ends_text(&chapter);
+    assert_eq!(ends.len(), 2, "{ends:?}");
+    assert!(ends[0].ends_with("Fim curto."), "{ends:?}");
+    assert!(ends[1].ends_with("inteira ok."), "{ends:?}");
+}
+
+#[test]
+fn pdf_blank_line_is_still_a_paragraph_break() {
+    let chapter = ingest("Primeiro paragrafo sem ponto\n\nSegundo paragrafo");
+    assert_eq!(ends_text(&chapter).len(), 2);
+}
