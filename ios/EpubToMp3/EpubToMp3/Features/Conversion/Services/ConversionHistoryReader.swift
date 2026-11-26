@@ -32,7 +32,13 @@ enum ConversionHistoryReader {
                           userInfo: [NSLocalizedDescriptionKey: L10n.string("error.historyUnavailable")])
         }
         try Task.checkCancellation()
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: url)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            // No conversion has been logged yet.
+            return Snapshot(sessions: [], bytesRead: 0, budgetExhausted: false, ioOnMainThread: Thread.isMainThread)
+        }
         defer { try? handle.close() }
         var offset = try handle.seekToEnd()
         var blocks: [Data] = []
