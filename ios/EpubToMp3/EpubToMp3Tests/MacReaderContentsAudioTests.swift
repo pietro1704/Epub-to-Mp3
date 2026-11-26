@@ -65,6 +65,50 @@ final class MacReaderContentsAudioTests: XCTestCase {
         XCTAssertEqual(expected.filter { !present.contains($0) }, [], "missing contents audio controls")
     }
 
+    /// The Mac has no Files copy of a download, so the kept download itself must show and be removable.
+    func testAKeptDownloadShowsAsDownloadedAndCanBeRemovedWithoutAFilesCopy() async throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Synthetic text.")])
+        harness.installTeardown(in: self)
+        let bookID = harness.book.id
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(bookID, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? await LocalAudioArtifactStore.shared.removeAllAudio(bookID: bookID)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let audio = root.appendingPathComponent("chapter.mp3")
+        try Data(repeating: 7, count: 64).write(to: audio)
+        _ = try await LocalAudioArtifactStore.shared.retainDownload(from: audio, request: .init(
+            bookID: bookID, bookTitle: "Synthetic", author: nil,
+            chapterIndex: 0, chapterTitle: "Chapter", textOffset: 0))
+        let downloads = ReaderChapterDownloads(book: harness.book,
+            library: LibraryStore(defaults: harness.defaults, importDirectory: root),
+            settings: harness.settings, snapshot: nil)
+        let contents = MacReaderContentsPresentation(document: harness.document, composition: harness.composition,
+            persistProgress: {}, showChapter: { _ in }, makeDownloads: { downloads })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { harness.composition.tocPopover.performClose(nil); window.orderOut(nil); window.close() }
+        let anchor = NSButton(frame: NSRect(x: 10, y: 10, width: 40, height: 20))
+        try XCTUnwrap(window.contentView).addSubview(anchor)
+        window.makeKeyAndOrderFront(nil)
+        contents.showTOC(anchor)
+        func spoken() -> String? {
+            contents.tableView(harness.composition.chaptersTable, viewFor: nil, row: 0)
+                .flatMap { cell in descendants(cell).first { $0.accessibilityIdentifier() == "reader.toc.download.0" } }?
+                .accessibilityLabel()
+        }
+        for _ in 0..<30 where spoken() != L10n.string("toc.removeDownload") {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertEqual(spoken(), L10n.string("toc.removeDownload"))
+
+        await downloads.remove(chapter: 0)
+        let kept = try await LocalAudioArtifactStore.shared.downloadedChapterIndices(bookID: bookID)
+        XCTAssertEqual(kept, [], "Removing the download must release the kept audio")
+    }
+
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 }
 #endif
