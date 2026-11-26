@@ -158,8 +158,9 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         XCTAssertFalse(settings.readerOverrideFontFamily)
         XCTAssertFalse(settings.readerOverrideFontSize)
         try choose("settings.layout", try XCTUnwrap(ReaderLayout.allCases.firstIndex(of: .scrolling)))
-        XCTAssertTrue(try find("settings.pageTurnStyle").isHiddenOrHasHiddenAncestor, "scrolling has no page turns")
-        XCTAssertTrue(try find("settings.pageNumbers").isHiddenOrHasHiddenAncestor)
+        // `control` only returns visible views.
+        XCTAssertNil(control(in: controller.view, identifier: "settings.pageTurnStyle"), "scrolling has no page turns")
+        XCTAssertNil(control(in: controller.view, identifier: "settings.pageNumbers"))
     }
 
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
