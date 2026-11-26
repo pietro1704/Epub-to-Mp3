@@ -32,7 +32,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private lazy var narrationPairing = ReaderNarrationPairingPresentation(
         document: document, player: player, composition: composition,
-        reveal: { [weak self] location in self?.readingPosition.revealPlaybackLocation(location) })
+        reveal: { [weak self] location in
+            guard let self, self.settings.readerAutoScroll else { return }
+            self.readingPosition.revealPlaybackLocation(location)
+        })
 
     private func configureNativeReader() {
         composition.configure(isPaginatedMode: isPaginatedMode, textDelegate: annotations,

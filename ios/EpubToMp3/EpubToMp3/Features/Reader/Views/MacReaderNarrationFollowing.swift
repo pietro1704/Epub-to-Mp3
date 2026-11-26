@@ -24,7 +24,10 @@ final class MacReaderNarrationFollowing {
             guard let self, let bookID = self.document.currentBookId else { return false }
             return self.player.isPlaying && self.player.isPlaybackForReaderBook(bookID)
         },
-        follow: { [weak self] in self?.followNarration() })
+        follow: { [weak self] in
+            guard let self, self.settings.readerAutoScroll else { return }
+            self.followNarration()
+        })
 
     private var scrollView: NSScrollView { composition.contentScrollView }
 
