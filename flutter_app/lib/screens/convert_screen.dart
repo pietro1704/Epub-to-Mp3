@@ -79,6 +79,22 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   AndroidEmbeddedConverter? _activeAndroidConverter;
   DesktopEmbeddedConverter? _activeDesktopConverter;
   String? _activeNativeOutputPath;
+  int _skippedPages = 0;
+
+  /// PDF pages without selectable text are left out of the narration; the person is told how
+  /// many, like on the iPhone. An unreadable book reports its own error through the conversion.
+  Future<void> _refreshSkippedPages() async {
+    final path = _filePath;
+    if (_skippedPages != 0) setState(() => _skippedPages = 0);
+    if (path == null || !path.toLowerCase().endsWith('.pdf')) return;
+    try {
+      final book = await ref.read(embeddedConverterProvider).parse(inputPath: path);
+      if (!mounted || _filePath != path) return;
+      setState(() => _skippedPages = book.skippedPages);
+    } catch (_) {
+      // Nothing to report; the conversion itself surfaces any real failure.
+    }
+  }
 
   bool get _usesEmbeddedConversion =>
       !kIsWeb &&
@@ -89,6 +105,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshSkippedPages();
+    });
     if (defaultTargetPlatform == TargetPlatform.android) {
       _voiceSubscription = _voiceSession.listen(() {
         if (!mounted) return;
@@ -108,6 +127,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         _error = null;
         _jobId = null;
       });
+      _refreshSkippedPages();
       _submit();
     });
   }
@@ -149,6 +169,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           _error = null;
           _jobId = null;
         });
+        _refreshSkippedPages();
       } on PlatformException catch (error) {
         if (mounted) setState(() => _error = error.message ?? error.code);
       }
@@ -172,6 +193,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       _error = null;
       _jobId = null;
     });
+    _refreshSkippedPages();
   }
 
   Future<void> _submit() async {
@@ -392,6 +414,11 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             icon: const Icon(Icons.attach_file),
             label: Text(_filePath == null ? t.convertChooseFile : _filePath!),
           ),
+          if (_skippedPages > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(t.pdfPagesSkipped(_skippedPages)),
+            ),
           if (_usedSelections.isNotEmpty)
             Text(
               t.ttsActualVoices(

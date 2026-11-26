@@ -92,6 +92,7 @@ _EbookFulltext _$EbookFulltextFromJson(Map<String, dynamic> json) =>
               ?.map((e) => FulltextTocEntry.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const <FulltextTocEntry>[],
+      skippedPages: (json['skipped_pages'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$EbookFulltextToJson(_EbookFulltext instance) =>
@@ -101,4 +102,5 @@ Map<String, dynamic> _$EbookFulltextToJson(_EbookFulltext instance) =>
       'bookAuthor': instance.bookAuthor,
       'chapters': instance.chapters,
       'toc': instance.toc,
+      'skipped_pages': instance.skippedPages,
     };

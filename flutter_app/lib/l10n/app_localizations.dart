@@ -1303,8 +1303,14 @@ abstract class AppLocalizations {
   /// No description provided for @errorPdfOcrRequired.
   ///
   /// In en, this message translates to:
-  /// **'This PDF has a page with only an image and no selectable text (often the cover). It cannot be narrated until that text is recognized (OCR).'**
+  /// **'This PDF has no selectable text on any page (it looks scanned). It cannot be narrated until that text is recognized (OCR).'**
   String get errorPdfOcrRequired;
+
+  /// No description provided for @pdfPagesSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{We skipped 1 PDF page without selectable text (cover, image, or blank page). We narrate the rest of the book.} other{We skipped {count} PDF pages without selectable text (cover, images, or blank pages). We narrate the rest of the book.}}'**
+  String pdfPagesSkipped(num count);
 
   /// No description provided for @errorNoReadableText.
   ///

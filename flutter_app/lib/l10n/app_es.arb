@@ -238,6 +238,7 @@
   "readerAppearance": "Apariencia del texto",
   "readerPlayFromHere": "Reproducir desde aquí",
   "errorPdfOcrRequired": "Este PDF no tiene texto seleccionable en ninguna página (parece escaneado). No se puede narrar hasta que ese texto se reconozca (OCR).",
+  "pdfPagesSkipped": "{count, plural, =1{Omitimos 1 página del PDF sin texto seleccionable (portada, imagen o página en blanco). Narramos el resto del libro.} other{Omitimos {count} páginas del PDF sin texto seleccionable (portada, imágenes o páginas en blanco). Narramos el resto del libro.}}",
   "errorNoReadableText": "No se pudo extraer texto legible de este libro.",
   "errorEngineUnavailable": "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.",
   "errorModelMissing": "El modelo de narración seleccionado no está instalado. Instálalo en Ajustes.",
