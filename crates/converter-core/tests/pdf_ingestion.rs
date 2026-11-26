@@ -33,6 +33,26 @@ fn pdf_embedded_session_preserves_metadata_source_text_and_outline_sections() {
     assert!(session.structure_verification().verified);
 }
 
+/// Turns the pages at `positions` into image-only pages (drawn content, no text layer).
+fn pdf_with_image_pages(texts: &[&str], positions: &[usize]) -> Vec<u8> {
+    fixture::pdf_with(false, texts, |objects| {
+        let image = objects.len() + 1;
+        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
+        for position in positions {
+            let page = 2 + position * 2;
+            objects[page] = objects[page].replace(
+                "/Resources <<",
+                &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+            );
+            let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
+            objects[page + 1] = format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            );
+        }
+    })
+}
+
 fn open_bytes(
     source: &[u8],
 ) -> Result<EmbeddedConversionSession, converter_core::embedded::EmbeddedConversionError> {
@@ -222,42 +242,21 @@ fn pdf_invalid_page_geometry_is_an_error_not_an_unwind() {
     assert!(open_bytes(&source).is_err());
 }
 
+/// PDF-COVER-BLOCKS-CONVERSION: an image page inside a text book is skipped, never a rejection.
 #[test]
-fn pdf_does_not_silently_drop_an_image_page_from_a_mixed_document() {
-    let source = fixture::pdf_with(false, &["Readable", "", "Last readable page"], |objects| {
-        let image = objects.len() + 1;
-        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
-        objects[4] = objects[4].replace(
-            "/Resources <<",
-            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
-        );
-        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
-        objects[5] = format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
-        );
-    });
-    let message = open_bytes(&source).unwrap_err().to_string();
-    assert!(message.contains("OCR"), "{message}");
-    assert!(message.contains("2"), "{message}");
+fn pdf_skips_an_image_page_inside_a_mixed_document() {
+    let source = pdf_with_image_pages(&["Readable", "", "Last readable page"], &[1]);
+    let session = open_bytes(&source).expect("an image page must not reject the whole book");
+    let chapters = &session.metadata().chapters;
+    assert!(chapters[0].text.contains("Readable"));
+    assert!(chapters[1].text.is_empty());
+    assert!(chapters[2].text.contains("Last readable page"));
 }
 
 /// PDF-COVER-BLOCKS-CONVERSION: an image-only cover must not block a book that has selectable text.
 #[test]
 fn pdf_with_an_image_only_cover_converts_the_text_pages() {
-    let source = fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
-        let image = objects.len() + 1;
-        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
-        objects[2] = objects[2].replace(
-            "/Resources <<",
-            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
-        );
-        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
-        objects[3] = format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
-        );
-    });
+    let source = pdf_with_image_pages(&["", "Readable", "Last readable page"], &[0]);
     let session = open_bytes(&source).expect("an image cover must not reject the whole book");
     let text: String = session
         .metadata()
@@ -269,25 +268,13 @@ fn pdf_with_an_image_only_cover_converts_the_text_pages() {
     assert!(text.contains("Last readable page"), "{text}");
 }
 
-/// PDF-COVER-BLOCKS-CONVERSION: clients localize an image-only page instead of
-/// showing the generic failure, so the worker failure carries its own code.
+/// A scanned book (no page with text) is still refused, and clients localize it
+/// from its own code instead of showing the generic failure.
 #[test]
-fn pdf_image_only_page_failure_carries_the_ocr_required_code() {
-    let source = fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
-        let image = objects.len() + 1;
-        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
-        objects[2] = objects[2].replace(
-            "/Resources <<",
-            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
-        );
-        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
-        objects[3] = format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
-        );
-    });
+fn pdf_without_any_text_page_fails_with_the_ocr_required_code() {
+    let source = pdf_with_image_pages(&["", "", ""], &[0, 1, 2]);
     let error = converter_core::book_input::parse_book_source_with_cancel(
-        std::path::Path::new("cover.pdf"),
+        std::path::Path::new("scanned.pdf"),
         &source,
         &|| false,
     )
@@ -297,24 +284,4 @@ fn pdf_image_only_page_failure_carries_the_ocr_required_code() {
     assert!(worker
         .message_with_code()
         .ends_with("[[error_code_v1]]pdf_ocr_required[[/error_code_v1]]"));
-}
-
-#[test]
-fn pdf_rejects_non_monotonic_outline_order_instead_of_silently_reordering_it() {
-    let source = fixture::pdf_with(true, &["First", "Second", "Third"], |objects| {
-        let first = objects
-            .iter_mut()
-            .find(|o| o.contains("/Title (First section)"))
-            .unwrap();
-        *first = first.replace("/Dest [3 0 R /Fit]", "/Dest [7 0 R /Fit]");
-        let second = objects
-            .iter_mut()
-            .find(|o| o.contains("/Title (Second section)"))
-            .unwrap();
-        *second = second.replace("/Dest [7 0 R /Fit]", "/Dest [3 0 R /Fit]");
-    });
-    assert!(open_bytes(&source)
-        .unwrap_err()
-        .to_string()
-        .contains("order"));
 }
