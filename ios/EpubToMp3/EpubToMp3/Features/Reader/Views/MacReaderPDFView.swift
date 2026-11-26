@@ -39,7 +39,7 @@ final class MacReaderPDFView: PDFView {
         guard !viewport.isEmpty else { return false }
         let character = firstCharacter(in: page.selection(for: viewport), on: page) ?? 0
         guard let anchor = audioMap.anchor(page: document.index(for: page), character: character) else { return false }
-        onPlayFrom(anchor)
+        play(from: anchor, using: onPlayFrom)
         return true
     }
 
@@ -76,7 +76,20 @@ final class MacReaderPDFView: PDFView {
 
     @objc private func playFromMenu(_ item: NSMenuItem) {
         guard let anchor = item.representedObject as? PDFReadingAudioMap.Anchor else { return }
-        onPlayFrom?(anchor)
+        if let onPlayFrom { play(from: anchor, using: onPlayFrom) }
+    }
+
+    private var toldSkippedPages = false
+
+    /// Starts playback, then says once per opened book what the narration leaves out.
+    private func play(from anchor: PDFReadingAudioMap.Anchor, using start: (PDFReadingAudioMap.Anchor) -> Void) {
+        start(anchor)
+        guard !toldSkippedPages, let notice = audioMap?.skippedPagesNotice, let window else { return }
+        toldSkippedPages = true
+        let alert = NSAlert()
+        alert.messageText = notice
+        alert.addButton(withTitle: L10n.string("common.ok"))
+        alert.beginSheetModal(for: window)
     }
 }
 #endif

@@ -13,7 +13,11 @@ struct PDFReadingAudioMap: Sendable {
             Int(sourcePath.replacingOccurrences(of: "page-", with: "")).map { $0 - 1 }.flatMap { $0 >= 0 ? $0 : nil }
         }
     }
-    struct Metadata: Decodable { let chapters: [Chapter] }
+    struct Metadata: Decodable {
+        let chapters: [Chapter]
+        let skippedPages: Int?
+        enum CodingKeys: String, CodingKey { case chapters, skippedPages = "skipped_pages" }
+    }
     struct Anchor: Equatable {
         let chapterIndex: Int
         let sourceScalarOffset: Int
@@ -29,9 +33,18 @@ struct PDFReadingAudioMap: Sendable {
     }
     let chapters: [Chapter]
     let pages: [Int: Page]
+    /// Text-less pages that Rust left out of the narration.
+    let skippedPages: Int
+    var skippedPagesNotice: String? {
+        guard skippedPages > 0 else { return nil }
+        return skippedPages == 1 ? L10n.string("convert.pdfPagesSkipped.one")
+            : L10n.string("convert.pdfPagesSkipped.many", skippedPages)
+    }
 
     init(metadata: Data, pageTexts: [String]) throws {
-        chapters = try JSONDecoder().decode(Metadata.self, from: metadata).chapters
+        let decoded = try JSONDecoder().decode(Metadata.self, from: metadata)
+        chapters = decoded.chapters
+        skippedPages = decoded.skippedPages ?? 0
         var mapped: [Int: Page] = [:]
         for (chapterIndex, chapter) in chapters.enumerated() {
             guard let start = chapter.startPage, pageTexts.indices.contains(start) else { continue }
