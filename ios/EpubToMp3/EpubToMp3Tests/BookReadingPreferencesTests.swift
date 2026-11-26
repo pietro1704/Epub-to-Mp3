@@ -20,6 +20,26 @@ final class BookReadingPreferencesTests: XCTestCase {
         return books
     }
 
+    @MainActor
+    func testOpeningTheSettingsKeepsThemForTheBookUntilTheUserTurnsItOff() throws {
+        let app = try defaults()
+        let books = store(app)
+        let settings = AppSettings(defaults: app)
+        settings.enterBookScope("book-a", store: books)
+        settings.useBookScopeByDefault(store: books)
+        XCTAssertTrue(settings.isBookSpecific, "the switch starts on")
+
+        settings.useDefaultForThisBook(store: books)
+        settings.leaveBookScope()
+        settings.enterBookScope("book-a", store: books)
+        settings.useBookScopeByDefault(store: books)
+        XCTAssertFalse(settings.isBookSpecific, "once turned off it stays off")
+
+        settings.useOnlyForThisBook(store: books)
+        XCTAssertTrue(settings.isBookSpecific)
+        XCTAssertFalse(books.isTurnedOff("book-a"))
+    }
+
     override func tearDown() {
         for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
         super.tearDown()

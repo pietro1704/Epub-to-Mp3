@@ -134,6 +134,8 @@ final class AppSettings: ObservableObject {
         objectWillChange.send()
     }
 
+    func useBookScopeByDefault(store: BookReadingPreferencesStore = .shared) {}
+
     /// "Use default": the book forgets its own values and follows the default.
     func useDefaultForThisBook(store: BookReadingPreferencesStore = .shared) {
         guard let bookID = bookScopeID, isBookSpecific else { return }
