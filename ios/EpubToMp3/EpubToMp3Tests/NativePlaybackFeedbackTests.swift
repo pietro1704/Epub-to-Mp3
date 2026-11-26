@@ -110,12 +110,9 @@ final class NativePlaybackFeedbackTests: XCTestCase {
     func testReaderHighlightPreservesAnnotationsAndOffsetAndRejectsAnotherChapterOrBook() throws {
         let defaults = try defaults()
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        defer { for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) } }
-        standard.set("highlight-fixture", forKey: keys[0])
-        standard.set(0, forKey: keys[1])
+        // The player reads the reader location from its resume store's defaults.
+        defaults.set("highlight-fixture", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         player.rememberReaderPlaybackAnchor()
         player.playbackPlayingChanged(true)
         let document = ReaderBookDocument(book: BookEntity(id: "highlight-fixture", title: "Fixture",
@@ -201,12 +198,9 @@ final class NativePlaybackFeedbackTests: XCTestCase {
     func testReaderKeepsTheHighlightWhilePausedUntilTheNarrationMoves() throws {
         let defaults = try defaults()
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        defer { for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) } }
-        standard.set("paused-highlight-fixture", forKey: keys[0])
-        standard.set(0, forKey: keys[1])
+        // The player reads the reader location from its resume store's defaults.
+        defaults.set("paused-highlight-fixture", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         player.services.navigation.rememberReaderPlaybackAnchor()
         player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: Data("""
             {"jobId":"paused-highlight-fixture","state":"finished","chapterIndexBase":1,"chapterProgress":[
