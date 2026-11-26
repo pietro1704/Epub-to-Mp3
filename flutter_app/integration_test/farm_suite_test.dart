@@ -34,6 +34,9 @@ Future<void> _openTab(WidgetTester tester, IconData icon) async {
   await _settle(tester);
 }
 
+/// Logs the journey step so a suite that hangs shows where in the farm log.
+void _step(String name) => debugPrint('FARM_STEP=$name');
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -41,6 +44,7 @@ void main() {
     final shard = await _shard();
     debugPrint('FARM_SHARD=$shard');
     bool mine(String journey) => shard == 'all' || shard == journey;
+    _step('launch');
     app.main();
     await _settle(tester, 30);
     // The app reopens the book that was last read, and the reader hides the navigation: leave it
@@ -50,6 +54,7 @@ void main() {
       await _settle(tester, 4);
     }
 
+    _step('root-shell');
     // Both devices: the app starts and offers its three root destinations.
     expect(find.byIcon(Icons.library_books_outlined), findsWidgets);
     expect(find.byIcon(Icons.settings_outlined), findsWidgets);
@@ -57,6 +62,7 @@ void main() {
 
     if (mine('a')) {
       // Settings: the footnote narration switch toggles and is restored.
+      _step('a-footnote-toggle');
       await _openTab(tester, Icons.settings_outlined);
       final toggle = find.byKey(const ValueKey('tts-footnote-narration'));
       await tester.scrollUntilVisible(
@@ -77,12 +83,14 @@ void main() {
       );
 
       // Converter destination opens.
+      _step('a-converter');
       await _openTab(tester, Icons.auto_fix_high);
       expect(find.byType(Scaffold), findsWidgets);
     }
 
     if (mine('b')) {
       // Settings → Models → Languages: the route opens with ordered groups and language rows.
+      _step('b-models-languages');
       await _openTab(tester, Icons.settings_outlined);
       final modelsRow = find.byKey(const ValueKey('settings-models-row'));
       await tester.scrollUntilVisible(
@@ -116,6 +124,7 @@ void main() {
       await _settle(tester, 6);
 
       // Library destination opens.
+      _step('b-library');
       await _openTab(tester, Icons.library_books_outlined);
       expect(find.byType(Scaffold), findsWidgets);
     }
