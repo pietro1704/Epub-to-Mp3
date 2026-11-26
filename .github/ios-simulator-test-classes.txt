@@ -2,6 +2,7 @@
 AppIsolationTests
 AppLaunchEnvironmentTests
 BookLanguageSheetSummaryTests
+BookReadingPreferencesTests
 BookVoiceOverrideTests
 FullPlayerContentsTests
 FullPlayerFittingTests
@@ -37,4 +38,3 @@ TocDownloadRefreshTests
 TocScreenControllerTests
 VoiceModelSettingsNavigationTests
 WCAGContrastTests
-BookReadingPreferencesTests
