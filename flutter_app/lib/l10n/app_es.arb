@@ -241,6 +241,7 @@
   "errorNoReadableText": "No se pudo extraer texto legible de este libro.",
   "errorEngineUnavailable": "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.",
   "errorModelMissing": "El modelo de narración seleccionado no está instalado. Instálalo en Ajustes.",
+  "errorNoOfflineVoice": "No hay ninguna voz sin conexión para el idioma de este libro en este dispositivo. Instala un modelo de voz en Ajustes o añade una voz del sistema sin conexión.",
   "errorModelLanguage": "Este modelo no admite el idioma de este libro. Elige un modelo compatible.",
   "errorUnsupportedEngine": "El motor de voz seleccionado no es compatible.",
   "errorSpeechTimeout": "La voz tardó demasiado en responder. Inténtalo de nuevo.",

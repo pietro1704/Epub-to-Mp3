@@ -27,6 +27,19 @@ void main() {
   });
 
   group('localized failures', () {
+    test('no offline system voice tells the user to install a voice', () async {
+      final error = Exception(_coded(
+        'system speech error: java.lang.IllegalStateException: No installed offline speech voice for pt-BR',
+        'synthesis_failed',
+      ));
+      for (final language in ['en', 'pt', 'es']) {
+        final t = await _l10n(language);
+        final message = localizedConversionFailure(t, error);
+        expect(message, endsWith(t.errorNoOfflineVoice), reason: language);
+        expect(message, isNot(contains(t.errorConversionGeneric)), reason: language);
+      }
+    });
+
     test('every known code has a message in English, Portuguese and Spanish', () async {
       const codes = [
         'no_readable_text', 'engine_unavailable', 'model_missing', 'language_model_unavailable',

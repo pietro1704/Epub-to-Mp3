@@ -246,6 +246,7 @@
   "errorNoReadableText": "No readable text could be extracted from this book.",
   "errorEngineUnavailable": "The speech converter is unavailable. Please reinstall the app or try again.",
   "errorModelMissing": "The selected narration model is not installed. Install it in Settings.",
+  "errorNoOfflineVoice": "No offline voice for this book's language is installed on this device. Install a voice model in Settings, or add an offline system voice.",
   "errorModelLanguage": "This model does not support the language of this book. Choose a compatible model.",
   "errorUnsupportedEngine": "The selected speech engine is not supported.",
   "errorSpeechTimeout": "The voice took too long to respond. Please try again.",

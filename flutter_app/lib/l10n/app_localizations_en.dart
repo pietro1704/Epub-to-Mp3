@@ -684,6 +684,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The selected narration model is not installed. Install it in Settings.';
 
   @override
+  String get errorNoOfflineVoice =>
+      'No offline voice for this book\'s language is installed on this device. Install a voice model in Settings, or add an offline system voice.';
+
+  @override
   String get errorModelLanguage =>
       'This model does not support the language of this book. Choose a compatible model.';
 
