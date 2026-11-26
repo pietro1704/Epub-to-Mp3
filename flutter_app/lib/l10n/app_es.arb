@@ -216,6 +216,8 @@
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
   "ttsSecondaryUsedNotice": "Usando la voz secundaria. Se volverá a intentar la voz principal periódicamente.",
   "platformVoiceNotice": "Usando la voz del sistema en este fragmento.",
+  "platformVoiceNoticeEngine": "Usando la voz del sistema ({engine}) en este fragmento.",
+  "@platformVoiceNoticeEngine": {"placeholders": {"engine": {"type": "String"}}},
   "localAudioStorage": "Audio descargado en el dispositivo",
   "localAudioStorageHint": "El audio descargado y escuchado se conserva hasta que lo elimines.",
   "removeAudioTitle": "¿Eliminar el audio descargado?",

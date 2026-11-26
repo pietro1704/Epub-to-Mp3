@@ -22,7 +22,7 @@ class PlatformVoiceNoticeSession {
     _inputPath = null;
   }
 
-  StreamSubscription<dynamic> listen(void Function() onNotice) =>
+  StreamSubscription<dynamic> listen(void Function(String? engine) onNotice) =>
       _events.listen((event) {
         if (event is! Map ||
             event['engine'] != 'system' ||
@@ -32,6 +32,6 @@ class PlatformVoiceNoticeSession {
           return;
         }
         _shown = true;
-        onNotice();
+        onNotice(event['voiceEngine'] as String?);
       }, onError: (Object _) {});
 }

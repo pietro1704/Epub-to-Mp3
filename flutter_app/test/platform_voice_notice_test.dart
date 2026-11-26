@@ -26,7 +26,7 @@ void main() {
       final events = StreamController<dynamic>.broadcast(sync: true);
       final session = PlatformVoiceNoticeSession(events: events.stream);
       var warnings = 0;
-      final subscription = session.listen(() => warnings++);
+      final subscription = session.listen((_) => warnings++);
       session.begin('/book-a.epub');
       events.add({'engine': 'system', 'inputPath': '/book-b.epub'});
       events.add({'engine': 'edge', 'inputPath': '/book-a.epub'});
@@ -44,4 +44,19 @@ void main() {
       await events.close();
     },
   );
+  test('notice carries the active system speech engine', () async {
+    final events = StreamController<dynamic>.broadcast(sync: true);
+    final session = PlatformVoiceNoticeSession(events: events.stream);
+    final engines = <String?>[];
+    final subscription = session.listen(engines.add);
+    session.begin('/book.epub');
+    events.add({
+      'engine': 'system',
+      'voiceEngine': 'com.google.android.tts',
+      'inputPath': '/book.epub',
+    });
+    expect(engines, ['com.google.android.tts']);
+    await subscription.cancel();
+    await events.close();
+  });
 }

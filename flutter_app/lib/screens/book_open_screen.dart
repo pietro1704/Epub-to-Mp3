@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,7 +53,8 @@ import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
 import 'missing_narration_dialog.dart';
 import '../services/playback/playback_narration_resolver.dart';
-import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
+import '../views/reader_narration_menu.dart'
+    show installedNarrationModelIdsProvider;
 import '../views/reader_toc_audio_state.dart' show ReaderDownloadActions;
 import 'pdf_reader_screen.dart';
 
@@ -72,17 +74,26 @@ class BookOpenScreen extends ConsumerStatefulWidget {
 }
 
 class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
-    with BookContentSession, BookPlaybackSession, BookLocalPlaybackExecution, WidgetsBindingObserver {
+    with
+        BookContentSession,
+        BookPlaybackSession,
+        BookLocalPlaybackExecution,
+        WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (Platform.isAndroid) {
-      _platformVoiceSubscription = _platformVoiceSession.listen(() {
+      _platformVoiceSubscription = _platformVoiceSession.listen((engine) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.platformVoiceNotice),
+            content: Text(
+              engine == null
+                  ? AppLocalizations.of(context)!.platformVoiceNotice
+                  : AppLocalizations.of(context)!
+                        .platformVoiceNoticeEngine(engine),
+            ),
           ),
         );
       });

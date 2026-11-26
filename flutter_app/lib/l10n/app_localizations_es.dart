@@ -601,6 +601,11 @@ class AppLocalizationsEs extends AppLocalizations {
       'Usando la voz del sistema en este fragmento.';
 
   @override
+  String platformVoiceNoticeEngine(String engine) {
+    return 'Usando la voz del sistema ($engine) en este fragmento.';
+  }
+
+  @override
   String get localAudioStorage => 'Audio descargado en el dispositivo';
 
   @override

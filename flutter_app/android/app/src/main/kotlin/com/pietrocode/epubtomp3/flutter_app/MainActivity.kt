@@ -18,7 +18,7 @@ class MainActivity : AudioServiceActivity() {
     // is borrowed for this call only and must never escape into Android callbacks.
     fun synthesizeNativeSpeech(text: String, language: String, path: String, inputPath: String, cancelContext: Long): Boolean {
         platformSpeech.synthesize(text, language, path, { nativePlatformSpeechCancelled(cancelContext) }) {
-            conversionChannels.platformVoiceEvents?.success(mapOf("engine" to "system", "inputPath" to inputPath))
+            conversionChannels.platformVoiceEvents?.success(mapOf("engine" to "system", "voiceEngine" to platformSpeech.activeEngineName, "inputPath" to inputPath))
         }
         return true
     }

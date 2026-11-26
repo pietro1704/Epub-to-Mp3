@@ -599,6 +599,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get platformVoiceNotice => 'Using the system voice for this segment.';
 
   @override
+  String platformVoiceNoticeEngine(String engine) {
+    return 'Using the system voice ($engine) for this segment.';
+  }
+
+  @override
   String get localAudioStorage => 'Local audio downloads';
 
   @override
