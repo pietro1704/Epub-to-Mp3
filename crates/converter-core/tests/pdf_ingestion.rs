@@ -242,6 +242,33 @@ fn pdf_does_not_silently_drop_an_image_page_from_a_mixed_document() {
     assert!(message.contains("2"), "{message}");
 }
 
+/// PDF-COVER-BLOCKS-CONVERSION: an image-only cover must not block a book that has selectable text.
+#[test]
+fn pdf_with_an_image_only_cover_converts_the_text_pages() {
+    let source = fixture::pdf_with(false, &["", "Readable", "Last readable page"], |objects| {
+        let image = objects.len() + 1;
+        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
+        objects[2] = objects[2].replace(
+            "/Resources <<",
+            &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+        );
+        let content = "q 100 0 0 100 20 20 cm /Im0 Do Q";
+        objects[3] = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+    });
+    let session = open_bytes(&source).expect("an image cover must not reject the whole book");
+    let text: String = session
+        .metadata()
+        .chapters
+        .iter()
+        .map(|chapter| chapter.text.as_str())
+        .collect();
+    assert!(text.contains("Readable"), "{text}");
+    assert!(text.contains("Last readable page"), "{text}");
+}
+
 /// PDF-COVER-BLOCKS-CONVERSION: clients localize an image-only page instead of
 /// showing the generic failure, so the worker failure carries its own code.
 #[test]
