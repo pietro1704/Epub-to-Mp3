@@ -88,7 +88,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     if (_skippedPages != 0) setState(() => _skippedPages = 0);
     if (path == null || !path.toLowerCase().endsWith('.pdf')) return;
     try {
-      final book = await ref.read(embeddedConverterProvider).parse(inputPath: path);
+      final book = await ref
+          .read(embeddedConverterProvider)
+          .parse(inputPath: path);
       if (!mounted || _filePath != path) return;
       setState(() => _skippedPages = book.skippedPages);
     } catch (_) {
@@ -109,11 +111,16 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       if (mounted) _refreshSkippedPages();
     });
     if (defaultTargetPlatform == TargetPlatform.android) {
-      _voiceSubscription = _voiceSession.listen(() {
+      _voiceSubscription = _voiceSession.listen((engine) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.platformVoiceNotice),
+            content: Text(
+              engine == null
+                  ? AppLocalizations.of(context)!.platformVoiceNotice
+                  : AppLocalizations.of(context)!
+                        .platformVoiceNoticeEngine(engine),
+            ),
           ),
         );
       });
@@ -256,7 +263,8 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               primary: manualPrimary,
               secondary:
                   allowSecondary &&
-                      saved.secondary?.representsSameRequest(manualPrimary) != true
+                      saved.secondary?.representsSameRequest(manualPrimary) !=
+                          true
                   ? saved.secondary
                   : null,
               allowOnlineFallback: allowSecondary && saved.allowOnlineFallback,
