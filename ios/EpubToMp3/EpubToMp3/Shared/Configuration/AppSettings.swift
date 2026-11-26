@@ -128,17 +128,24 @@ final class AppSettings: ObservableObject {
     /// "Only for this book": the book starts from the current default and keeps its own values from now on.
     func useOnlyForThisBook(store: BookReadingPreferencesStore = .shared) {
         guard let bookID = bookScopeID, !isBookSpecific else { return }
+        store.setTurnedOff(false, for: bookID)
         readerDefaults = store.create(for: bookID, copying: defaults)
         isBookSpecific = true
         objectWillChange.send()
     }
 
-    func useBookScopeByDefault(store: BookReadingPreferencesStore = .shared) {}
+    /// The reader settings of a book open with "only for this book" on, unless the user turned it off.
+    /// Done when the settings open, so a book whose settings were never touched keeps following the default.
+    func useBookScopeByDefault(store: BookReadingPreferencesStore = .shared) {
+        guard let bookID = bookScopeID, !store.isTurnedOff(bookID) else { return }
+        useOnlyForThisBook(store: store)
+    }
 
     /// "Use default": the book forgets its own values and follows the default.
     func useDefaultForThisBook(store: BookReadingPreferencesStore = .shared) {
         guard let bookID = bookScopeID, isBookSpecific else { return }
         store.remove(bookID)
+        store.setTurnedOff(true, for: bookID)
         readerDefaults = defaults
         isBookSpecific = false
         reloadReaderPreferences(from: defaults)
