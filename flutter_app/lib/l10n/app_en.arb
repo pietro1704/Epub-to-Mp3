@@ -319,5 +319,19 @@
   "readerHighlight": "Highlight",
   "readerAddNote": "Add Note",
   "readerRemoveHighlight": "Remove highlight",
-  "readerPassageLanguage": "Passage language"
+  "readerPassageLanguage": "Passage language",
+  "libraryMetaProgress": "{percent}% · ch. {current} of {total}",
+  "@libraryMetaProgress": {"placeholders": {"percent": {"type": "int"}, "current": {"type": "int"}, "total": {"type": "int"}}},
+  "libraryMetaAudioNone": "Not converted",
+  "libraryMetaAudioPartial": "Audio {done} of {total}",
+  "@libraryMetaAudioPartial": {"placeholders": {"done": {"type": "int"}, "total": {"type": "int"}}},
+  "libraryMetaAudioComplete": "Audio complete",
+  "libraryMetaPages": "{count, plural, =1{1 page} other{{count} pages}}",
+  "@libraryMetaPages": {"placeholders": {"count": {"type": "int"}}},
+  "libraryMetaChapters": "{count, plural, =1{1 chapter} other{{count} chapters}}",
+  "@libraryMetaChapters": {"placeholders": {"count": {"type": "int"}}},
+  "libraryMetaAdded": "Added {date}",
+  "@libraryMetaAdded": {"placeholders": {"date": {"type": "String"}}},
+  "libraryMetaLastRead": "Read {date}",
+  "@libraryMetaLastRead": {"placeholders": {"date": {"type": "String"}}}
 }

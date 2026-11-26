@@ -1737,6 +1737,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Passage language'**
   String get readerPassageLanguage;
+
+  /// No description provided for @libraryMetaProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% · ch. {current} of {total}'**
+  String libraryMetaProgress(int percent, int current, int total);
+
+  /// No description provided for @libraryMetaAudioNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Not converted'**
+  String get libraryMetaAudioNone;
+
+  /// No description provided for @libraryMetaAudioPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio {done} of {total}'**
+  String libraryMetaAudioPartial(int done, int total);
+
+  /// No description provided for @libraryMetaAudioComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio complete'**
+  String get libraryMetaAudioComplete;
+
+  /// No description provided for @libraryMetaPages.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 page} other{{count} pages}}'**
+  String libraryMetaPages(int count);
+
+  /// No description provided for @libraryMetaChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 chapter} other{{count} chapters}}'**
+  String libraryMetaChapters(int count);
+
+  /// No description provided for @libraryMetaAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Added {date}'**
+  String libraryMetaAdded(String date);
+
+  /// No description provided for @libraryMetaLastRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read {date}'**
+  String libraryMetaLastRead(String date);
 }
 
 class _AppLocalizationsDelegate

@@ -312,5 +312,13 @@
   "readerHighlight": "Resaltar",
   "readerAddNote": "Agregar nota",
   "readerRemoveHighlight": "Eliminar resaltado",
-  "readerPassageLanguage": "Idioma del pasaje"
+  "readerPassageLanguage": "Idioma del pasaje",
+  "libraryMetaProgress": "{percent}% · cap. {current} de {total}",
+  "libraryMetaAudioNone": "Sin convertir",
+  "libraryMetaAudioPartial": "Audio {done} de {total}",
+  "libraryMetaAudioComplete": "Audio completo",
+  "libraryMetaPages": "{count, plural, =1{1 página} other{{count} páginas}}",
+  "libraryMetaChapters": "{count, plural, =1{1 capítulo} other{{count} capítulos}}",
+  "libraryMetaAdded": "Añadido {date}",
+  "libraryMetaLastRead": "Leído {date}"
 }

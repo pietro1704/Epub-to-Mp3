@@ -90,6 +90,7 @@ class _BookGrid extends StatelessWidget {
             (tileWidth - 8) * 1.5 +
             labelHeight('Ag\nAg', textTheme.labelLarge) +
             labelHeight('Ag', textTheme.bodySmall) +
+            labelHeight('Ag\nAg\nAg\nAg', textTheme.labelSmall) +
             24;
         return GridView.builder(
           padding: const EdgeInsets.all(16),
@@ -102,10 +103,13 @@ class _BookGrid extends StatelessWidget {
           itemCount: books.length,
           itemBuilder: (context, i) {
             final book = books[i];
-            return LibraryBookTile(
-              book: book,
-              onTap: () => onTap(book),
-              onLongPress: () => onLongPress(book),
+            return Consumer(
+              builder: (context, ref, _) => LibraryBookTile(
+                facts: ref.watch(libraryBookFactsProvider(book)).value,
+                book: book,
+                onTap: () => onTap(book),
+                onLongPress: () => onLongPress(book),
+              ),
             );
           },
         );
@@ -120,7 +124,9 @@ class LibraryBookTile extends StatelessWidget {
     required this.book,
     required this.onTap,
     required this.onLongPress,
+    this.facts,
   });
+  final LibraryBookFacts? facts;
   final BookEntity book;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
@@ -171,6 +177,7 @@ class LibraryBookTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
+                    if (facts != null) _FactsLines(facts: facts!),
                   ],
                 ),
               ),
@@ -248,6 +255,60 @@ class _StatusBadge extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Format, size, progress, audio state and date, as small lines under the author.
+class _FactsLines extends StatelessWidget {
+  const _FactsLines({required this.facts});
+  final LibraryBookFacts facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+    final style = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final count = facts.chapterCount;
+    final size = count == null
+        ? null
+        : facts.isPdf
+        ? t.libraryMetaPages(count)
+        : t.libraryMetaChapters(count);
+    final percent = facts.progressPercent;
+    final audio = switch (facts.audioState) {
+      LibraryAudioState.notConverted => t.libraryMetaAudioNone,
+      LibraryAudioState.partial => t.libraryMetaAudioPartial(
+        facts.audioDone,
+        facts.audioTotal,
+      ),
+      LibraryAudioState.complete => t.libraryMetaAudioComplete,
+    };
+    final date = facts.date == null
+        ? null
+        : MaterialLocalizations.of(context).formatCompactDate(facts.date!);
+    final lines = <String>[
+      [facts.format, ?size].join(' · '),
+      if (percent != null && count != null)
+        t.libraryMetaProgress(percent, facts.resumeChapter!, count),
+      audio,
+      if (date != null)
+        facts.dateIsLastRead
+            ? t.libraryMetaLastRead(date)
+            : t.libraryMetaAdded(date),
+    ];
+    return Column(
+      key: const ValueKey('library-book-facts'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final line in lines)
+          Text(
+            line,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+      ],
     );
   }
 }
