@@ -217,6 +217,32 @@ class DeviceFarmTest < Minitest::Test
     originals&.each { |name, original| singleton.define_method(name, original) }
   end
 
+  # 2026-11-26: a hand-installed app build (not the suite entrypoint) was left on the devices; the
+  # regression saw the package present, never installed the suite and gave "no verdict" for 20 min.
+  def test_the_regression_always_installs_the_suite_apk_even_when_the_package_is_present
+    calls = []
+    fakes = {
+      adb: lambda { |_serial, *args, **|
+        calls << args.join(' ')
+        ['', true]
+      },
+      sleep: ->(*) {},
+      close_app: ->(*) {},
+      installed?: ->(*) { true },
+      install: lambda { |serial|
+        calls << "install #{serial}"
+        [true, 'Success']
+      }
+    }
+    singleton = DeviceFarm.singleton_class
+    originals = fakes.keys.to_h { |name| [name, DeviceFarm.method(name)] }
+    fakes.each { |name, fake| singleton.define_method(name, &fake) }
+    DeviceFarm.regression('serial', minutes: 0)
+    assert_includes calls, 'install serial'
+  ensure
+    originals&.each { |name, original| singleton.define_method(name, original) }
+  end
+
   def test_the_soak_never_turns_off_the_screen_of_a_device_with_a_secure_lock
     ["KeyguardServiceDelegate\n  secure=true\n", "no keyguard information\n"].each do |window|
       calls, result = soak_calls(window)

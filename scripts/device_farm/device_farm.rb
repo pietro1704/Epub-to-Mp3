@@ -367,10 +367,11 @@ module DeviceFarm
 
   def self.regression(serial, minutes: 20)
     shard = shard_for(serial)
-    unless installed?(serial)
-      ok, detail = install(serial)
-      return Result.new(serial, 'regression', false, "app missing and install failed: #{detail}", 'regression:no-app', '') unless ok
-    end
+    # Always (re)install the suite APK, data kept: a hand-installed build of the app has no suite
+    # entrypoint and would run for the whole window without ever printing a verdict.
+    ok, detail = install(serial)
+    return Result.new(serial, 'regression', false, "suite install failed: #{detail}", 'regression:no-app', '') unless ok || installed?(serial)
+
     close_app(serial)
     # One argument: the device's shell must not split the command at `&&` outside run-as.
     adb(serial, 'shell', "run-as #{PACKAGE} sh -c 'mkdir -p files && echo #{shard} > files/farm_shard'", timeout: 30)
