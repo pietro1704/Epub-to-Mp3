@@ -132,6 +132,7 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
             config.clone(),
         )
         .map_err(|error| error.to_string())?;
+        crate::output_reporting::report_skipped_pages(session.metadata().skipped_pages);
         let manifest =
             run_with_retry_rounds(&session, RetryRounds::from_options(&options), |session| {
                 session.convert()

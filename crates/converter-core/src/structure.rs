@@ -104,6 +104,7 @@ mod tests {
             toc,
             cover: None,
             cover_mime: None,
+            skipped_pages: 0,
         }
     }
 

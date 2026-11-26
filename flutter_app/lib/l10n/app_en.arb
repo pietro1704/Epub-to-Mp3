@@ -242,7 +242,7 @@
   "goToNarratedPage": "Go to reading",
   "readerAppearance": "Text appearance",
   "readerPlayFromHere": "Play from here",
-  "errorPdfOcrRequired": "This PDF has a page with only an image and no selectable text (often the cover). It cannot be narrated until that text is recognized (OCR).",
+  "errorPdfOcrRequired": "This PDF has no selectable text on any page (it looks scanned). It cannot be narrated until that text is recognized (OCR).",
   "errorNoReadableText": "No readable text could be extracted from this book.",
   "errorEngineUnavailable": "The speech converter is unavailable. Please reinstall the app or try again.",
   "errorModelMissing": "The selected narration model is not installed. Install it in Settings.",

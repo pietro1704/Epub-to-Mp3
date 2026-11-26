@@ -21,8 +21,15 @@ enum ManualConversionPresentation {
     @MainActor
     static func detail(for session: ManualConversionSession) -> String? {
         if session.phase == .cancelled { return L10n.string("convert.cancelled") }
-        guard session.isRunning, let progress = session.progress, progress.chaptersTotal > 0 else { return nil }
-        return L10n.string("convert.chapterProgress", progress.chaptersCompleted, progress.chaptersTotal)
+        var lines: [String] = []
+        if session.isRunning, let progress = session.progress, progress.chaptersTotal > 0 {
+            lines.append(L10n.string("convert.chapterProgress", progress.chaptersCompleted, progress.chaptersTotal))
+        }
+        if session.skippedPages > 0, session.isRunning || session.phase == .completed {
+            lines.append(session.skippedPages == 1 ? L10n.string("convert.pdfPagesSkipped.one")
+                : L10n.string("convert.pdfPagesSkipped.many", session.skippedPages))
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 }
 

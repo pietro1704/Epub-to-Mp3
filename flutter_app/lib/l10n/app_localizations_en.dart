@@ -669,7 +669,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorPdfOcrRequired =>
-      'This PDF has a page with only an image and no selectable text (often the cover). It cannot be narrated until that text is recognized (OCR).';
+      'This PDF has no selectable text on any page (it looks scanned). It cannot be narrated until that text is recognized (OCR).';
 
   @override
   String get errorNoReadableText =>

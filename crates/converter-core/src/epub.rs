@@ -110,6 +110,8 @@ pub struct Book {
     pub toc: Vec<TocItem>,
     pub cover: Option<Vec<u8>>,
     pub cover_mime: Option<String>,
+    /// Source pages left out of narration because they have no selectable text (PDF only).
+    pub skipped_pages: usize,
 }
 
 pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
@@ -271,6 +273,7 @@ fn parse_epub_document<R: Read + Seek>(
         toc,
         cover,
         cover_mime,
+        skipped_pages: 0,
     })
 }
 

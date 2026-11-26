@@ -185,6 +185,10 @@ fn metadata_json(
     if !metadata.toc.is_empty() {
         value["toc"] = metadata.toc.iter().map(toc_entry_json).collect();
     }
+    // Additive: only a book with pages left out of narration reports the count.
+    if metadata.skipped_pages > 0 {
+        value["skipped_pages"] = metadata.skipped_pages.into();
+    }
     value.to_string()
 }
 

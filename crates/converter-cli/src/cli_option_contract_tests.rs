@@ -188,6 +188,7 @@ fn existing_output_modes_reject_conversion_options_by_name() {
 
 fn book(chapters: &[(&str, &str)]) -> EmbeddedBookMetadata {
     EmbeddedBookMetadata {
+        skipped_pages: 0,
         title: "Fixture".into(),
         author: String::new(),
         language: None,
