@@ -650,3 +650,5 @@
 "discovery.rights.gutenberg" = "Public domain in the US";
 "discovery.rights.brasiliana" = "Public domain according to BBM/USP";
 "discovery.rights.camara" = "Free publisher download · PDF edition rights reserved";
+"settings.originalTypography" = "Original typography";
+"settings.originalTypography.restore" = "Restore";

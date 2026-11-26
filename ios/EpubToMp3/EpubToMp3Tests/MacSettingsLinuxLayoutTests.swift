@@ -123,6 +123,46 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         }
     }
 
+    /// PARITY-MAC-SETTINGS-4: the Reading preferences page carries the same preferences as on Linux.
+    func testReadingPreferencesPageEditsTheRemainingPreferences() throws {
+        let settings = AppSettings(defaults: defaults)
+        settings.readerLayout = .paginated
+        settings.readerFontFamily = .serif
+        settings.readerOverrideFontSize = true
+        let (controller, window) = host(settings)
+        defer { window.close() }
+        let disclosure = try XCTUnwrap(control(in: controller.view,
+                                               identifier: "settings.readingPreferences.disclosure") as? NSButton)
+        disclosure.performClick(nil)
+        controller.view.layoutSubtreeIfNeeded()
+        func find(_ identifier: String) throws -> NSView {
+            try XCTUnwrap(control(in: controller.view, identifier: identifier), "missing \(identifier)")
+        }
+        func choose(_ identifier: String, _ index: Int) throws {
+            let popup = try XCTUnwrap(try find(identifier) as? NSPopUpButton)
+            popup.selectItem(at: index)
+            popup.sendAction(popup.action, to: popup.target)
+        }
+        _ = try find("settings.lineSpacing")
+        _ = try find("settings.margin")
+        try choose("settings.alignment", try XCTUnwrap(ReaderTextAlignment.allCases.firstIndex(of: .left)))
+        XCTAssertEqual(settings.readerTextAlignment, .left)
+        try choose("settings.pageTurnStyle", 1)
+        XCTAssertEqual(settings.pageTurnStyle, PageTurnStyle.none)
+        let numbers = try XCTUnwrap(try find("settings.pageNumbers") as? NSButton)
+        let shown = settings.readerShowPageNumbers
+        numbers.performClick(nil)
+        XCTAssertEqual(settings.readerShowPageNumbers, !shown)
+        attach(window, name: "mac-reading-preferences")
+        try XCTUnwrap(try find("settings.originalTypography") as? NSButton).performClick(nil)
+        XCTAssertFalse(settings.readerOverrideFontFamily)
+        XCTAssertFalse(settings.readerOverrideFontSize)
+        try choose("settings.layout", try XCTUnwrap(ReaderLayout.allCases.firstIndex(of: .scrolling)))
+        // `control` only returns visible views.
+        XCTAssertNil(control(in: controller.view, identifier: "settings.pageTurnStyle"), "scrolling has no page turns")
+        XCTAssertNil(control(in: controller.view, identifier: "settings.pageNumbers"))
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),

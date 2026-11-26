@@ -11,6 +11,11 @@ final class MacReadingPreferencesViewController: NSViewController {
     private let fontPopup = NSPopUpButton()
     private let themePopup = NSPopUpButton()
     private let layoutPopup = NSPopUpButton()
+    private let alignmentPopup = NSPopUpButton()
+    private let pageTurnPopup = NSPopUpButton()
+    private let pageNumbersToggle = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    /// Rows that only make sense with pages.
+    private var paginatedRows: [NSView] = []
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -47,11 +52,41 @@ final class MacReadingPreferencesViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
-        for (control, key) in [(fontSizeSlider, "settings.fontSize"), (fontPopup, "settings.font"),
-                               (themePopup, "settings.theme"), (layoutPopup, "settings.layout")] as [(NSControl, String)] {
+        alignmentPopup.addItems(withTitles: ReaderTextAlignment.allCases.map(\.displayName))
+        alignmentPopup.target = self
+        alignmentPopup.action = #selector(alignmentChanged(_:))
+        pageTurnPopup.addItems(withTitles: PageTurnStyle.macCases.map(\.displayName))
+        pageTurnPopup.target = self
+        pageTurnPopup.action = #selector(pageTurnChanged(_:))
+        pageNumbersToggle.target = self
+        pageNumbersToggle.action = #selector(pageNumbersChanged(_:))
+        let original = NSButton(title: L10n.string("settings.originalTypography.restore"), target: self,
+                                action: #selector(useOriginalTypography))
+        for (control, id, key) in [
+            (fontSizeSlider, "settings.fontSize", "settings.fontSize"), (fontPopup, "settings.font", "settings.font"),
+            (themePopup, "settings.theme", "settings.theme"), (layoutPopup, "settings.layout", "settings.layout"),
+            (alignmentPopup, "settings.alignment", "readerSettings.alignment"),
+            (pageTurnPopup, "settings.pageTurnStyle", "readerSettings.pageTurnStyle"),
+            (pageNumbersToggle, "settings.pageNumbers", "readerSettings.showPageNumbers"),
+            (original, "settings.originalTypography", "settings.originalTypography"),
+        ] as [(NSControl, String, String)] {
             control.setAccessibilityLabel(L10n.string(key))
-            control.setAccessibilityIdentifier(key)
+            control.setAccessibilityIdentifier(id)
         }
+        let lineSpacing = MacPointPresetControl(presets: PointPresetScale.lineSpacing,
+            current: settings.readerLineSpacing, title: L10n.string("readerSettings.lineSpacing"),
+            identifier: "settings.lineSpacing") { [weak settings] in settings?.readerLineSpacing = $0 }
+        let margin = MacPointPresetControl(presets: PointPresetScale.macMargin,
+            current: settings.readerMargin, title: L10n.string("reader.margins"),
+            identifier: "settings.margin") { [weak settings] in settings?.readerMargin = $0 }
+        for control in [lineSpacing, margin] {
+            control.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        }
+        let pageTurnRow = MacSettingsSections.row(title: L10n.string("readerSettings.pageTurnStyle"),
+                                                  symbol: "book.pages", accessory: pageTurnPopup)
+        let pageNumbersRow = MacSettingsSections.row(title: L10n.string("readerSettings.showPageNumbers"),
+                                                     symbol: "number", accessory: pageNumbersToggle)
+        paginatedRows = [pageTurnRow, pageNumbersRow]
         let sizeControl = NSStackView(views: [fontSizeSlider, fontSizeLabel])
         sizeControl.spacing = 8
         sizeControl.alignment = .centerY
@@ -62,6 +97,16 @@ final class MacReadingPreferencesViewController: NSViewController {
             MacSettingsSections.row(title: L10n.string("settings.fontSize"), symbol: "textformat.size",
                                     accessory: sizeControl),
             MacSettingsSections.row(title: L10n.string("settings.layout"), symbol: "doc.text", accessory: layoutPopup),
+            MacSettingsSections.row(title: L10n.string("readerSettings.lineSpacing"),
+                                    symbol: "arrow.up.and.down.text.horizontal", accessory: lineSpacing),
+            MacSettingsSections.row(title: L10n.string("reader.margins"), symbol: "arrow.left.and.right.square",
+                                    accessory: margin),
+            MacSettingsSections.row(title: L10n.string("readerSettings.alignment"), symbol: "text.justify",
+                                    accessory: alignmentPopup),
+            pageTurnRow,
+            pageNumbersRow,
+            MacSettingsSections.row(title: L10n.string("settings.originalTypography"),
+                                    symbol: "arrow.counterclockwise", accessory: original),
         ]
         let form = NSStackView(views: [
             MacSettingsSections.header(L10n.string("settings.readingPreferencesSubtitle")),
@@ -80,6 +125,22 @@ final class MacReadingPreferencesViewController: NSViewController {
         ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
         select(ReaderTheme.allCases.firstIndex(of: settings.readerTheme), in: themePopup)
         select(ReaderLayout.allCases.firstIndex(of: settings.readerLayout), in: layoutPopup)
+        select(ReaderTextAlignment.allCases.firstIndex(of: settings.readerTextAlignment), in: alignmentPopup)
+        select(PageTurnStyle.macCases.firstIndex(of: settings.pageTurnStyle.onMac), in: pageTurnPopup)
+        pageNumbersToggle.state = settings.readerShowPageNumbers ? .on : .off
+        showPaginatedRows()
+    }
+
+    private func showPaginatedRows() {
+        let hidden = settings.readerLayout != .paginated
+        for row in paginatedRows {
+            row.isHidden = hidden
+            // The divider above goes with its row.
+            if let siblings = (row.superview as? NSStackView)?.arrangedSubviews,
+               let index = siblings.firstIndex(of: row), index > 0 {
+                siblings[index - 1].isHidden = hidden
+            }
+        }
     }
 
     private func select(_ index: Int?, in popup: NSPopUpButton) {
@@ -104,6 +165,28 @@ final class MacReadingPreferencesViewController: NSViewController {
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+        showPaginatedRows()
+    }
+
+    @objc private func alignmentChanged(_ sender: NSPopUpButton) {
+        settings.readerTextAlignment = ReaderTextAlignment.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func pageTurnChanged(_ sender: NSPopUpButton) {
+        settings.pageTurnStyle = PageTurnStyle.macCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func pageNumbersChanged(_ sender: NSButton) {
+        settings.readerShowPageNumbers = sender.state == .on
+    }
+
+    /// The publisher's font, size, line spacing and alignment apply again, as "Original typography" does on Linux.
+    @objc private func useOriginalTypography() {
+        settings.readerOverrideFontFamily = false
+        settings.readerOverrideFontSize = false
+        settings.readerOverrideLineSpacing = false
+        settings.readerOverrideTextAlignment = false
+        refresh()
     }
 }
 #endif
