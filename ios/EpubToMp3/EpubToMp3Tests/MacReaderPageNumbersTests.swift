@@ -89,6 +89,24 @@ final class MacReaderPageNumbersTests: XCTestCase {
                 let first = try XCTUnwrap(indicator()).stringValue
                 XCTAssertEqual(textView.onPageTap?(true), true)
                 XCTAssertEqual(outgoing() != nil, slides, "style \(style.rawValue), reduced \(reduced)")
+                if style == .slide, !reduced, let old = outgoing(), let overlay = old.superview, overlay.subviews.count == 2 {
+                    // Evidence only: pose both pages halfway so the offscreen render shows the transition.
+                    let width = overlay.bounds.width
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.current.duration = 0
+                    overlay.subviews[0].animator().setFrameOrigin(NSPoint(x: -width / 2, y: 0))
+                    overlay.subviews[1].animator().setFrameOrigin(NSPoint(x: width / 2, y: 0))
+                    NSAnimationContext.endGrouping()
+                    if let bitmap = root.bitmapImageRepForCachingDisplay(in: root.bounds) {
+                        root.cacheDisplay(in: root.bounds, to: bitmap)
+                        let image = NSImage(size: root.bounds.size)
+                        image.addRepresentation(bitmap)
+                        let shot = XCTAttachment(image: image)
+                        shot.name = "mac-page-slide-halfway"
+                        shot.lifetime = .keepAlways
+                        add(shot)
+                    }
+                }
                 try await Task.sleep(nanoseconds: 800_000_000)
                 XCTAssertNil(outgoing(), "the transition must not stay over the text")
                 XCTAssertNotEqual(try XCTUnwrap(indicator()).stringValue, first, "the page must advance")
