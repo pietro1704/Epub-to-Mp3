@@ -23,6 +23,14 @@ final class LibraryStore: ObservableObject {
     private var removalGenerations: [String: Int] = [:]
 
     @Published private(set) var books: [BookEntity] = []
+
+    #if DEBUG
+    /// In memory only: no file is imported and nothing is persisted.
+    func showUITestPlaceholderBook() {
+        books = [BookEntity(id: "ui-test-book", title: "UI Test Book", bookmark: Data(),
+                            displayFilename: "UI Test Book.epub", addedAt: Date())]
+    }
+    #endif
     @Published private(set) var loadError: String?
     /// A missing index is a valid empty library; decode failure leaves membership unknown.
     private(set) var hasLoadedSuccessfully = false

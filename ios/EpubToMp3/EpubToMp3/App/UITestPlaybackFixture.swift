@@ -6,6 +6,10 @@ enum UITestPlaybackFixture {
     static func installIfRequested(library: LibraryStore, player: AudioPlayer) {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("-uiTestPlaybackFixture") else { return }
+        #if DEBUG
+        // The mini player needs a library entry, and an isolated launch starts without one.
+        if AppIsolation.isActive, library.books.isEmpty { library.showUITestPlaceholderBook() }
+        #endif
         let testReaderLocation = arguments.contains("-uiTestPlaybackReaderLocation")
         let chapterIndex = testReaderLocation ? 1 : 0
         let snapshotIndexBase: Int? = testReaderLocation ? 1 : nil
