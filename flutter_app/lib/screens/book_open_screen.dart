@@ -78,7 +78,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (Platform.isAndroid) {
-      _platformVoiceSubscription = _platformVoiceSession.listen(() {
+      _platformVoiceSubscription = _platformVoiceSession.listen((engine) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
