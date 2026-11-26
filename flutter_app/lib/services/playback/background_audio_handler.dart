@@ -101,6 +101,10 @@ class BackgroundAudioHandler extends BaseAudioHandler {
   /// resume and would be ignored.
   Future<void> Function()? startNarration;
 
+  /// A seek or skip that came from outside the app (lock screen, headphones, car, MPRIS): explicit
+  /// playback navigation, so the reader follows the narration again.
+  void Function()? onRemoteJump;
+
   @override
   Future<void> play() async {
     final start = startNarration;
@@ -126,24 +130,28 @@ class BackgroundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    onRemoteJump?.call();
     await player.seek(position);
     _publishState();
   }
 
   @override
   Future<void> fastForward() async {
+    onRemoteJump?.call();
     player.skipForward();
     _publishState();
   }
 
   @override
   Future<void> rewind() async {
+    onRemoteJump?.call();
     player.skipBackward();
     _publishState();
   }
 
   @override
   Future<void> skipToNext() async {
+    onRemoteJump?.call();
     // Head units that only know track commands still get the user's choice (REMOTE-BUTTON-MODE).
     if (_remoteButtonMode == RemoteButtonMode.seconds) {
       player.skipForward();
@@ -155,6 +163,7 @@ class BackgroundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    onRemoteJump?.call();
     if (_remoteButtonMode == RemoteButtonMode.seconds) {
       player.skipBackward();
     } else {
