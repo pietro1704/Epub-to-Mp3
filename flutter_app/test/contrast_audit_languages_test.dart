@@ -96,6 +96,8 @@ Future<List<ContrastFinding>> _audit(
           sharedPrefsProvider.overrideWithValue(prefs),
           embeddedConverterProvider.overrideWithValue(_Converter()),
           ttsModelRootProvider.overrideWith((_) => '/fixture-models'),
+          // The real provider runs `espeak-ng --voices` on Linux: a real process that outlives fake time.
+          systemVoiceLanguagesProvider.overrideWith((_) async => const <String>[]),
         ],
         child: MaterialApp(
           theme: AppTheme.forBrightness(brightness, highContrast: highContrast),
