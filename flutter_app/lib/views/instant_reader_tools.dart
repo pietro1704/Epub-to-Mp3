@@ -234,7 +234,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
                       title: Text(row.title),
                       trailing: switch (index == null ? null : audio[index]) {
                         ChapterAudioState.ready => Icon(
-                          Icons.check_circle_outline,
+                          Icons.check_circle,
                           semanticLabel: t.tocAudioReady,
                         ),
                         ChapterAudioState.converting => Icon(
