@@ -91,11 +91,13 @@ func buildSelectionMenuItems(range: NSRange) -> [NSMenuItem] {
     let note = item("reader.action.addNote", #selector(addNoteForSelectionFromMenu(_:)))
     let more = NSMenuItem(title: L10n.string("reader.selection.more"), action: nil, keyEquivalent: "")
     let submenu = NSMenu()
-    submenu.addItem(change)
+    // Inside a saved highlight, removing it stays on the first level.
+    let isSaved = selection.existing != nil
+    if !isSaved { submenu.addItem(change) }
     submenu.addItem(note)
     if let language = selectionLanguageMenuItem(range: range) { submenu.addItem(language) }
     more.submenu = submenu
-    return [play, more]
+    return isSaved ? [play, change, more] : [play, more]
 }
 
 private func currentSelection(_ sender: NSMenuItem) -> ReaderHighlightEditor.Selection? {
