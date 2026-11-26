@@ -28,6 +28,20 @@ final class BookReadingPreferencesStore {
         Set(registry.stringArray(forKey: Self.registryKey) ?? [])
     }
 
+    private static let turnedOffKey = "bookReadingPreferenceTurnedOffBookIDs"
+
+    private var turnedOffIDs: Set<String> {
+        Set(registry.stringArray(forKey: Self.turnedOffKey) ?? [])
+    }
+
+    /// Whether the user chose "use default" for this book, so it is not turned on again for them.
+    func isTurnedOff(_ bookID: String) -> Bool { turnedOffIDs.contains(bookID) }
+
+    func setTurnedOff(_ turnedOff: Bool, for bookID: String) {
+        let ids = turnedOff ? turnedOffIDs.union([bookID]) : turnedOffIDs.subtracting([bookID])
+        registry.set(ids.sorted(), forKey: Self.turnedOffKey)
+    }
+
     func hasPreferences(for bookID: String) -> Bool { bookIDs.contains(bookID) }
 
     func suite(for bookID: String) -> UserDefaults? {

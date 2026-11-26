@@ -2,6 +2,7 @@
 AppIsolationTests
 AppLaunchEnvironmentTests
 BookLanguageSheetSummaryTests
+BookReadingPreferencesTests
 BookVoiceOverrideTests
 FullPlayerContentsTests
 FullPlayerFittingTests

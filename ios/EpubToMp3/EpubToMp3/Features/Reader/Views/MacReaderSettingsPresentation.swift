@@ -150,6 +150,7 @@ final class MacReaderSettingsPresentation: NSObject {
     }
 
     func showSettings(_ sender: NSButton) {
+        settings.useBookScopeByDefault(store: bookPreferences)
         configureSettingsPopover()
         settingsPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
