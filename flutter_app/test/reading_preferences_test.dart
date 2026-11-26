@@ -150,6 +150,17 @@ void main() {
     });
   });
 
+  testWidgets('the appearance panel carries the follow-audio switch, a global setting even when opened from a book', (tester) async {
+    final (container, prefs) = await _container();
+    await _pump(tester, container, bookId: 'book-1');
+    final toggle = find.byKey(const ValueKey('reader-follow-audio'));
+    await tester.scrollUntilVisible(toggle, 200, scrollable: find.byType(Scrollable).first);
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.getBool('readerAutoScroll'), isFalse);
+  });
+
   testWidgets('the reader Aa opens the screen for that book, in its own mode', (tester) async {
     final (container, _) = await _container();
     final book = EbookFulltext.fromJson({
