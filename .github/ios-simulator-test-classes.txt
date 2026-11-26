@@ -26,6 +26,7 @@ ReaderChromeOverlayTests
 ReaderContentsSheetTests
 ReaderFollowNarrationReaderTests
 ReaderFollowNarrationTests
+ReaderFontChoiceControllerTests
 ReaderHighlightContrastTests
 ReaderLinkContrastTests
 ReaderNarrationFollowerTests
