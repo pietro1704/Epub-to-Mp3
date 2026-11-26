@@ -207,8 +207,14 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         defer { for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) } }
         standard.set("paused-highlight-fixture", forKey: keys[0])
         standard.set(0, forKey: keys[1])
-        player.rememberReaderPlaybackAnchor()
+        player.services.navigation.rememberReaderPlaybackAnchor()
+        player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+            {"jobId":"paused-highlight-fixture","state":"finished","chapterIndexBase":1,"chapterProgress":[
+                {"index":1,"status":"completed","downloadUrl":"file:///tmp/paused-highlight.mp3","textOffset":0}]}
+            """.utf8)))
+        player.services.observation.publishCurrentChapter()
         player.playbackPlayingChanged(true)
+        XCTAssertTrue(player.isPlaybackForReaderBook("paused-highlight-fixture"))
         let document = ReaderBookDocument(book: BookEntity(id: "paused-highlight-fixture", title: "Fixture",
             bookmark: Data(), displayFilename: "fixture.epub", addedAt: Date(), fileType: .epub))
         let chapter = EbookFulltext.Chapter(index: 1, name: "Chapter", text: "A synthetic sentence to narrate.",
