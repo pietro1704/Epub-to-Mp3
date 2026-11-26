@@ -15,6 +15,7 @@ import '../services/playback/platform_voice_notice.dart';
 import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/desktop_embedded_converter.dart';
 import 'library_screen.dart' show libraryStoreProvider;
+import 'active_voice_line.dart';
 
 import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
@@ -79,6 +80,8 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   AndroidEmbeddedConverter? _activeAndroidConverter;
   DesktopEmbeddedConverter? _activeDesktopConverter;
   String? _activeNativeOutputPath;
+  Timer? _voicePoll;
+  String? _runningLog;
   int _skippedPages = 0;
 
   /// PDF pages without selectable text are left out of the narration; the person is told how
@@ -139,8 +142,28 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     });
   }
 
+  /// The Rust core appends its progress to `conversion.log` in the job directory (nested under
+  /// the requested root on Android); the active voice is read from it while the job runs.
+  void _pollRunningLog() {
+    final root = _activeNativeOutputPath;
+    if (root == null) return;
+    try {
+      var file = File('$root/conversion.log');
+      if (!file.existsSync()) {
+        final nested = Directory(root).listSync().whereType<Directory>().map((d) => File('${d.path}/conversion.log'));
+        file = nested.firstWhere((f) => f.existsSync(), orElse: () => file);
+      }
+      if (!file.existsSync()) return;
+      final text = file.readAsStringSync();
+      if (mounted && text != _runningLog) setState(() => _runningLog = text);
+    } on FileSystemException {
+      // The job directory may not exist yet or may be mid-write.
+    }
+  }
+
   @override
   void dispose() {
+    _voicePoll?.cancel();
     final converter = _activeAndroidConverter;
     final output = _activeNativeOutputPath;
     if (_submitting && output != null && converter != null) {
@@ -314,6 +337,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             );
           };
       _voiceSession.begin(request.filePath);
+      _runningLog = null;
+      _voicePoll?.cancel();
+      _voicePoll = Timer.periodic(const Duration(seconds: 1), (_) => _pollRunningLog());
       final result = await starter(request);
       var jobId = result;
       var actual = <TtsSelection>[];
@@ -393,6 +419,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         _submitting = false;
       });
     } finally {
+      _voicePoll?.cancel();
       _voiceSession.end();
       _activeNativeOutputPath = null;
     }
@@ -427,6 +454,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(t.pdfPagesSkipped(_skippedPages)),
             ),
+          if (_submitting) ActiveVoiceLine(log: _runningLog),
           if (_usedSelections.isNotEmpty)
             Text(
               t.ttsActualVoices(

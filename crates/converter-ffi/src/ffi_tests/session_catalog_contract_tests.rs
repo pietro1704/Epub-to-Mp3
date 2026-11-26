@@ -36,6 +36,29 @@ fn progress_log_line_contains_wall_and_relative_timing() {
 }
 
 #[test]
+fn progress_log_line_names_the_active_voice() {
+    let started = std::time::Instant::now();
+    let previous = std::sync::Mutex::new(started);
+    let event = converter_core::worker::ProgressEvent {
+        render_progress: None,
+        model_id: Some("pt_BR-faber-medium".into()),
+        voice: Some("Luciana".into()),
+        fallback_used: false,
+        job_id: "voice-test".into(),
+        state: "running".into(),
+        chapter_index: Some(0),
+        chapters_total: 1,
+        chapters_completed: 0,
+        percent: 1.0,
+        engine: Some("piper".into()),
+        message: "converting chapter 1".into(),
+    };
+    let line = progress_log_line(&event, started, &previous);
+    assert!(line.contains("model_id=\"pt_BR-faber-medium\""), "{line}");
+    assert!(line.contains("voice=\"Luciana\""), "{line}");
+}
+
+#[test]
 fn null_handles_report_errors_and_free_safely() {
     unsafe {
         converter_session_free(ptr::null_mut());

@@ -329,7 +329,7 @@ pub(super) fn progress_log_line(
         .unwrap_or_default()
         .as_millis();
     format!(
-        "[Rust] unix_ms={unix_ms} elapsed_ms={} since_event_ms={} state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} cached_segments={} eta_seconds={:?} {}\n",
+        "[Rust] unix_ms={unix_ms} elapsed_ms={} since_event_ms={} state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} model_id={:?} voice={:?} cached_segments={} eta_seconds={:?} {}\n",
         started.elapsed().as_millis(),
         since_previous.as_millis(),
         event.state,
@@ -338,6 +338,8 @@ pub(super) fn progress_log_line(
         event.chapters_total,
         event.percent,
         event.engine,
+        event.model_id.as_deref().unwrap_or_default(),
+        event.voice.as_deref().unwrap_or_default(),
         event.render_progress.as_ref().map_or(0, |progress| progress.cached_segments),
         event.render_progress.as_ref().and_then(|progress| progress.eta_seconds),
         event.message
