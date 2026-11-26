@@ -257,7 +257,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         child: RichReaderSurface(
               chapter: widget.chapter,
               maxColumnWidth: settings.readerColumnWidth,
-              highlight: _richHighlight(),
+              highlight: settings.readerAutoScroll ? _richHighlight() : null,
               initialSourceOffset: widget.initialSourceOffset,
               settings: settings,
               background: bg,
@@ -385,7 +385,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                     fg: fg,
                     bodyStyle: bodyStyle,
                     header: _chapterHeader(headingStyle, fg),
-                    activeId: activeId,
+                    activeId: settings.readerAutoScroll ? activeId : null,
                     spanKeys: _spanKeys,
                     onJumpToSentence: widget.onJumpToSentence,
                   ),
