@@ -100,6 +100,29 @@ final class PDFReaderParityTests: XCTestCase {
         }
     }
 
+    func testListeningFromATextlessCoverStartsAtTheNextPageWithText() throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "", body: ""),
+            (heading: "Second page", body: "Second readable passage.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let suite = "pdf-cover-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let pdf = ReaderPDFPresentation(view: view, bookID: "fixture", defaults: defaults)
+        pdf.load(document: try XCTUnwrap(PDFDocument(url: url)),
+                 metadata: try ConverterFFIAdapter().openBook(at: url).metadataJSON)
+        view.layoutIfNeeded()
+        XCTAssertEqual(pdf.currentPage, 0)
+        var played: PDFReadingAudioMap.Anchor?
+        pdf.onPlayFrom = { played = $0 }
+
+        pdf.playFromCurrentPosition()
+
+        XCTAssertNotNil(played, "A cover without text must not block listening")
+        XCTAssertEqual(played, pdf.audioMap?.anchor(page: 1))
+    }
+
     /// PDF parity with the EPUB reader: pausing keeps the passage marked, a jump drops the old mark.
     func testPDFKeepsTheHighlightWhilePausedUntilTheNarrationMoves() async throws {
         let url = try PdfFixture.createMultiPage(pages: [

@@ -143,6 +143,22 @@ final class MacReaderPDFViewportTests: XCTestCase {
         }
     }
 
+    func testListeningFromATextlessCoverStartsAtTheNextPageWithText() async throws {
+        let source = try PdfFixture.createMultiPage(pages: [
+            (heading: "", body: ""),
+            (heading: "Second page", body: "Second readable passage.")])
+        defer { try? FileManager.default.removeItem(at: source) }
+        var played: [PDFReadingAudioMap.Anchor] = []
+        try await withImportedPDF(source, onPlayPDF: { played.append($0) }) { _, pdf, _, _ in
+            pdf.go(to: try XCTUnwrap(pdf.document?.page(at: 0)))
+            pdf.layoutDocumentView()
+            XCTAssertTrue(pdf.currentPage === pdf.document?.page(at: 0))
+            XCTAssertTrue(pdf.playFromVisiblePosition(), "A cover without text must not block listening")
+            XCTAssertEqual(played.last, pdf.audioMap?.anchor(page: 1))
+            XCTAssertNotNil(played.last)
+        }
+    }
+
     func testPDFWithoutSelectableTextDoesNotRequestPlayback() async throws {
         let source = try PdfFixture.createSinglePage(title: "", bodyText: "")
         defer { try? FileManager.default.removeItem(at: source) }

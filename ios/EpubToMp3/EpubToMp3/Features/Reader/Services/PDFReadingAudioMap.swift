@@ -29,6 +29,8 @@ struct PDFReadingAudioMap: Sendable {
     }
     let chapters: [Chapter]
     let pages: [Int: Page]
+    /// Pages with nothing to narrate, such as an image cover or a blank page.
+    private let textlessPages: Set<Int>
 
     init(metadata: Data, pageTexts: [String]) throws {
         chapters = try JSONDecoder().decode(Metadata.self, from: metadata).chapters
@@ -54,6 +56,7 @@ struct PDFReadingAudioMap: Sendable {
             }
         }
         pages = mapped
+        textlessPages = Set(pageTexts.indices.filter { Self.normalized(pageTexts[$0]).text.length == 0 })
     }
 
     func anchor(page: Int, character: Int = 0) -> Anchor? {
@@ -62,6 +65,14 @@ struct PDFReadingAudioMap: Sendable {
         let index = mapped.displayOffsets.firstIndex(where: { $0 >= max(0, character) }) ?? mapped.displayOffsets.count - 1
         return Anchor(chapterIndex: mapped.chapterIndex, sourceScalarOffset: mapped.speechOffsets[index],
                       chapterLength: mapped.chapterLength)
+    }
+
+    /// Where "listen" starts for the page on screen: textless pages are passed over, while a page
+    /// whose text does not match the narration still fails closed.
+    func playbackAnchor(page: Int, character: Int = 0) -> Anchor? {
+        var target = page
+        while textlessPages.contains(target) { target += 1 }
+        return anchor(page: target, character: target == page ? character : 0)
     }
 
     func displayRange(chapter: Int, range: NSRange) -> (page: Int, range: NSRange)? {

@@ -38,7 +38,7 @@ final class MacReaderPDFView: PDFView {
         let viewport = convert(visibleRect, to: page).intersection(page.bounds(for: displayBox))
         guard !viewport.isEmpty else { return false }
         let character = firstCharacter(in: page.selection(for: viewport), on: page) ?? 0
-        guard let anchor = audioMap.anchor(page: document.index(for: page), character: character) else { return false }
+        guard let anchor = audioMap.playbackAnchor(page: document.index(for: page), character: character) else { return false }
         onPlayFrom(anchor)
         return true
     }
