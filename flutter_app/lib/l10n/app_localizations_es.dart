@@ -874,4 +874,13 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get tocAudioFailed => 'Falló el audio';
+
+  @override
+  String get readerHighlight => 'Resaltar';
+
+  @override
+  String get readerAddNote => 'Agregar nota';
+
+  @override
+  String get readerRemoveHighlight => 'Eliminar resaltado';
 }

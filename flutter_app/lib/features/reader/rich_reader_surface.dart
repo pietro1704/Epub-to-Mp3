@@ -17,6 +17,18 @@ import 'reader_page_indicator.dart';
 
 /// One rich document surface for scrolling and measured pagination. Changing
 /// chrome geometry preserves its raw offset instead of rounding to a new page.
+/// A saved highlight of the chapter: [range] is in source UTF-16 offsets.
+class ReaderSavedHighlight {
+  const ReaderSavedHighlight({
+    required this.id,
+    required this.range,
+    required this.color,
+  });
+  final String id;
+  final TextRange range;
+  final Color color;
+}
+
 class RichReaderSurface extends StatefulWidget {
   const RichReaderSurface({
     super.key,
@@ -34,6 +46,10 @@ class RichReaderSurface extends StatefulWidget {
     this.onVisibleTextOffset,
     this.onPlayFromHere,
     this.highlight,
+    this.savedHighlights = const [],
+    this.onHighlight,
+    this.onAddNote,
+    this.onRemoveHighlight,
     this.initialSourceOffset = 0,
     this.followNarration = false,
     this.pairRequest = 0,
@@ -55,6 +71,14 @@ class RichReaderSurface extends StatefulWidget {
   /// offset of the selection start. Selection is enabled only when set.
   final ValueChanged<int>? onPlayFromHere;
   final TextRange? highlight;
+
+  /// Saved highlights painted under the text; a selection over one offers
+  /// removal instead of a new highlight.
+  final List<ReaderSavedHighlight> savedHighlights;
+
+  /// Selection actions, each given the selected source UTF-16 range.
+  final ValueChanged<TextRange>? onHighlight, onAddNote;
+  final ValueChanged<String>? onRemoveHighlight;
 
   /// "Follow spoken text": the page turns to the highlighted (spoken) sentence.
   final bool followNarration;
@@ -105,6 +129,36 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         _selection.registered &&
         _selection.selection.status == SelectionStatus.uncollapsed;
     if (selected) {
+      final range = _selectionSourceRange();
+      final overlapping = range == null
+          ? null
+          : widget.savedHighlights
+                .where((h) => h.range.start < range.end && range.start < h.range.end)
+                .firstOrNull;
+      void act(VoidCallback call) {
+        region.hideToolbar();
+        region.clearSelection();
+        call();
+      }
+      final t = AppLocalizations.of(context)!;
+      final extras = [
+        if (range != null && overlapping != null && widget.onRemoveHighlight != null)
+          ContextMenuButtonItem(
+            label: t.readerRemoveHighlight,
+            onPressed: () => act(() => widget.onRemoveHighlight!(overlapping.id)),
+          ),
+        if (range != null && overlapping == null && widget.onHighlight != null)
+          ContextMenuButtonItem(
+            label: t.readerHighlight,
+            onPressed: () => act(() => widget.onHighlight!(range)),
+          ),
+        if (range != null && widget.onAddNote != null)
+          ContextMenuButtonItem(
+            label: t.readerAddNote,
+            onPressed: () => act(() => widget.onAddNote!(range)),
+          ),
+      ];
+      items.insertAll(0, extras);
       items.insert(
         0,
         ContextMenuButtonItem(
@@ -124,6 +178,18 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
       anchors: region.contextMenuAnchors,
       buttonItems: items,
     );
+  }
+
+  TextRange? _selectionSourceRange() {
+    final range = _selection.registered ? _selection.selection.range : null;
+    final geometry = _geometry;
+    if (range == null || geometry == null) return null;
+    final low = range.startOffset < range.endOffset ? range.startOffset : range.endOffset;
+    final high = range.startOffset < range.endOffset ? range.endOffset : range.startOffset;
+    final start = geometry.sourceOffsetForContentOffset(low);
+    final end = geometry.sourceOffsetForContentOffset(high);
+    if (start == null || end == null || end <= start) return null;
+    return TextRange(start: start, end: end);
   }
 
   int? _selectionStartOffset() {
@@ -544,6 +610,17 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                           ),
                         ),
                       ],
+                      if (widget.savedHighlights.isNotEmpty && _geometry != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _SavedHighlightsPainter([
+                                for (final h in widget.savedHighlights)
+                                  (_geometry!.boxesFor(h.range), h.color),
+                              ], _offset),
+                            ),
+                          ),
+                        ),
                       if (widget.highlight != null && _geometry != null)
                         Positioned.fill(
                           child: IgnorePointer(
@@ -607,6 +684,24 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
     _focus.dispose();
     super.dispose();
   }
+}
+
+class _SavedHighlightsPainter extends CustomPainter {
+  _SavedHighlightsPainter(this.groups, this.offset);
+  final List<(List<Rect>, Color)> groups;
+  final double offset;
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final (boxes, color) in groups) {
+      final paint = Paint()..color = color;
+      for (final box in boxes) {
+        canvas.drawRect(box.shift(Offset(0, -offset)), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SavedHighlightsPainter oldDelegate) => true;
 }
 
 class _ReaderHighlightPainter extends CustomPainter {
