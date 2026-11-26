@@ -23,6 +23,9 @@ final class ReaderAudioHighlightPresentation {
     private var speechObservation: AnyCancellable?
     private var transportObservation: AnyCancellable?
     private var settingsObservation: AnyCancellable?
+    private var jumpObservation: AnyCancellable?
+    /// The last narrated passage, shown again while paused to mark where narration resumes.
+    private var held: (bookID: String, chapter: EbookFulltext.Chapter, text: String, sentence: NSRange?, word: NSRange?)?
     private var repaintTask: Task<Void, Never>?
     private var latestPosition: PlaybackAudioOutput.Position?
     private var observedAt: TimeInterval = 0
@@ -46,12 +49,17 @@ final class ReaderAudioHighlightPresentation {
     func observe() {
         settingsObservation = settings.$readerAudioTrackingEnabled.sink { [weak self] enabled in
             self?.trackingEnabled = enabled
+            if !enabled { self?.held = nil }
             self?.refresh()
         }
         observation = player.playbackClock.audioOutput.$position.sink { [weak self] in self?.render($0) }
         speechObservation = player.speechOutput.$spokenWord.sink { [weak self] in self?.renderSpeech($0) }
         transportObservation = player.transportContentUpdates
             .sink { [weak self] _ in self?.refresh() }
+        jumpObservation = player.narrationJumps.sink { [weak self] in
+            self?.held = nil
+            self?.clear()
+        }
     }
 
     func refresh() {
@@ -63,10 +71,32 @@ final class ReaderAudioHighlightPresentation {
         latestPosition = nil
         repaintTask?.cancel()
         repaintTask = nil
-        paint(sentence: nil, word: nil)
+        paintPausedPassage()
+    }
+
+    /// Erases the paint, except for the passage where a paused narration will resume.
+    private func paintPausedPassage() {
+        if player.isSeeking { held = nil }
+        guard let held, trackingEnabled, !player.isPlaying, player.isPlaybackForReaderBook(held.bookID),
+              surface.bookID() == held.bookID, surface.chapter() == held.chapter,
+              surface.renderedText() == held.text else {
+            paint(sentence: nil, word: nil)
+            return
+        }
+        paint(sentence: held.sentence, word: held.word)
+    }
+
+    private func narrate(sentence: NSRange?, word: NSRange?) {
+        if sentence != nil || word != nil, let bookID = surface.bookID(), let chapter = surface.chapter(),
+           let text = surface.renderedText() {
+            held = (bookID, chapter, text, sentence, word)
+        }
+        paint(sentence: sentence, word: word)
     }
 
     func stop() {
+        held = nil
+        jumpObservation = nil
         observation = nil
         speechObservation = nil
         transportObservation = nil
@@ -130,7 +160,7 @@ final class ReaderAudioHighlightPresentation {
             }
             if let word = measuredWordRanges[measured.word.location] {
                 let sentence = resolvedSentences.values.first { NSIntersectionRange($0, word).length > 0 }
-                paint(sentence: sentence, word: word)
+                narrate(sentence: sentence, word: word)
                 return
             }
         }
@@ -144,7 +174,7 @@ final class ReaderAudioHighlightPresentation {
               let range = resolvedSentences[id] else { clear(); return }
         // Without measured alignment, a sentence estimate must never pretend
         // to identify the word currently audible. Old audio remains playable.
-        paint(sentence: range, word: nil)
+        narrate(sentence: range, word: nil)
     }
 
     static func sentenceRanges(spans: [SentenceSpan], in text: NSString) -> [String: NSRange] {
@@ -175,7 +205,7 @@ final class ReaderAudioHighlightPresentation {
         let word = NSRange(location: base.location + output.range.location, length: output.range.length)
         let sentence = Self.sentenceRanges(spans: chapter.splitSentences(), in: rendered).values
             .first { NSIntersectionRange($0, word).length > 0 }
-        paint(sentence: sentence, word: sentence == nil ? nil : word)
+        narrate(sentence: sentence, word: sentence == nil ? nil : word)
     }
 
     private func paint(sentence: NSRange?, word: NSRange?) {

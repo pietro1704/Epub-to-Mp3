@@ -136,6 +136,41 @@ final class MacReaderNarrationFollowingTests: XCTestCase {
         XCTAssertFalse(isHighlighted(0), "Closing the reader must leave no highlight behind")
     }
 
+    /// Pausing keeps the passage marked so the reader shows where narration resumes; a seek drops the old mark.
+    func testTextReaderKeepsTheHighlightWhilePausedUntilTheNarrationMoves() async throws {
+        let rig = try makeTextRig()
+        let player = rig.harness.player, settings = rig.harness.settings
+        let savedTracking = settings.readerAudioTrackingEnabled
+        addTeardownBlock { @MainActor in settings.readerAudioTrackingEnabled = savedTracking }
+        settings.readerAudioTrackingEnabled = true
+        let manager = try XCTUnwrap(rig.harness.composition.textView.layoutManager)
+        func isHighlighted() -> Bool {
+            manager.temporaryAttribute(.backgroundColor, atCharacterIndex: 0, effectiveRange: nil) != nil
+        }
+        let item = OutputItem()
+        try narrate(player, bookID: rig.harness.id, textOffset: 0)
+        var time = 0.1
+        let highlighted = await eventually {
+            time += 0.2
+            output(player, item: item, at: time)
+            return isHighlighted()
+        }
+        XCTAssertTrue(highlighted)
+
+        player.pause()
+        XCTAssertFalse(player.isPlaying)
+        try await Task.sleep(nanoseconds: 1_300_000_000)
+        XCTAssertTrue(isHighlighted(), "The paused passage must stay highlighted")
+
+        settings.readerAudioTrackingEnabled = false
+        XCTAssertFalse(isHighlighted(), "Turning follow audio off must remove the held highlight")
+        settings.readerAudioTrackingEnabled = true
+
+        player.seek(to: 2_000)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertFalse(isHighlighted(), "After a seek the old passage is no longer where narration resumes")
+    }
+
     func testTextViewportFollowsTheNarrationForwardAndBackward() async throws {
         let rig = try makeTextRig()
         let player = rig.harness.player, id = rig.harness.id
