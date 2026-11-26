@@ -13,7 +13,7 @@ final class ReaderChapterPositionUITests: XCTestCase {
         defer { app.terminate() }
         try openBook(app)
 
-        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "Contents")
         let toc = app.tables["reader.toc"]
         XCTAssertTrue(toc.waitForExistence(timeout: 5))
         let download = app.buttons.matching(
@@ -137,7 +137,7 @@ final class ReaderChapterPositionUITests: XCTestCase {
     }
 
     private func selectChapter(containing title: String, app: XCUIApplication) throws {
-        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "Contents")
         let table = app.tables.firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         let target = table.cells.containing(NSPredicate(format: "label CONTAINS[c] %@", title)).firstMatch

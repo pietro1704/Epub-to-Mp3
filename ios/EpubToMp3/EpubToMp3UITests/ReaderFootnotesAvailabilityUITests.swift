@@ -78,7 +78,7 @@ final class ReaderFootnotesAvailabilityUITests: XCTestCase {
     }
 
     private func selectChapter(_ title: String, ordinal: Int, in app: XCUIApplication) {
-        let contents = command("reader.toc.toggle", title: "TOC", in: app)
+        let contents = command("reader.toc.toggle", title: "Contents", in: app)
         XCTAssertTrue(contents.exists && contents.isHittable)
         contents.tap()
         let table = app.tables["reader.toc"].firstMatch

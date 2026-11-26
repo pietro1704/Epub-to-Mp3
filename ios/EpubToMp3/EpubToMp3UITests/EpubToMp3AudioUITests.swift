@@ -263,7 +263,7 @@ final class EpubToMp3AudioUITests: XCTestCase {
 
         // A book opens directly into the reader view — the TOC is opt-in,
         // revealed only by tapping the toolbar toggle.
-        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "Contents")
 
         let tocRows = app.tables["reader.toc"].cells
         XCTAssertTrue(tocRows.firstMatch.waitForExistence(timeout: 5), "TOC must expose chapter rows.")

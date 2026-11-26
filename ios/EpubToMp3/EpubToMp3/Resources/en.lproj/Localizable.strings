@@ -55,7 +55,6 @@
 "reader.contents" = "Contents";
 "reader.chapterCount" = "%d chapters";
 "reader.close" = "Close book";
-"reader.toc" = "TOC";
 "reader.settings" = "Reader settings";
 "reader.retry" = "Try again";
 "library.openBook" = "Open book";

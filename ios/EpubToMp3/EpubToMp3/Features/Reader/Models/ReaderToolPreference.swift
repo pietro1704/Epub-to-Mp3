@@ -7,7 +7,7 @@ enum ReaderTool: String, CaseIterable {
     var title: String {
         switch self {
         case .appearance: return L10n.string("reader.settings")
-        case .contents: return L10n.string("reader.toc")
+        case .contents: return L10n.string("reader.contents")
         case .search: return L10n.string("reader.search")
         case .footnotes: return L10n.string("reader.footnotes.title")
         case .listen: return L10n.string("player.play")
