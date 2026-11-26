@@ -187,7 +187,7 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
 
         // A late chapter is normally not converted yet, so listening streams new audio.
         let harness = ReaderModesHarness(app: app)
-        harness.activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        harness.activateReaderTool(identifier: "reader.toc.toggle", title: "Contents")
         let table = app.tables["reader.toc"]
         XCTAssertTrue(table.waitForExistence(timeout: 10))
         let target = table.cells.containing(NSPredicate(format: "label CONTAINS[c] %@", "Many Meetings")).firstMatch

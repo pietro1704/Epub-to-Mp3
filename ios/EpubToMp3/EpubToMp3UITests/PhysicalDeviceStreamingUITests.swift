@@ -125,7 +125,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         app.buttons["Off"].firstMatch.tap()
         app.buttons["fullPlayer.close"].tap()
 
-        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "Contents")
         for index in 0...1 {
             let download = app.buttons["reader.toc.download.\(index)"].firstMatch
             XCTAssertTrue(download.waitForExistence(timeout: 5))

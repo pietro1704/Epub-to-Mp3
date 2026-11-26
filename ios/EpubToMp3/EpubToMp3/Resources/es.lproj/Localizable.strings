@@ -54,7 +54,6 @@
 "reader.contents" = "Contenido";
 "reader.chapterCount" = "%d capítulos";
 "reader.close" = "Cerrar libro";
-"reader.toc" = "TOC";
 "library.openBook" = "Abrir libro";
 "jobs.book" = "Libro";
 "jobs.status" = "Estado";
