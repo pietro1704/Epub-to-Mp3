@@ -1666,6 +1666,12 @@ abstract class AppLocalizations {
   /// **'Retry failed chapters'**
   String get tocRetryFailed;
 
+  /// No description provided for @tocShareAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Share available audio'**
+  String get tocShareAudio;
+
   /// No description provided for @tocRemoveDownloads.
   ///
   /// In en, this message translates to:

@@ -28,14 +28,16 @@ class ReaderDownloadActions {
     required this.downloadAll,
     required this.cancel,
     required this.retryFrom,
+    required this.shareAudio,
   });
   final Future<void> Function() downloadAll;
   final Future<void> Function() cancel;
   final Future<void> Function(int chapterIndex) retryFrom;
+  final Future<void> Function() shareAudio;
 }
 
 /// Bulk audio actions of the contents menu (mirrors the 16e contents "more" menu).
-enum ContentsDownloadAction { downloadAll, cancel, retryFailed }
+enum ContentsDownloadAction { downloadAll, cancel, retryFailed, shareAudio }
 
 /// The actions that apply to [states] for a book of [chapterCount] chapters:
 /// Cancel while a chapter converts (Download waits for it to end), Download
@@ -50,6 +52,7 @@ List<ContentsDownloadAction> contentsDownloadActions(
     if (converting) ContentsDownloadAction.cancel,
     if (!converting && ready < chapterCount) ContentsDownloadAction.downloadAll,
     if (states.containsValue(ChapterAudioState.failed)) ContentsDownloadAction.retryFailed,
+    if (ready > 0) ContentsDownloadAction.shareAudio,
   ];
 }
 

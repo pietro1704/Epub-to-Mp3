@@ -22,6 +22,7 @@ import '../l10n/app_localizations.dart';
 import '../models/book_language_corrections.dart';
 import '../models/ebook_fulltext.dart';
 import 'book_language_picker.dart';
+import '../services/audio_share.dart';
 import '../services/conversion/book_language_uncertain.dart';
 import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
@@ -157,6 +158,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       downloadAll: _downloadAllAudio,
       cancel: _cancelAudioDownloads,
       retryFrom: _retryFailedAudio,
+      shareAudio: _shareAudio,
     ),
   );
 }

@@ -307,6 +307,7 @@
   "tocDownloadAll": "Download for offline",
   "tocCancelDownloads": "Cancel downloads",
   "tocRetryFailed": "Retry failed chapters",
+  "tocShareAudio": "Share available audio",
   "tocRemoveDownloads": "Remove downloads",
   "tocRemoveDownloadsMessage": "All downloaded MP3s of this book will be deleted.",
   "tocAudioReady": "Audio ready",
