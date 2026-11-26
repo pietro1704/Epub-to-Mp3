@@ -59,6 +59,14 @@ final class BookmarkStore: ObservableObject {
         return entry
     }
 
+    @discardableResult
+    func setNote(_ note: String, id: UUID) -> Bookmark? {
+        guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return nil }
+        bookmarks[index].note = note
+        persist()
+        return bookmarks[index]
+    }
+
     func remove(id: UUID) {
         bookmarks.removeAll { $0.id == id }
         persist()
