@@ -44,6 +44,18 @@ void main() {
     expect(restored.chapters[1].error, 'network error');
   });
 
+  test('a failed job with no finished audio takes a fresh voice snapshot', () async {
+    var job = await coordinator.createJob(
+      bookId: 'book-1', jobId: 'job-fresh',
+      chapters: const [LocalConversionChapterSpec(0, 'One'), LocalConversionChapterSpec(1, 'Two')],
+    );
+    job = await coordinator.failChapter(await coordinator.markChapterRunning(job, 0), 0, 'no voice');
+    expect(job.needsFreshVoiceSnapshot, isTrue);
+    final partial = await coordinator.completeChapter(
+      await coordinator.markChapterRunning(job, 1), 1, '/audio/chapter_1.mp3');
+    expect(partial.needsFreshVoiceSnapshot, isFalse);
+  });
+
   test('resumes pending chapters and retries a failed chapter', () async {
     var job = await coordinator.createJob(
       bookId: 'book-1', jobId: 'job-1',

@@ -122,6 +122,13 @@ class LocalConversionJob {
   final String? conversionOptionsJson;
   final Map<String, dynamic>? ttsPolicyState;
   final bool fallbackNoticeShown;
+
+  /// A failed job with no finished audio keeps nothing worth resuming, so the
+  /// next run captures the current voice settings (for example a Piper model
+  /// installed after the failure) instead of replaying the stale snapshot.
+  bool get needsFreshVoiceSnapshot =>
+      status == LocalConversionJobStatus.failed &&
+      !chapters.any((chapter) => chapter.status == 'completed');
   bool get fallbackUsed =>
       manifestFallbackUsed || chapters.any((chapter) => chapter.fallbackUsed);
   List<TtsSelection> get usedSelections {
