@@ -32,6 +32,20 @@ echo "Bumping $CURRENT → $NEW"
 # ── Update the Rails gateway VERSION file (mirrors the workspace version) ─────
 printf '%s\n' "$NEW" > ruby_app/rails_gateway/VERSION
 
+# ── Mirror it into the Apple and Flutter manifests used by local builds ──────
+# The Flutter build number after "+" is kept.
+NEW="$NEW" ruby - <<'RUBY'
+updated = ENV.fetch("NEW")
+{
+  "ios/EpubToMp3/project.yml" => /^(\s*MARKETING_VERSION: ")[^"]+(?=")/,
+  "flutter_app/pubspec.yaml" => /^(version: )[^+\s]+/,
+}.each do |path, pattern|
+  text = File.read(path)
+  abort("#{path} has no version line") unless text.match?(pattern)
+  File.write(path, text.sub(pattern) { "#{Regexp.last_match(1)}#{updated}" })
+end
+RUBY
+
 # ── Update Cargo.toml and the workspace members recorded in Cargo.lock ────────
 CURRENT="$CURRENT" NEW="$NEW" ruby - <<'RUBY'
 current = ENV.fetch("CURRENT")
@@ -61,6 +75,8 @@ fi
 # ── Commit + tag ─────────────────────────────────────────────────────────────
 git add \
   ruby_app/rails_gateway/VERSION \
+  ios/EpubToMp3/project.yml \
+  flutter_app/pubspec.yaml \
   Cargo.toml \
   Cargo.lock \
   CHANGELOG.md 2>/dev/null || true
