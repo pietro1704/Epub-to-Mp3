@@ -281,8 +281,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ref,
                   book,
                 );
-                if (choice != null)
+                if (choice != null) {
                   await corrections.set(choice, bookId: book.id);
+                }
               },
             ),
             ListTile(
