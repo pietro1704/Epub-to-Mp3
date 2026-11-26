@@ -505,6 +505,19 @@ jobs:
           version: 2026.11.3
           experimental: true
           cache: false
+      # The mise android-sdk plugin ships no build-tools; apksigner comes from the same
+      # build-tools version that the android job installs through android:embedded-deps.
+      - name: Install Android build-tools for APK signature verification
+        env:
+          MISE_ENABLE_TOOLS: ruby,java,android-sdk
+        run: |
+          set +o pipefail
+          yes | mise exec -- sdkmanager --licenses
+          result=${PIPESTATUS[1]}
+          set -o pipefail
+          [ "$result" -eq 0 ]
+          mise exec -- sdkmanager "build-tools;35.0.0"
+          mise exec -- apksigner --version
       - name: Verify the downloaded official Android APK before publication
         env:
           MISE_ENABLE_TOOLS: ruby,java,android-sdk
