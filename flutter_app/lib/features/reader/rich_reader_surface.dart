@@ -49,6 +49,7 @@ class RichReaderSurface extends StatefulWidget {
     this.savedHighlights = const [],
     this.onHighlight,
     this.onAddNote,
+this.onSetLanguage,
     this.onRemoveHighlight,
     this.initialSourceOffset = 0,
     this.followNarration = false,
@@ -77,7 +78,7 @@ class RichReaderSurface extends StatefulWidget {
   final List<ReaderSavedHighlight> savedHighlights;
 
   /// Selection actions, each given the selected source UTF-16 range.
-  final ValueChanged<TextRange>? onHighlight, onAddNote;
+  final ValueChanged<TextRange>? onHighlight, onAddNote, onSetLanguage;
   final ValueChanged<String>? onRemoveHighlight;
 
   /// "Follow spoken text": the page turns to the highlighted (spoken) sentence.
@@ -156,6 +157,11 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
           ContextMenuButtonItem(
             label: t.readerAddNote,
             onPressed: () => act(() => widget.onAddNote!(range)),
+          ),
+        if (range != null && widget.onSetLanguage != null)
+          ContextMenuButtonItem(
+            label: t.readerPassageLanguage,
+            onPressed: () => act(() => widget.onSetLanguage!(range)),
           ),
       ];
       items.insertAll(0, extras);

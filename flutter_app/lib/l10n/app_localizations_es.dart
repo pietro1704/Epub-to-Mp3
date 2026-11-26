@@ -883,4 +883,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get readerRemoveHighlight => 'Eliminar resaltado';
+
+  @override
+  String get readerPassageLanguage => 'Idioma del pasaje';
 }

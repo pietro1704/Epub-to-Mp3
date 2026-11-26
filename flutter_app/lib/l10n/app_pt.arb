@@ -299,5 +299,6 @@
   "tocAudioFailed": "Áudio com falha",
   "readerHighlight": "Marcar trecho",
   "readerAddNote": "Adicionar nota",
-  "readerRemoveHighlight": "Remover marcação"
+  "readerRemoveHighlight": "Remover marcação",
+  "readerPassageLanguage": "Idioma do trecho"
 }

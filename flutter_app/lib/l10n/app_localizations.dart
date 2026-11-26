@@ -1665,6 +1665,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove highlight'**
   String get readerRemoveHighlight;
+
+  /// No description provided for @readerPassageLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Passage language'**
+  String get readerPassageLanguage;
 }
 
 class _AppLocalizationsDelegate

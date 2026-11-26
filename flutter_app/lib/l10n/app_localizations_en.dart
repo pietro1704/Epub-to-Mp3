@@ -881,4 +881,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerRemoveHighlight => 'Remove highlight';
+
+  @override
+  String get readerPassageLanguage => 'Passage language';
 }

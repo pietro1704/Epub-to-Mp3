@@ -208,6 +208,7 @@ void main() {
     List<ReaderSavedHighlight> saved = const [],
     ValueChanged<TextRange>? onHighlight,
     ValueChanged<TextRange>? onAddNote,
+    ValueChanged<TextRange>? onSetLanguage,
     ValueChanged<String>? onRemoveHighlight,
   }) async {
     SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
@@ -233,6 +234,7 @@ void main() {
               savedHighlights: saved,
               onHighlight: onHighlight,
               onAddNote: onAddNote,
+              onSetLanguage: onSetLanguage,
               onRemoveHighlight: onRemoveHighlight,
             ),
           ),
@@ -265,6 +267,16 @@ void main() {
     await tester.tap(find.text('Add Note'));
     await tester.pumpAndSettle();
     expect(noted, [TextRange(start: start, end: start + 'Second'.length)]);
+  });
+
+  testWidgets('selected text offers Passage language with the selected source range', (tester) async {
+    final chosen = <TextRange>[];
+    await pumpSelectionMenu(tester, onSetLanguage: chosen.add);
+    final start = 'First paragraph is here.\nSecond paragraph follows now.'.indexOf('Second');
+
+    await tester.tap(find.text('Passage language'));
+    await tester.pumpAndSettle();
+    expect(chosen, [TextRange(start: start, end: start + 'Second'.length)]);
   });
 
   testWidgets('a selection over a saved highlight offers Remove highlight instead', (tester) async {
