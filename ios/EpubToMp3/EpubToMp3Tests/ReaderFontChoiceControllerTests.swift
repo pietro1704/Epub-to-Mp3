@@ -18,12 +18,14 @@ final class ReaderFontChoiceControllerTests: XCTestCase {
         picker.loadViewIfNeeded()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = navigation
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         func capture(_ name: String) {
             RunLoop.main.run(until: Date().addingTimeInterval(1))
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { context in
+                window.layer.render(in: context.cgContext)
             }
             let attachment = XCTAttachment(image: image)
             attachment.name = name
