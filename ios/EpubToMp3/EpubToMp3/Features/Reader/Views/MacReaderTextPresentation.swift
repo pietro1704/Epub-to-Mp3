@@ -4,7 +4,7 @@ import PDFKit
 import Combine
 
 /// Clips the sliding pages and lets every click reach the reader underneath.
-private final class MacReaderOverlayView: NSView {
+private final class MacPageSlideView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -13,6 +13,20 @@ private final class MacReaderOverlayView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Paints the page background itself, so cached page snapshots include it.
+private final class MacReaderPageMaskView: NSView {
+    var color = NSColor.clear {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        bounds.intersection(dirtyRect).fill()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
@@ -33,8 +47,8 @@ final class MacReaderTextPresentation {
     private let closeReader: () -> Void
     private let observeOpenStage: (String) -> Void
     private var settingsCancellables: Set<AnyCancellable> = []
-    private lazy var pageMask: NSView = {
-        let mask = MacReaderOverlayView(frame: .zero)
+    private lazy var pageMask: MacReaderPageMaskView = {
+        let mask = MacReaderPageMaskView(frame: .zero)
         mask.setAccessibilityIdentifier("reader.pageMask")
         return mask
     }()
@@ -317,7 +331,7 @@ final class MacReaderTextPresentation {
         guard let outgoing, let host = contentScrollView.superview else { return }
         contentScrollView.layoutSubtreeIfNeeded()
         guard let incoming = visiblePageImage() else { return }
-        let overlay = MacReaderOverlayView(frame: contentScrollView.frame)
+        let overlay = MacPageSlideView(frame: contentScrollView.frame)
         overlay.layer?.backgroundColor = settings.readerColors.background.cgColor
         let travel = forward ? overlay.bounds.width : -overlay.bounds.width
         let old = NSImageView(frame: overlay.bounds)
@@ -362,7 +376,7 @@ final class MacReaderTextPresentation {
         guard abs(starts[index] - bounds.origin.y) <= 1, index + 1 < starts.count,
               starts[index + 1] < bounds.maxY else { pageMask.isHidden = true; return }
         if pageMask.superview !== textView { textView.addSubview(pageMask) }
-        pageMask.layer?.backgroundColor = settings.readerColors.background.cgColor
+        pageMask.color = settings.readerColors.background
         pageMask.frame = NSRect(x: 0, y: starts[index + 1], width: textView.frame.width,
                                 height: bounds.maxY - starts[index + 1])
         pageMask.isHidden = false
