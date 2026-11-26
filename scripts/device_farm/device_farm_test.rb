@@ -243,6 +243,28 @@ class DeviceFarmTest < Minitest::Test
     originals&.each { |name, original| singleton.define_method(name, original) }
   end
 
+  # 2026-11-26: a failing suite printed box-drawing characters; the signature kept binary bytes and
+  # JSON.pretty_generate in `report` raised, which killed the whole loop service.
+  def test_a_failing_suite_signature_is_valid_text_the_report_can_serialize
+    log = "11-26 00:43:18.047 1 1 I flutter : \u2550\u2550\u2561 EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK\n" \
+          "11-26 00:43:18.081 1 1 I flutter : 00:15 +0 -1: Some tests failed.\n"
+    fakes = {
+      adb: ->(_serial, *args, **) { [args.include?('logcat') && args.include?('-d') ? log.b : '', true] },
+      sleep: ->(*) {},
+      close_app: ->(*) {},
+      installed?: ->(*) { true },
+      install: ->(*) { [true, 'Success'] }
+    }
+    singleton = DeviceFarm.singleton_class
+    originals = fakes.keys.to_h { |name| [name, DeviceFarm.method(name)] }
+    fakes.each { |name, fake| singleton.define_method(name, &fake) }
+    result = DeviceFarm.regression('serial', minutes: 1)
+    refute result.ok
+    JSON.pretty_generate(result.signature => 1)
+  ensure
+    originals&.each { |name, original| singleton.define_method(name, original) }
+  end
+
   def test_the_soak_never_turns_off_the_screen_of_a_device_with_a_secure_lock
     ["KeyguardServiceDelegate\n  secure=true\n", "no keyguard information\n"].each do |window|
       calls, result = soak_calls(window)

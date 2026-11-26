@@ -383,6 +383,7 @@ module DeviceFarm
     while Time.now < deadline
       sleep 10
       logcat, = adb(serial, 'logcat', '-d', '-s', 'flutter:I', timeout: 30)
+      logcat = logcat.dup.force_encoding('UTF-8').scrub # raw bytes would break the JSON report
       verdict = suite_verdict(logcat)
       break if verdict
     end
