@@ -70,7 +70,9 @@ final class ManualConversionSessionTests: XCTestCase {
         XCTAssertTrue(session.isRunning)
         XCTAssertNil(session.result)
         XCTAssertEqual(ManualConversionPresentation.title(for: session), L10n.string("convert.progressPercent", 25))
-        XCTAssertEqual(ManualConversionPresentation.detail(for: session), L10n.string("convert.chapterProgress", 1, 4))
+        XCTAssertEqual(ManualConversionPresentation.detail(for: session),
+                       L10n.string("convert.chapterProgress", 1, 4) + "\n"
+                       + L10n.string("convert.activeVoice", TtsSelection.displayName(forEngine: "piper") ?? "piper"))
         session.reportValidationFailure("An unrelated edit must not retire this conversion")
         XCTAssertNil(session.errorMessage)
         XCTAssertEqual(session.phase, .converting)
@@ -81,6 +83,34 @@ final class ManualConversionSessionTests: XCTestCase {
         XCTAssertEqual(session.phase, .completed)
         XCTAssertFalse(session.isRunning)
         XCTAssertNotNil(session.result)
+    }
+
+    func testConversionDetailNamesTheActiveSystemVoiceUntilAfterCompletion() async {
+        let gate = ManualConversionGate()
+        defer { gate.release() }
+        let entered = expectation(description: "Executor published system speech progress")
+        let session = ManualConversionSession(executor: { _, jobID, _, _, _, update, _ in
+            update?(.init(jobId: jobID, state: "running", chapterIndex: 0, chaptersTotal: 2,
+                          chaptersCompleted: 0, percent: 10, engine: "system",
+                          voice: "Luciana (com.apple.voice.compact.pt-BR.Luciana)", fallbackUsed: true,
+                          message: "Using installed system speech"))
+            entered.fulfill()
+            await gate.wait()
+            // The closing event carries no provider; the voice that narrated must stay visible.
+            update?(.init(jobId: jobID, state: "running", chapterIndex: nil, chaptersTotal: 2,
+                          chaptersCompleted: 2, percent: 100, engine: nil, message: "Fixture finished"))
+            return self.result(jobID)
+        })
+        let notice = L10n.string("convert.activeVoice.system", "Luciana")
+        let pending = Task { await session.run(file: file, start: -1, end: -1, options: nil) }
+        await fulfillment(of: [entered], timeout: 1)
+        XCTAssertEqual(ManualConversionPresentation.detail(for: session),
+                       L10n.string("convert.chapterProgress", 0, 2) + "\n" + notice)
+        gate.release()
+        await pending.value
+        XCTAssertEqual(session.phase, .completed)
+        XCTAssertEqual(ManualConversionPresentation.detail(for: session), notice)
+        XCTAssertTrue(notice.contains("Luciana"), "The notice must be localized and name the voice")
     }
 
     func testProviderFailureClearsBusyStateAndRetryCanSucceed() async {
