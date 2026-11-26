@@ -82,7 +82,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.platformVoiceNotice),
+            content: Text(
+              engine == null
+                  ? AppLocalizations.of(context)!.platformVoiceNotice
+                  : AppLocalizations.of(context)!.platformVoiceNoticeEngine(engine),
+            ),
           ),
         );
       });

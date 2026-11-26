@@ -32,6 +32,6 @@ class PlatformVoiceNoticeSession {
           return;
         }
         _shown = true;
-        onNotice(null);
+        onNotice(event['voiceEngine'] as String?);
       }, onError: (Object _) {});
 }

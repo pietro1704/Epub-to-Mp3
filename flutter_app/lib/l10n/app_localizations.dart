@@ -1174,6 +1174,12 @@ abstract class AppLocalizations {
   /// **'Using the system voice for this segment.'**
   String get platformVoiceNotice;
 
+  /// No description provided for @platformVoiceNoticeEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'Using the system voice ({engine}) for this segment.'**
+  String platformVoiceNoticeEngine(String engine);
+
   /// No description provided for @localAudioStorage.
   ///
   /// In en, this message translates to:
