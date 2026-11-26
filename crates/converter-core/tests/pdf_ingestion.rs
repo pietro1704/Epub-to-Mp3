@@ -368,8 +368,6 @@ fn pdf_blank_line_is_still_a_paragraph_break() {
     let chapter = ingest("Primeiro paragrafo sem ponto\n\nSegundo paragrafo");
     assert_eq!(ends_text(&chapter).len(), 2);
 }
-||||||| parent of bf1cef30 (fix(pdf): a bad outline item no longer drops the book; near-textless scans ask for OCR)
-
 
 fn outline_edit(change: impl Fn(&str, &mut String)) -> Vec<u8> {
     fixture::pdf_with(true, &["First", "Second", "Third"], |objects| {
