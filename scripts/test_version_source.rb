@@ -23,6 +23,25 @@ class VersionSourceTest < Minitest::Test
     assert_equal workspace_version, gateway
   end
 
+  # Local Xcode builds read project.yml directly; only the release workflow
+  # overrides MARKETING_VERSION from the tag.
+  def apple_marketing_version(root = ROOT)
+    File.read(File.join(root, 'ios/EpubToMp3/project.yml'))[/^\s*MARKETING_VERSION: "([^"]+)"$/, 1]
+  end
+
+  def flutter_version(root = ROOT)
+    File.read(File.join(root, 'flutter_app/pubspec.yaml'))[/^version: (\S+)$/, 1]
+  end
+
+  def test_apple_marketing_version_mirrors_the_workspace_version
+    assert_equal workspace_version, apple_marketing_version
+  end
+
+  def test_flutter_version_name_mirrors_the_workspace_version
+    assert_match(/\A\d+\.\d+\.\d+\+\d+\z/, flutter_version)
+    assert_equal workspace_version, flutter_version.split('+').first
+  end
+
   def test_version_source_no_longer_includes_the_removed_react_package
     refute File.exist?(File.join(ROOT, 'web/package.json'))
     refute_includes File.read(File.join(ROOT, 'scripts/bump.sh')), 'web/package.json'
@@ -37,7 +56,8 @@ class VersionSourceTest < Minitest::Test
 
   def test_bump_updates_cargo_lock_members_and_gateway_version
     Dir.mktmpdir('version bump ') do |directory|
-      %w[Cargo.toml Cargo.lock ruby_app/rails_gateway/VERSION scripts/bump.sh].each do |path|
+      %w[Cargo.toml Cargo.lock ruby_app/rails_gateway/VERSION ios/EpubToMp3/project.yml flutter_app/pubspec.yaml
+         scripts/bump.sh].each do |path|
         FileUtils.mkdir_p(File.join(directory, File.dirname(path)))
         FileUtils.cp(File.join(ROOT, path), File.join(directory, path))
       end
@@ -54,6 +74,7 @@ class VersionSourceTest < Minitest::Test
       git.call('commit', '-q', '-m', 'fixture')
       before = File.read(File.join(directory, 'Cargo.lock'))
       current = workspace_version(directory)
+      build_number = flutter_version(directory).split('+').last
       environment = { 'PATH' => "#{File.dirname(RbConfig.ruby)}:/usr/bin:/bin", 'GIT_CONFIG_GLOBAL' => '/dev/null',
                       'GIT_AUTHOR_NAME' => 'Fixture', 'GIT_AUTHOR_EMAIL' => 'fixture@example.invalid',
                       'GIT_COMMITTER_NAME' => 'Fixture', 'GIT_COMMITTER_EMAIL' => 'fixture@example.invalid' }
@@ -61,6 +82,11 @@ class VersionSourceTest < Minitest::Test
       assert status.success?, "#{output}#{error}"
       assert_equal '9.8.7', workspace_version(directory)
       assert_equal "9.8.7\n", File.read(File.join(directory, 'ruby_app/rails_gateway/VERSION'))
+      assert_equal '9.8.7', apple_marketing_version(directory)
+      assert_equal "9.8.7+#{build_number}", flutter_version(directory), 'the Flutter build number is kept'
+      committed, = git.call('show', '--name-only', '--format=', 'HEAD')
+      assert_includes committed, 'ios/EpubToMp3/project.yml'
+      assert_includes committed, 'flutter_app/pubspec.yaml'
       lock = File.read(File.join(directory, 'Cargo.lock'))
       %w[converter-core converter-ffi converter-server converter-cli converter-wasm rust-migration-bench].each do |name|
         assert_includes lock, %(name = "#{name}"\nversion = "9.8.7"\n), name

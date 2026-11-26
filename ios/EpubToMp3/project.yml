@@ -20,7 +20,8 @@ settings:
     # xcodebuild -jobs does not bound the Swift driver's own parallelism.
     OTHER_SWIFT_FLAGS: "$(inherited) -j1"
     PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
-    MARKETING_VERSION: "0.3.0"
+    # Mirrors [workspace.package] version in Cargo.toml; scripts/bump.sh keeps it.
+    MARKETING_VERSION: "0.12.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "HHRZ35A37Y"
     CODE_SIGN_STYLE: Automatic

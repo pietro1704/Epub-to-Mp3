@@ -132,7 +132,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "release/v${VERSION}"
-          # bump.sh edits Cargo.toml, Cargo.lock and VERSION, then commits and tags
+          # bump.sh edits the version manifests, then commits and tags
           # locally. The tag is dropped; only the branch is pushed.
           bash scripts/bump.sh "$VERSION"
           git tag -d "v${VERSION}"
@@ -174,4 +174,4 @@ jobs:
             push origin "HEAD:refs/heads/release/v${VERSION}"
           gh pr create --base master --head "release/v${VERSION}" \
             --title "chore(release): v${VERSION}" \
-            --body "Raises the product version from ${LAST_TAG:-the previous release} to ${VERSION} (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION, CHANGELOG.md) from the Conventional Commits since the last tag. Merging it lets Auto Release tag v${VERSION} and publish the GitHub release. Opened by the Release Pull Request workflow."
+            --body "Raises the product version from ${LAST_TAG:-the previous release} to ${VERSION} (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION, the Apple and Flutter manifests, CHANGELOG.md) from the Conventional Commits since the last tag. Merging it lets Auto Release tag v${VERSION} and publish the GitHub release. Opened by the Release Pull Request workflow."
