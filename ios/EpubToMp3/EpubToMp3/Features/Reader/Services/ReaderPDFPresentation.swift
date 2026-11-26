@@ -214,6 +214,7 @@ final class ReaderPDFPresentation {
     private func startFollowingNarration() {
         guard follower == nil, let player else { return }
         let follower = ReaderNarrationFollower(player: player, bookID: bookID) { [weak self] location in
+            guard self?.settings?.readerAutoScroll != false else { return }
             self?.revealPlaybackLocation(location)
         }
         follower.start { [weak self] in self?.refreshPairing() }
