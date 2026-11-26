@@ -180,7 +180,11 @@ final class MacSettingsViewController: NSViewController {
         let clearButton = NSButton(title: L10n.string("settings.clearAllDownloads"), target: self,
                                    action: #selector(clearDownloads))
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
+        let downloads = MacSettingsSections.disclosureRow(
+            title: L10n.string("settings.manageDownloads"), subtitle: nil, symbol: "arrow.down.circle",
+            identifier: "settings.manageDownloads.disclosure", target: self, action: #selector(showDownloads))
         return [
+            downloads.row,
             MacSettingsSections.row(title: L10n.string("settings.storageUsage"), symbol: "internaldrive",
                                     accessory: storageLabel),
             MacSettingsSections.row(title: L10n.string("settings.refreshStorage"), symbol: "arrow.clockwise",
@@ -229,6 +233,11 @@ final class MacSettingsViewController: NSViewController {
     @objc private func showReadingPreferences() {
         guard voiceModelDestination == nil, children.isEmpty else { return }
         pushDetail(MacReadingPreferencesViewController(settings: settings)) { [weak self] in self?.refresh() }
+    }
+
+    @objc private func showDownloads() {
+        guard voiceModelDestination == nil, children.isEmpty else { return }
+        pushDetail(MacLocalAudioDownloadsViewController(library: library)) { [weak self] in self?.refresh() }
     }
 
     @objc private func autoScrollChanged(_ sender: NSSwitch) {
