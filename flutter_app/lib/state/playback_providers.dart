@@ -141,8 +141,15 @@ final remotePlayStartSyncProvider = Provider<void>((ref) {
       coordinator.finishInitialAudioRequest();
     }
   };
-  handler.onRemoteJump = () =>
+  handler.onRemoteJump = () {
+    // Follow audio off: the reader stays where it is, like the iOS switch.
+    final settings = ref.read(
+      readerSettingsProvider(ref.read(currentlyReadingBookIdProvider)),
+    );
+    if (settings.readerAutoScroll) {
       ref.read(readerPairRequestProvider.notifier).state++;
+    }
+  };
   ref.onDispose(() {
     handler.startNarration = null;
     handler.onRemoteJump = null;
