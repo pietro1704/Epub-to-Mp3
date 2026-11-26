@@ -51,6 +51,44 @@ final class ReaderSelectionWiringTests: XCTestCase {
                         "Saved highlights must survive chapter rerendering")
     }
 
+    /// READER-REOPEN-DOUBLE-HIGHLIGHT: inside a saved highlight, "Remove highlight" is on the first menu level.
+    func testSelectingInsideAHighlightOffersRemoveOnTheFirstLevel() throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Before selected passage after.")])
+        harness.installTeardown(in: self)
+        harness.showChapter(0)
+        let range = (harness.displayed.string as NSString).range(of: "selected passage")
+        let word = (harness.displayed.string as NSString).range(of: "passage")
+        let expected = [L10n.string("reader.action.playFromHere"), L10n.string("reader.action.removeHighlight"),
+                        L10n.string("reader.selection.more")]
+#if os(macOS)
+        let create = try XCTUnwrap(harness.annotations.buildSelectionMenuItems(range: range).last?.submenu?.items.first)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(create.action), to: create.target, from: create))
+        let items = harness.annotations.buildSelectionMenuItems(range: word)
+        XCTAssertEqual(items.map(\.title), expected)
+        guard items.map(\.title) == expected else { return }
+        XCTAssertFalse(try XCTUnwrap(items.last?.submenu).items.map(\.title).contains(expected[1]))
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(items[1].action), to: items[1].target, from: items[1]))
+#else
+        guard #available(iOS 16.0, *) else { throw XCTSkip("Native selection menus require iOS 16") }
+        func menu(_ range: NSRange) throws -> UIMenu {
+            try XCTUnwrap(harness.annotations.textView(harness.composition.textView,
+                                                       editMenuForTextIn: range, suggestedActions: []))
+        }
+        func press(_ element: UIMenuElement?) throws {
+            let button = UIButton()
+            button.addAction(try XCTUnwrap(element as? UIAction), for: .touchUpInside)
+            button.sendActions(for: .touchUpInside)
+        }
+        try press((try menu(range).children.last as? UIMenu)?.children.first)
+        let children = try menu(word).children
+        XCTAssertEqual(children.map(\.title), expected)
+        guard children.map(\.title) == expected else { return }
+        XCTAssertFalse(try XCTUnwrap(children.last as? UIMenu).children.map(\.title).contains(expected[1]))
+        try press(children[1])
+#endif
+        XCTAssertTrue(harness.bookmarks.bookmarks(for: harness.id).isEmpty)
+    }
+
     /// PLAY-FROM-HERE-CLEARS-SELECTION: Play from here leaves the selection mode (the selection is cleared and the
     /// edit menu closes) and narration starts from there; the selected text must not stay highlighted behind it.
     func testPlayFromHereClearsTheSelectionAndStartsFromThere() throws {
