@@ -66,6 +66,31 @@ fn open_bytes(
     EmbeddedConversionSession::open(&path, Default::default(), config)
 }
 
+// calibre writes `/CMapName <font>-cmap def` without the slash on the font name.
+#[test]
+fn pdf_reads_text_through_a_calibre_to_unicode_map() {
+    let source = fixture::pdf_with(false, &["x", "x", "x"], |objects| {
+        let map = objects.len() + 1;
+        let cmap = "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapName TimesNewRomanPSMT-cmap def\n/CMapType 2 def\n/CIDSystemInfo <<\n/Registry (Adobe)\n/Ordering (UCS)\n/Supplement 0\n>> def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n3 beginbfchar\n<0001> <004F>\n<0002> <006C>\n<0003> <00E1>\nendbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+        objects.push(format!("<< /Length {} >>\nstream\n{cmap}\nendstream", cmap.len()));
+        objects.push("<< /Type /FontDescriptor /FontName /Synthetic /Flags 4 >>".into());
+        objects.push(format!("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Synthetic /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor {} 0 R /DW 500 >>", map + 1));
+        for page in [2, 4, 6] {
+            objects[page] = objects[page].replace(
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                &format!("<< /Type /Font /Subtype /Type0 /BaseFont /Synthetic /Encoding /Identity-H /DescendantFonts [{} 0 R] /ToUnicode {map} 0 R >>", map + 2),
+            );
+            let content = "BT /F1 12 Tf 50 700 Td <000100020003> Tj ET";
+            objects[page + 1] = format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len());
+        }
+    });
+    let session = open_bytes(&source).expect("the text layer is selectable");
+    assert_eq!(session.metadata().skipped_pages, 0);
+    for chapter in &session.metadata().chapters {
+        assert_eq!(chapter.text, "Olá");
+    }
+}
+
 #[test]
 fn pdf_without_outline_preserves_blank_page_positions_and_roman_labels() {
     let session = open_bytes(&fixture::pdf(false, &["First", "", "Third", "Fourth"])).unwrap();
