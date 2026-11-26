@@ -270,7 +270,10 @@ final class ReaderPDFPresentation {
     }
 
     func playFromCurrentPosition() {
-        guard let anchor = currentAnchor else { showUnavailable(); return }
+        // A textless current page has no anchor of its own; narration starts at the next page with text.
+        guard let anchor = currentAnchor ?? currentPage.flatMap({ audioMap?.playbackAnchor(page: $0) }) else {
+            showUnavailable(); return
+        }
         onPlayFrom?(anchor)
     }
 
