@@ -65,6 +65,48 @@ final class MacReaderPDFViewportTests: XCTestCase {
         XCTAssertTrue(played.isEmpty, "An action from the replaced PDF must not start audio for the new reader")
     }
 
+    func testListeningToAPDFWithATextlessPageTellsOnceThatItWasSkipped() async throws {
+        let harness = try NativeReaderTestHarness(chapters: [])
+        harness.installTeardown(in: self)
+        let source = try PdfFixture.createMultiPage(pages: [
+            (heading: "", body: ""),
+            (heading: "Second page", body: "Second readable passage.")
+        ])
+        defer { try? FileManager.default.removeItem(at: source) }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = harness.controller
+        window.orderFront(nil)
+        defer { window.contentViewController = nil; window.close() }
+        harness.controller.view.layoutSubtreeIfNeeded()
+        _ = await harness.text.showPDF(source)
+        let pdf = try XCTUnwrap(harness.composition.contentScrollView.documentView as? MacReaderPDFView)
+        pdf.layoutDocumentView()
+        pdf.go(to: try XCTUnwrap(pdf.document?.page(at: 1)))
+        var played = 0
+        harness.text.onPlayPDF = { _ in played += 1 }
+        XCTAssertNil(window.attachedSheet, "Opening the book alone says nothing")
+
+        let item = try playMenuItem(in: pdf, page: 1, text: "Second")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertEqual(played, 1, "The notice must not hold back playback")
+        try await Task.sleep(nanoseconds: 500_000_000)
+        let sheet = try XCTUnwrap(window.attachedSheet, "Listening must tell that a page was skipped")
+        func labels(_ view: NSView) -> [String] {
+            ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap(labels)
+        }
+        let expected = L10n.string("convert.pdfPagesSkipped.one")
+        XCTAssertTrue(labels(try XCTUnwrap(sheet.contentView)).contains(expected))
+        window.endSheet(sheet)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertEqual(played, 2)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertNil(window.attachedSheet, "The notice appears once per opened book")
+    }
+
     func testCancelledOpenDoesNotInstallDocument() async throws {
         let harness = try NativeReaderTestHarness(chapters: [])
         harness.installTeardown(in: self)
