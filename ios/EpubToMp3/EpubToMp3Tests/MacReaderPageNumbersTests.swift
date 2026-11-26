@@ -54,8 +54,57 @@ final class MacReaderPageNumbersTests: XCTestCase {
         XCTAssertEqual(settings.readerShowPageNumbers, !before)
     }
 
+    /// PARITY-MAC-READER-6: the Mac offers Slide and None; the iPhone's Flip has no AppKit counterpart.
+    func testAppearancePanelOffersSlideAndNoneOnlyForPaginatedPages() throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Synthetic text.")])
+        harness.installTeardown(in: self)
+        let settings = harness.settings
+        settings.readerLayout = .paginated
+        settings.pageTurnStyle = .flip
+        let popover = NSPopover()
+        let presentation = MacReaderSettingsPresentation(settings: settings, popover: popover)
+        func picker() throws -> NSPopUpButton? {
+            presentation.prepareForTesting()
+            let root = try XCTUnwrap(popover.contentViewController?.view)
+            return descendant(of: root, identifier: "readerSettings.pageTurnStyle") as? NSPopUpButton
+        }
+        let popup = try XCTUnwrap(try picker(), "missing page turn style picker")
+        XCTAssertEqual(popup.itemTitles, [PageTurnStyle.slide.displayName, PageTurnStyle.none.displayName])
+        XCTAssertEqual(popup.titleOfSelectedItem, PageTurnStyle.slide.displayName, "a stored Flip reads as Slide")
+        XCTAssertEqual(settings.pageTurnStyle, .flip, "opening the panel must not rewrite the stored value")
+        popup.selectItem(at: 1)
+        popup.sendAction(popup.action, to: popup.target)
+        XCTAssertEqual(settings.pageTurnStyle, PageTurnStyle.none)
+        settings.readerLayout = .scrolling
+        XCTAssertTrue(try picker()?.isHidden ?? true, "scrolling has no page turns")
+    }
+
+    func testPageTurnSlidesOnlyWhenTheStyleAsksForIt() async throws {
+        // Reduce Motion is injected: the result must not depend on the machine that runs the test.
+        for (style, reduced, slides) in [(PageTurnStyle.slide, false, true), (.flip, false, true),
+                                         (.none, false, false), (.slide, true, false)] {
+            try await withReader(turnStyle: style, reducesMotion: reduced) { textView, indicator in
+                let root = try XCTUnwrap(textView.window?.contentView)
+                @MainActor func outgoing() -> NSView? { self.descendant(of: root, identifier: "reader.pageSlide.outgoing") }
+                let first = try XCTUnwrap(indicator()).stringValue
+                XCTAssertEqual(textView.onPageTap?(true), true)
+                XCTAssertEqual(outgoing() != nil, slides, "style \(style.rawValue), reduced \(reduced)")
+                try await Task.sleep(nanoseconds: 800_000_000)
+                XCTAssertNil(outgoing(), "the transition must not stay over the text")
+                XCTAssertNotEqual(try XCTUnwrap(indicator()).stringValue, first, "the page must advance")
+            }
+        }
+    }
+
+    private func descendant(of view: NSView, identifier: String) -> NSView? {
+        if view.accessibilityIdentifier() == identifier { return view }
+        let children = (view as? NSScrollView)?.documentView.map { [$0] } ?? view.subviews
+        return children.lazy.compactMap { self.descendant(of: $0, identifier: identifier) }.first
+    }
+
     private func withReader(
-        showsNumbers: Bool = true, layout: ReaderLayout = .paginated,
+        showsNumbers: Bool = true, layout: ReaderLayout = .paginated, turnStyle: PageTurnStyle = .none,
+        reducesMotion: Bool = false,
         inspect: @MainActor (MacReaderTextView, () -> NSTextField?) async throws -> Void
     ) async throws {
         let identifier = "reader-pages-\(UUID().uuidString)"
@@ -86,6 +135,7 @@ final class MacReaderPageNumbersTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.readerLayout = layout
         settings.readerShowPageNumbers = showsNumbers
+        settings.pageTurnStyle = turnStyle
         let ready = expectation(description: "reader ready")
         let controller = MacReaderViewController(
             library: LibraryStore(defaults: defaults, defaultsKey: "library"), settings: settings,
@@ -93,7 +143,8 @@ final class MacReaderPageNumbersTests: XCTestCase {
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
             preparedRenderer: renderer, preparedChapterStore: chapterStore,
             preparedFulltextReader: { _ in payload }, preparedFulltextWriter: { _, _ in },
-            openStageObserver: { name, _ in if name == "controls_usable" { ready.fulfill() } })
+            openStageObserver: { name, _ in if name == "controls_usable" { ready.fulfill() } },
+            reducesMotion: { reducesMotion })
         let size = NSSize(width: 1200, height: 700)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
