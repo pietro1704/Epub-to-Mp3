@@ -884,6 +884,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get tocRetryFailed => 'Tentar novamente os capítulos com falha';
 
   @override
+  String get tocShareAudio => 'Compartilhar áudio disponível';
+
+  @override
   String get tocRemoveDownloads => 'Remover downloads';
 
   @override

@@ -42,20 +42,25 @@ void main() {
     });
 
     test('converting offers Cancel and Download stays hidden while it runs', () {
-      expect(contentsDownloadActions({0: r, 1: c}, 3), [ContentsDownloadAction.cancel]);
+      expect(contentsDownloadActions({0: r, 1: c}, 3), [
+        ContentsDownloadAction.cancel,
+        ContentsDownloadAction.shareAudio,
+      ]);
+      expect(contentsDownloadActions({1: c}, 3), [ContentsDownloadAction.cancel]);
     });
 
     test('failed chapters add Retry and the first failed chapter is known', () {
       expect(contentsDownloadActions({0: r, 1: f}, 3), [
         ContentsDownloadAction.downloadAll,
         ContentsDownloadAction.retryFailed,
+        ContentsDownloadAction.shareAudio,
       ]);
       expect(firstFailedChapter({0: r, 2: f, 1: f}), 1);
       expect(firstFailedChapter({0: r}), isNull);
     });
 
-    test('a fully ready book offers no download', () {
-      expect(contentsDownloadActions({0: r, 1: r}, 2), isEmpty);
+    test('a fully ready book offers only to share its audio', () {
+      expect(contentsDownloadActions({0: r, 1: r}, 2), [ContentsDownloadAction.shareAudio]);
     });
   });
 }

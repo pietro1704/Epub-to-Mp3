@@ -104,6 +104,16 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   Future<void> _retryFailedAudio(int chapterIndex) =>
       _startLocalConversion(playbackChapterIndex: chapterIndex, prepareOnly: true);
 
+  /// Shares the finished chapter audio through the platform share sheet.
+  Future<void> _shareAudio() async {
+    final job = await ref
+        .read(localConversionJobStoreProvider)
+        .load(widget.bookId, 'local-${widget.bookId}');
+    final paths = availableAudioPaths(job);
+    if (paths.isEmpty) return;
+    await ref.read(audioSharerProvider).share(paths, title: _fulltext?.bookTitle ?? '');
+  }
+
   Future<void> _listenFrom(ReaderListeningPosition position) async {
     _readerListeningPosition = position;
     await _startConversion();

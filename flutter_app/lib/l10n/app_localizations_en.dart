@@ -883,6 +883,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tocRetryFailed => 'Retry failed chapters';
 
   @override
+  String get tocShareAudio => 'Share available audio';
+
+  @override
   String get tocRemoveDownloads => 'Remove downloads';
 
   @override

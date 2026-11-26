@@ -300,6 +300,8 @@ extension _InstantReaderTools on _InstantReaderViewState {
           case ContentsDownloadAction.retryFailed:
             final first = firstFailedChapter(audio);
             if (first != null) unawaited(bulk.retryFrom(first));
+          case ContentsDownloadAction.shareAudio:
+            unawaited(bulk.shareAudio());
         }
         Navigator.pop(context);
       },
@@ -311,6 +313,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
               ContentsDownloadAction.downloadAll => t.tocDownloadAll,
               ContentsDownloadAction.cancel => t.tocCancelDownloads,
               ContentsDownloadAction.retryFailed => t.tocRetryFailed,
+              ContentsDownloadAction.shareAudio => t.tocShareAudio,
             }),
           ),
       ],

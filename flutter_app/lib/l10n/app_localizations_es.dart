@@ -885,6 +885,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get tocRetryFailed => 'Reintentar capítulos fallidos';
 
   @override
+  String get tocShareAudio => 'Compartir audio disponible';
+
+  @override
   String get tocRemoveDownloads => 'Quitar descargas';
 
   @override

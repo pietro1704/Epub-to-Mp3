@@ -300,6 +300,7 @@
   "tocDownloadAll": "Descargar sin conexión",
   "tocCancelDownloads": "Cancelar descargas",
   "tocRetryFailed": "Reintentar capítulos fallidos",
+  "tocShareAudio": "Compartir audio disponible",
   "tocRemoveDownloads": "Quitar descargas",
   "tocRemoveDownloadsMessage": "Se eliminarán todos los MP3 descargados de este libro.",
   "tocAudioReady": "Audio listo",

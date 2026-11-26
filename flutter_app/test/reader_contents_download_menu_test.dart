@@ -51,6 +51,7 @@ void main() {
               downloadAll: () async => calls.add('all'),
               cancel: () async => calls.add('cancel'),
               retryFrom: (i) async => calls.add('retry$i'),
+              shareAudio: () async => calls.add('share'),
             ),
           ),
         ),
@@ -84,5 +85,10 @@ void main() {
     await t.tap(find.text('Download for offline'));
     await t.pumpAndSettle();
     expect(calls, ['retry1', 'all']);
+
+    await openContentsMenu();
+    await t.tap(find.text('Share available audio'));
+    await t.pumpAndSettle();
+    expect(calls, ['retry1', 'all', 'share']);
   });
 }
