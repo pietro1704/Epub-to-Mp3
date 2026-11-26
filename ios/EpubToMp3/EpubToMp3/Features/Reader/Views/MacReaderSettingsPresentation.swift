@@ -3,6 +3,11 @@ import AppKit
 import PDFKit
 import Combine
 
+/// A scroll view opens an unflipped document at its bottom.
+private final class TopAnchoredStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 @MainActor
 final class MacReaderSettingsPresentation: NSObject {
     private let settings: AppSettings
@@ -73,6 +78,16 @@ final class MacReaderSettingsPresentation: NSObject {
             identifier: "readerSettings.fontSize") { [weak settings] value in
                 settings?.readerFontSize = PointPresetScale.nearestIndex(to: value, in: PointPresetScale.font)
             }
+        let alignment = NSPopUpButton()
+        alignment.addItems(withTitles: ReaderTextAlignment.allCases.map(\.displayName))
+        alignment.selectItem(at: ReaderTextAlignment.allCases.firstIndex(of: settings.readerTextAlignment) ?? 0)
+        alignment.setAccessibilityLabel(L10n.string("readerSettings.alignment"))
+        alignment.setAccessibilityIdentifier("readerSettings.alignment")
+        alignment.target = self
+        alignment.action = #selector(alignmentChanged(_:))
+        let lineSpacing = MacPointPresetControl(presets: PointPresetScale.lineSpacing,
+            current: settings.readerLineSpacing, title: L10n.string("readerSettings.lineSpacing"),
+            identifier: "readerSettings.lineSpacing") { [weak settings] in settings?.readerLineSpacing = $0 }
         let margin = MacPointPresetControl(presets: PointPresetScale.macMargin,
             current: settings.readerMargin, title: L10n.string("reader.margins"),
             identifier: "readerSettings.margin") { [weak settings] in settings?.readerMargin = $0 }
@@ -88,11 +103,15 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = TopAnchoredStackView(views: scopeViews() + [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("readerSettings.alignment"), alignment, label("readerSettings.lineSpacing"), lineSpacing, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
+        // A leading-aligned stack gives a slider no width of its own.
+        for control in [sizeControl, lineSpacing, margin, kerning] {
+            control.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        }
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -127,6 +146,10 @@ final class MacReaderSettingsPresentation: NSObject {
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func alignmentChanged(_ sender: NSPopUpButton) {
+        settings.readerTextAlignment = ReaderTextAlignment.allCases[sender.indexOfSelectedItem]
     }
 
     @objc private func columnsChanged(_ sender: NSPopUpButton) {
