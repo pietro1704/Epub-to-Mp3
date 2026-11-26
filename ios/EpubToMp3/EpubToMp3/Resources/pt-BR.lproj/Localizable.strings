@@ -254,7 +254,6 @@
 
 /* === Navegação (barra lateral / abas) === */
 "nav.library" = "Biblioteca";
-"nav.conversions" = "Conversões";
 "nav.settings" = "Ajustes";
 "nav.toggleSidebar" = "Mostrar ou ocultar navegação";
 

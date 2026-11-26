@@ -21,6 +21,7 @@ final class MacConversionForm: NSView {
     let failure = NSTextField(wrappingLabelWithString: "")
     let result = NSTextField(wrappingLabelWithString: "")
     let revealResult = NSButton()
+    let history = NSButton()
 
     init() {
         super.init(frame: .zero)
@@ -32,6 +33,15 @@ final class MacConversionForm: NSView {
         configure(submit, key: "convert.startConversion", identifier: "convert.submit")
         configure(cancel, key: "convert.cancel", identifier: "convert.cancel")
         configure(revealResult, key: "convert.openResult", identifier: "convert.openResult")
+        let historyTitle = L10n.string("jobs.title")
+        history.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: historyTitle)
+        history.imagePosition = .imageOnly
+        history.bezelStyle = .texturedRounded
+        history.toolTip = historyTitle
+        history.setAccessibilityLabel(historyTitle)
+        history.setAccessibilityIdentifier("convert.history")
+        let header = NSStackView(views: [title, NSView(), history])
+        header.orientation = .horizontal
         engine.addItems(withTitles: [L10n.string("convert.usePreferences")]
             + TtsSelection.selectableEngines.map { TtsSelection.displayName(forEngine: $0) ?? $0 })
         engine.setAccessibilityIdentifier("convert.tts.primary")
@@ -53,7 +63,7 @@ final class MacConversionForm: NSView {
         let actions = NSStackView(views: [submit, cancel])
         actions.orientation = .horizontal
         actions.spacing = 12
-        let stack = NSStackView(views: [title, fileLabel, pickFile, pronunciation,
+        let stack = NSStackView(views: [header, fileLabel, pickFile, pronunciation,
             field(L10n.string("settings.audioEngineChoice"), engine), secondary,
             field(L10n.string("convert.voiceOptional"), voice),
             field(L10n.string("convert.languageOptional"), language),
@@ -63,7 +73,7 @@ final class MacConversionForm: NSView {
         stack.alignment = .leading
         stack.spacing = 12
         MacScrollableStack.install(stack, in: self)
-        for label in [fileLabel, status, failure, result] {
+        for label in [header, fileLabel, status, failure, result] {
             label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
     }

@@ -4,12 +4,17 @@ import AppKit
 @MainActor
 final class MacSidebarPresentation {
     enum Destination: Int, CaseIterable {
-        case library = 0, convert = 3, jobs = 1, settings = 2
+        case library = 0, jobs = 1, settings = 2, convert = 3
+
+        /// The iPhone's tabs, in its order. As on Linux, the conversions list opens from Convert.
+        static let tabs: [Destination] = [.library, .settings, .convert]
+
+        var tab: Destination { self == .jobs ? .convert : self }
         var title: String {
             switch self {
             case .library: return L10n.string("nav.library")
             case .convert: return L10n.string("convert.title")
-            case .jobs: return L10n.string("nav.conversions")
+            case .jobs: return L10n.string("jobs.title")
             case .settings: return L10n.string("nav.settings")
             }
         }
@@ -37,7 +42,7 @@ final class MacSidebarPresentation {
         menu.orientation = .vertical
         menu.alignment = .leading
         menu.spacing = 4
-        for destination in Destination.allCases {
+        for destination in Destination.tabs {
             let button = NSButton(title: destination.title, target: actionTarget, action: action)
             button.tag = destination.rawValue
             button.alignment = .left
@@ -76,7 +81,7 @@ final class MacSidebarPresentation {
 
     func select(_ destination: Destination) {
         for (candidate, button) in sidebarButtons {
-            let selected = candidate == destination
+            let selected = candidate == destination.tab
             button.state = selected ? .on : .off
             button.contentTintColor = selected ? .controlAccentColor : .secondaryLabelColor
             button.layer?.backgroundColor = selected

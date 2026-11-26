@@ -228,7 +228,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                         self?.showConverter(bookID: bookID)
                     }
                 )
-            case .convert: controller = MacConvertScreenController(settings: settings, library: library)
+            case .convert:
+                let converter = MacConvertScreenController(settings: settings, library: library)
+                converter.onShowJobs = { [weak self] in self?.show(.jobs) }
+                controller = converter
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)
             }

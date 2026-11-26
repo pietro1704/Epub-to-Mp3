@@ -257,7 +257,6 @@
 
 /* === Navigation (sidebar / tab bar) === */
 "nav.library" = "Library";
-"nav.conversions" = "Conversions";
 "nav.settings" = "Settings";
 "nav.toggleSidebar" = "Show or hide navigation";
 
