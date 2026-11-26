@@ -100,6 +100,58 @@ final class PDFReaderParityTests: XCTestCase {
         }
     }
 
+    func testListeningToAPDFWithATextlessPageTellsOnceThatItWasSkipped() async throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "", body: ""),
+            (heading: "Second page", body: "Second readable passage.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let suite = "pdf-skipped-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let host = UIViewController()
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+        let previousWindow = scene?.windows.first(where: \.isKeyWindow)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+        window.rootViewController = host
+        let view = ReaderPDFView(frame: window.bounds)
+        host.view.addSubview(view)
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        let pdf = ReaderPDFPresentation(view: view, bookID: "fixture", defaults: defaults)
+        pdf.load(document: try XCTUnwrap(PDFDocument(url: url)),
+                 metadata: try ConverterFFIAdapter().openBook(at: url).metadataJSON)
+        view.layoutIfNeeded()
+        pdf.goToChapter(0)
+        var played = 0
+        pdf.onPlayFrom = { _ in played += 1 }
+        XCTAssertNil(host.presentedViewController, "Opening the book alone says nothing")
+
+        pdf.playFromCurrentPosition()
+        XCTAssertEqual(played, 1, "The notice must not hold back playback")
+        try await Task.sleep(nanoseconds: 800_000_000)
+        let alert = try XCTUnwrap(host.presentedViewController as? UIAlertController,
+                                  "Listening must tell that a page was skipped")
+        XCTAssertEqual(alert.message, L10n.string("convert.pdfPagesSkipped.one"))
+        let screenshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        screenshot.name = "ios-pdf-skipped-pages-notice"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        await withCheckedContinuation { done in host.dismiss(animated: false) { done.resume() } }
+
+        pdf.playFromCurrentPosition()
+        XCTAssertEqual(played, 2)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertNil(host.presentedViewController, "The notice appears once per opened book")
+    }
+
     func testPDFLayoutSwitchPageNavigationAndReopenPreserveTheSourcePage() throws {
         let url = try PdfFixture.createMultiPage(pages: [
             (heading: "First", body: "First page with readable text."),
