@@ -177,6 +177,18 @@ final class MacSettingsLinuxLayoutTests: XCTestCase {
         attach(window, name: "mac-settings-audio-rate")
     }
 
+    /// PARITY-MAC-SETTINGS-6: Storage opens the local audio screen, where each book is removed on its own.
+    func testStorageOpensTheLocalAudioScreen() throws {
+        let (controller, window) = host(AppSettings(defaults: defaults))
+        defer { window.close() }
+        let disclosure = try XCTUnwrap(control(in: controller.view,
+            identifier: "settings.manageDownloads.disclosure") as? NSButton, "missing local audio row")
+        disclosure.performClick(nil)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(descendants(controller.view).first { $0.accessibilityIdentifier() == "settings.downloadedBooks" })
+        attach(window, name: "mac-local-audio")
+    }
+
     private func host(_ settings: AppSettings) -> (MacSettingsViewController, NSWindow) {
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 1400),
