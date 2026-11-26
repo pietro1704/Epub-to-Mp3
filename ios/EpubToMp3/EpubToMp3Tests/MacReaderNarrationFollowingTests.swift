@@ -162,6 +162,28 @@ final class MacReaderNarrationFollowingTests: XCTestCase {
         XCTAssertTrue(rig.harness.composition.textView.string.hasPrefix("Chapter 2."))
     }
 
+    /// REMOTE-JUMP parity: with auto-scroll off the page stays put, even after a seek; "Go to reading" still works.
+    func testTextReaderStaysPutWhileAutoScrollIsOff() async throws {
+        let rig = try makeTextRig()
+        let player = rig.harness.player, id = rig.harness.id, settings = rig.harness.settings
+        let saved = settings.readerAutoScroll
+        addTeardownBlock { @MainActor in settings.readerAutoScroll = saved }
+        settings.readerAutoScroll = false
+        try narrate(player, bookID: id, textOffset: 6_000)
+        player.seek(to: 1)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertEqual(rig.offset, 0, accuracy: 0.5, "Auto-scroll is off: the reader must not move by itself")
+
+        rig.following.goToNarration()
+        let asked = await eventually { rig.offset > 0 }
+        XCTAssertTrue(asked, "An explicit Go to reading still shows the spoken passage")
+
+        settings.readerAutoScroll = true
+        try narrate(player, bookID: id, textOffset: 0)
+        let followed = await eventually { rig.offset < 1 }
+        XCTAssertTrue(followed, "Turning auto-scroll back on resumes following")
+    }
+
     func testTextReaderStopsFollowingAfterAManualScrollAndResumesOnNarrationActions() async throws {
         let rig = try makeTextRig()
         let player = rig.harness.player, id = rig.harness.id
