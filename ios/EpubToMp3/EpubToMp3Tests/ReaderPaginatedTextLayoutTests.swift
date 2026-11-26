@@ -50,6 +50,35 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         }
     }
 
+    /// A book whose CSS sets a tight line height makes TextKit lines shorter
+    /// than the font, so descenders hang below the line box. The page masks cut
+    /// at the protected bottom, which therefore has to include them.
+    @MainActor
+    func testProtectedLinesIncludeDescendersWhenTheBookLineHeightIsTight() throws {
+        let font = ReaderTestFont.systemFont(ofSize: 24)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = 22
+        paragraph.maximumLineHeight = 22
+        let storage = NSTextStorage(
+            string: String(repeating: "jogging quickly past the young poppies ", count: 60),
+            attributes: [.font: font, .paragraphStyle: paragraph]
+        )
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 280, height: 300))
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        let result = ReaderPaginatedTextLayout.layout(.init(
+            layoutManager: layoutManager, textContainer: container,
+            topInset: 16, bottomInset: 24, pageHeight: 300))
+        XCTAssertGreaterThan(result.protectedFragments.count, 1)
+        for fragment in result.protectedFragments {
+            let line = layoutManager.lineFragmentRect(forGlyphAt: fragment.glyphRange.location, effectiveRange: nil)
+            let baseline = line.minY + layoutManager.location(forGlyphAt: fragment.glyphRange.location).y
+            XCTAssertGreaterThanOrEqual(fragment.containerRect.maxY + 0.5, baseline - font.descender,
+                                        "descenders fall outside the protected line")
+        }
+    }
+
     @MainActor
     private func assertNoVisiblePartialFragments(
         in result: ReaderPaginatedTextLayout.Result,
