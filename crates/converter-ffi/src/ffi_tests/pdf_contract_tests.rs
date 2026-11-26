@@ -132,7 +132,10 @@ fn pdf_ffi_metadata_reports_the_skipped_pages() {
     let path = CString::new(input.to_str().unwrap()).unwrap();
     unsafe {
         let session = converter_session_open(path.as_ptr());
-        assert!(!session.is_null(), "an image cover must not reject the book");
+        assert!(
+            !session.is_null(),
+            "an image cover must not reject the book"
+        );
         let metadata = converter_session_metadata_json(session);
         let value: serde_json::Value =
             serde_json::from_slice(CStr::from_ptr(metadata).to_bytes()).unwrap();
