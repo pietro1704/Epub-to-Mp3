@@ -219,6 +219,7 @@ final class MacReaderViewController: NSViewController {
         switch event {
         case .resetTextSurface:
             composition.setFootnotesAvailable(false)
+            composition.setPageIndicatorShown(false)
             contentScrollView.documentView = textView
         case .empty:
             bookTitleLabel.stringValue = L10n.string("library.empty.title")
