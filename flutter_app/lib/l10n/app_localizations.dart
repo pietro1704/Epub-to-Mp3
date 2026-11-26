@@ -544,6 +544,30 @@ abstract class AppLocalizations {
   /// **'Show page numbers'**
   String get readerShowPageNumbers;
 
+  /// No description provided for @readerPageTurnStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Page turn'**
+  String get readerPageTurnStyle;
+
+  /// No description provided for @pageTurnFlip.
+  ///
+  /// In en, this message translates to:
+  /// **'Flip'**
+  String get pageTurnFlip;
+
+  /// No description provided for @pageTurnSlide.
+  ///
+  /// In en, this message translates to:
+  /// **'Slide'**
+  String get pageTurnSlide;
+
+  /// No description provided for @pageTurnNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get pageTurnNone;
+
   /// No description provided for @readerAlignmentLabel.
   ///
   /// In en, this message translates to:
@@ -1665,6 +1689,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove highlight'**
   String get readerRemoveHighlight;
+
+  /// No description provided for @readerPassageLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Passage language'**
+  String get readerPassageLanguage;
 }
 
 class _AppLocalizationsDelegate

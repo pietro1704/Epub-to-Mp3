@@ -46,7 +46,7 @@ final readerNarrationPairedProvider = StateProvider<bool?>((ref) => null);
 final readerPairRequestProvider = StateProvider<int>((ref) => 0);
 
 /// Reader tools that can sit beside the overflow menu (Apple `ReaderTool`).
-enum ReaderTool { appearance, contents, search, bookmarks, footnotes }
+enum ReaderTool { appearance, contents, search, bookmarks, footnotes, listen, voiceModels }
 
 const _recentToolKey = 'reader.recentTool.v1';
 

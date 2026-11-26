@@ -136,6 +136,58 @@ void main() {
     expect(scrollOffset(), lastPageOffset);
   });
 
+  test('page turn style defaults to flip and ignores unknown values', () async {
+    SharedPreferences.setMockInitialValues({});
+    var settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    expect(settings.readerPageTurnStyle, 'flip');
+    await settings.setReaderPageTurnStyle('slide');
+    expect(settings.readerPageTurnStyle, 'slide');
+    SharedPreferences.setMockInitialValues({'pageTurnStyle': 'curl'});
+    settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    expect(settings.readerPageTurnStyle, 'flip');
+  });
+
+  for (final style in ['flip', 'slide', 'none']) {
+    testWidgets('paginated turn animates the outgoing page only unless style is none ($style)', (tester) async {
+      SharedPreferences.setMockInitialValues({'readerLayout': 'paginated', 'pageTurnStyle': style});
+      final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+      final paragraphs = List.generate(30, (i) => 'Paragraph $i with text.');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: RichReaderSurface(
+                chapter: FulltextChapter(
+                  index: 0,
+                  text: paragraphs.join('\n'),
+                  html: paragraphs.map((p) => '<p>$p</p>').join(),
+                ),
+                settings: settings,
+                background: Colors.white,
+                foreground: Colors.black,
+                bodyStyle: const TextStyle(fontSize: 20, height: 1.6),
+                headingStyle: const TextStyle(fontSize: 24),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      double offset() => tester
+          .widget<SingleChildScrollView>(find.byKey(const ValueKey('rich-reader-viewport')))
+          .controller!
+          .offset;
+      await tester.tapAt(const Offset(590, 180));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(offset(), greaterThan(0));
+      expect(find.byType(RawImage), style == 'none' ? findsNothing : findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byType(RawImage), findsNothing);
+    });
+  }
+
   test(
     'original typography respects persisted explicit choices and reset',
     () async {
@@ -208,6 +260,7 @@ void main() {
     List<ReaderSavedHighlight> saved = const [],
     ValueChanged<TextRange>? onHighlight,
     ValueChanged<TextRange>? onAddNote,
+    ValueChanged<TextRange>? onSetLanguage,
     ValueChanged<String>? onRemoveHighlight,
   }) async {
     SharedPreferences.setMockInitialValues({'readerLayout': 'scrolling'});
@@ -233,6 +286,7 @@ void main() {
               savedHighlights: saved,
               onHighlight: onHighlight,
               onAddNote: onAddNote,
+              onSetLanguage: onSetLanguage,
               onRemoveHighlight: onRemoveHighlight,
             ),
           ),
@@ -265,6 +319,16 @@ void main() {
     await tester.tap(find.text('Add Note'));
     await tester.pumpAndSettle();
     expect(noted, [TextRange(start: start, end: start + 'Second'.length)]);
+  });
+
+  testWidgets('selected text offers Passage language with the selected source range', (tester) async {
+    final chosen = <TextRange>[];
+    await pumpSelectionMenu(tester, onSetLanguage: chosen.add);
+    final start = 'First paragraph is here.\nSecond paragraph follows now.'.indexOf('Second');
+
+    await tester.tap(find.text('Passage language'));
+    await tester.pumpAndSettle();
+    expect(chosen, [TextRange(start: start, end: start + 'Second'.length)]);
   });
 
   testWidgets('a selection over a saved highlight offers Remove highlight instead', (tester) async {

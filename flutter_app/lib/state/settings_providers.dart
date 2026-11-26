@@ -101,6 +101,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _emit();
   }
 
+  Future<void> setReaderPageTurnStyle(String v) async {
+    await state.setReaderPageTurnStyle(v);
+    _emit();
+  }
+
   Future<void> setReaderShowPageNumbers(bool v) async {
     await state.setReaderShowPageNumbers(v);
     _emit();

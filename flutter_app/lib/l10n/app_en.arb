@@ -85,6 +85,10 @@
   "lineSpacingLabel": "Line spacing",
   "marginLabel": "Margin",
   "readerShowPageNumbers": "Show page numbers",
+  "readerPageTurnStyle": "Page turn",
+  "pageTurnFlip": "Flip",
+  "pageTurnSlide": "Slide",
+  "pageTurnNone": "Normal",
   "readerAlignmentLabel": "Alignment",
   "readerAlignmentJustified": "Justified",
   "readerAlignmentLeft": "Left",
@@ -306,5 +310,6 @@
   "tocAudioFailed": "Audio failed",
   "readerHighlight": "Highlight",
   "readerAddNote": "Add Note",
-  "readerRemoveHighlight": "Remove highlight"
+  "readerRemoveHighlight": "Remove highlight",
+  "readerPassageLanguage": "Passage language"
 }

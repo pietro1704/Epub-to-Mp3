@@ -253,6 +253,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get readerShowPageNumbers => 'Mostrar números de página';
 
   @override
+  String get readerPageTurnStyle => 'Virada de página';
+
+  @override
+  String get pageTurnFlip => 'Virar';
+
+  @override
+  String get pageTurnSlide => 'Deslizar';
+
+  @override
+  String get pageTurnNone => 'Normal';
+
+  @override
   String get readerAlignmentLabel => 'Alinhamento';
 
   @override
@@ -882,4 +894,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readerRemoveHighlight => 'Remover marcação';
+
+  @override
+  String get readerPassageLanguage => 'Idioma do trecho';
 }

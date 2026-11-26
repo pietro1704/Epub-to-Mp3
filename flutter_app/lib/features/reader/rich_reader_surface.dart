@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kDoubleTapTimeout, kLongPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary, ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
 import 'package:flutter/services.dart';
 
@@ -49,6 +50,7 @@ class RichReaderSurface extends StatefulWidget {
     this.savedHighlights = const [],
     this.onHighlight,
     this.onAddNote,
+this.onSetLanguage,
     this.onRemoveHighlight,
     this.initialSourceOffset = 0,
     this.followNarration = false,
@@ -77,7 +79,7 @@ class RichReaderSurface extends StatefulWidget {
   final List<ReaderSavedHighlight> savedHighlights;
 
   /// Selection actions, each given the selected source UTF-16 range.
-  final ValueChanged<TextRange>? onHighlight, onAddNote;
+  final ValueChanged<TextRange>? onHighlight, onAddNote, onSetLanguage;
   final ValueChanged<String>? onRemoveHighlight;
 
   /// "Follow spoken text": the page turns to the highlighted (spoken) sentence.
@@ -93,8 +95,21 @@ class RichReaderSurface extends StatefulWidget {
   State<RichReaderSurface> createState() => _RichReaderSurfaceState();
 }
 
-class _RichReaderSurfaceState extends State<RichReaderSurface> {
+class _RichReaderSurfaceState extends State<RichReaderSurface>
+    with SingleTickerProviderStateMixin {
   final _content = GlobalKey();
+  final _pageKey = GlobalKey();
+  late final AnimationController _turnAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  )..addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(_clearOutgoing);
+      }
+    });
+  ui.Image? _outgoing;
+  bool _outgoingForward = true;
+  String _outgoingStyle = 'none';
   final _scroll = ScrollController();
   final _focus = FocusNode();
   final _selection = SelectionListenerNotifier();
@@ -156,6 +171,11 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
           ContextMenuButtonItem(
             label: t.readerAddNote,
             onPressed: () => act(() => widget.onAddNote!(range)),
+          ),
+        if (range != null && widget.onSetLanguage != null)
+          ContextMenuButtonItem(
+            label: t.readerPassageLanguage,
+            onPressed: () => act(() => widget.onSetLanguage!(range)),
           ),
       ];
       items.insertAll(0, extras);
@@ -343,9 +363,81 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         widget.onPreviousChapter?.call();
       }
     } else if (_scroll.hasClients) {
-      _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
+      _goToPage(target.clamp(0, _scroll.position.maxScrollExtent).toDouble(), forward);
     }
     widget.onAutoHideChrome?.call();
+  }
+
+  void _clearOutgoing() {
+    _outgoing?.dispose();
+    _outgoing = null;
+  }
+
+  /// Moves to another page, animating the outgoing page away like the 16e
+  /// (flip or slide) unless the style is Normal or motion is reduced.
+  void _goToPage(double target, bool forward) {
+    final style = widget.settings.readerPageTurnStyle;
+    final boundary = _pageKey.currentContext?.findRenderObject();
+    if (style == 'none' ||
+        MediaQuery.disableAnimationsOf(context) ||
+        boundary is! RenderRepaintBoundary ||
+        !boundary.hasSize) {
+      _scroll.jumpTo(target);
+      return;
+    }
+    final snapshot = boundary.toImageSync(
+      pixelRatio: MediaQuery.devicePixelRatioOf(context),
+    );
+    _scroll.jumpTo(target);
+    setState(() {
+      _clearOutgoing();
+      _outgoing = snapshot;
+      _outgoingForward = forward;
+      _outgoingStyle = style;
+    });
+    _turnAnimation.forward(from: 0);
+  }
+
+  Widget _withTurnOverlay(Widget page, Size size) {
+    final image = _outgoing;
+    if (image == null) return page;
+    return Stack(
+      children: [
+        page,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ClipRect(
+              child: AnimatedBuilder(
+                animation: _turnAnimation,
+                builder: (context, _) {
+                  final t = Curves.easeInOut.transform(_turnAnimation.value);
+                  final old = RawImage(
+                    image: image,
+                    scale: MediaQuery.devicePixelRatioOf(context),
+                    width: size.width,
+                    height: size.height,
+                    fit: BoxFit.fill,
+                  );
+                  if (_outgoingStyle == 'slide') {
+                    return Transform.translate(
+                      offset: Offset((_outgoingForward ? -1 : 1) * size.width * t, 0),
+                      child: old,
+                    );
+                  }
+                  return Transform(
+                    alignment: _outgoingForward ? Alignment.centerLeft : Alignment.centerRight,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.0012)
+                      ..rotateY((_outgoingForward ? -1 : 1) * math.pi / 2 * t),
+                    child: Opacity(opacity: 1 - .4 * t, child: old),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Keeps the page on the spoken sentence (see [NarrationPairing]).
@@ -546,7 +638,10 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                           }
                         }
                       : null,
-                  child: Stack(
+                  child: _withTurnOverlay(
+                    RepaintBoundary(
+                      key: _pageKey,
+                      child: Stack(
                     children: [
                       NotificationListener<UserScrollNotification>(
                         // Scrolling by hand (continuous layout) suspends following.
@@ -654,6 +749,9 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                         ),
                     ],
                   ),
+                    ),
+                    Size(constraints.maxWidth, _height),
+                  ),
                   ),
                 ),
               ),
@@ -679,6 +777,8 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
   @override
   void dispose() {
     _mouseTap?.cancel();
+    _turnAnimation.dispose();
+    _clearOutgoing();
     _selection.dispose();
     _scroll.dispose();
     _focus.dispose();

@@ -5,10 +5,15 @@ extension _InstantReaderTools on _InstantReaderViewState {
   /// notes), in which case the text appearance stands in without forgetting it.
   ReaderTool _shownTool(Chapter chapter) {
     final recent = ref.watch(readerRecentToolProvider);
-    return recent == ReaderTool.footnotes && !chapter.hasFootnotes
-        ? ReaderTool.appearance
-        : recent;
+    return _toolApplies(recent, chapter) ? recent : ReaderTool.appearance;
   }
+
+  /// Footnotes need notes in the chapter; Listen needs a way to start listening.
+  bool _toolApplies(ReaderTool tool, Chapter chapter) => switch (tool) {
+    ReaderTool.footnotes => chapter.hasFootnotes,
+    ReaderTool.listen => widget.onListenFrom != null,
+    _ => true,
+  };
 
   ({IconData icon, String label, VoidCallback run}) _toolDescriptor(
     ReaderTool tool,
@@ -41,6 +46,18 @@ extension _InstantReaderTools on _InstantReaderViewState {
         label: t.readerFootnotes,
         run: () => _showFootnotes(chapter),
       ),
+      ReaderTool.listen => (
+        icon: Icons.play_arrow,
+        label: t.play,
+        run: () => _playFromHere(chapter, _visibleTextOffset),
+      ),
+      ReaderTool.voiceModels => (
+        icon: Icons.record_voice_over,
+        label: t.modelsTitle,
+        run: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const ModelsScreen()),
+        ),
+      ),
     };
   }
 
@@ -64,7 +81,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
     final shown = _shownTool(chapter);
     return [
       for (final tool in ReaderTool.values)
-        if (tool != shown && (tool != ReaderTool.footnotes || chapter.hasFootnotes))
+        if (tool != shown && _toolApplies(tool, chapter))
           () {
             final descriptor = _toolDescriptor(tool, chapter);
             return ReaderMenuEntry(

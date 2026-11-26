@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_app/models/reader_listening_position.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -269,6 +270,25 @@ void main() {
       expect(find.byKey(const ValueKey('reader-menu-appearance')), findsNothing);
       expect(find.byKey(const ValueKey('reader-menu-footnotes')), findsNothing,
           reason: 'no notes in this chapter');
+    });
+
+    testWidgets('Listen and Voice models are tools; Listen needs a way to start listening', (t) async {
+      final started = <ReaderListeningPosition>[];
+      final prefs = await _mockPrefs();
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext(), onListenFrom: (p) async => started.add(p))));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      await openMenu(t);
+      expect(find.byKey(const ValueKey('reader-menu-voiceModels')), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('reader-menu-listen')));
+      await t.pumpAndSettle();
+      expect(started, hasLength(1));
+      expect(started.single.chapterIndex, 0);
+
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())));
+      await t.pump();
+      await openMenu(t);
+      expect(find.byKey(const ValueKey('reader-menu-listen')), findsNothing);
     });
 
     testWidgets('choosing a tool from More makes it the recent tool and persists', (t) async {

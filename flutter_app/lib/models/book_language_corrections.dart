@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/painting.dart' show TextRange;
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/conversion/book_language_uncertain.dart';
@@ -16,6 +18,26 @@ class PassageLanguageCorrection {
   final int start;
   final int end;
   final String language;
+
+  /// The scope of a UTF-16 [range] of the chapter [text] as Rust reads it:
+  /// the chapter's position in the book (not its identifier) and Unicode
+  /// scalar offsets. Null when the range does not fit the text.
+  static PassageLanguageCorrection? forSelection({
+    required String text,
+    required TextRange range,
+    required int chapterPosition,
+    String language = '',
+  }) {
+    if (range.start < 0 || range.end <= range.start || range.end > text.length) {
+      return null;
+    }
+    return PassageLanguageCorrection(
+      chapterIndex: chapterPosition,
+      start: text.substring(0, range.start).runes.length,
+      end: text.substring(0, range.end).runes.length,
+      language: language,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'chapter_index': chapterIndex,

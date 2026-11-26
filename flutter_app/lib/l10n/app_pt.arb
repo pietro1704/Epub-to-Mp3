@@ -81,6 +81,10 @@
   "lineSpacingLabel": "Espaçamento",
   "marginLabel": "Margem",
   "readerShowPageNumbers": "Mostrar números de página",
+  "readerPageTurnStyle": "Virada de página",
+  "pageTurnFlip": "Virar",
+  "pageTurnSlide": "Deslizar",
+  "pageTurnNone": "Normal",
   "readerAlignmentLabel": "Alinhamento",
   "readerAlignmentJustified": "Justificado",
   "readerAlignmentLeft": "Esquerda",
@@ -299,5 +303,6 @@
   "tocAudioFailed": "Áudio com falha",
   "readerHighlight": "Marcar trecho",
   "readerAddNote": "Adicionar nota",
-  "readerRemoveHighlight": "Remover marcação"
+  "readerRemoveHighlight": "Remover marcação",
+  "readerPassageLanguage": "Idioma do trecho"
 }

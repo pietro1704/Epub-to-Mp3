@@ -13,6 +13,8 @@ import '../models/app_settings.dart';
 
 import '../models/ebook_fulltext.dart';
 import '../models/bookmark.dart';
+import '../models/book_language_corrections.dart';
+import '../models/language_names.dart';
 import '../l10n/app_localizations.dart';
 import '../services/reader/viewport_paginator.dart';
 
@@ -40,6 +42,10 @@ class ReaderView extends ConsumerStatefulWidget {
 
   /// Enables saved highlights and notes on selected text for this book.
   final String? bookId;
+
+  /// The chapter's position in the book as Rust numbers it (the payload array
+  /// position); [FulltextChapter.index] is only an identifier.
+  final int? chapterPosition;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
@@ -64,6 +70,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.onVisibleTextOffset,
     this.onPlayFromHere,
     this.bookId,
+    this.chapterPosition,
     required this.spans,
     this.currentSentenceId,
     this.onJumpToSentence,
@@ -262,6 +269,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               savedHighlights: _savedHighlights(),
               onHighlight: widget.bookId == null ? null : _saveHighlight,
               onAddNote: widget.bookId == null ? null : _saveNote,
+              onSetLanguage: widget.bookId == null ? null : _setPassageLanguage,
               onRemoveHighlight: widget.bookId == null
                   ? null
                   : ref.read(bookmarkStoreProvider).remove,
@@ -452,6 +460,56 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       endChar: range.end,
       selectedText: text.substring(range.start, range.end),
     );
+  }
+
+  /// Fixes the language of the selected passage. Rust reads source scalars, so
+  /// the UTF-16 selection is converted before it is stored.
+  Future<void> _setPassageLanguage(TextRange range) async {
+    final book = widget.bookId;
+    final text = widget.chapter.text;
+    if (book == null || range.end > text.length) return;
+    final corrections = ref.read(bookLanguageCorrectionsProvider);
+    final scope = PassageLanguageCorrection.forSelection(
+      text: text,
+      range: range,
+      chapterPosition: widget.chapterPosition ?? widget.chapter.index,
+    );
+    if (scope == null) return;
+    final current = corrections
+        .decision(book)
+        .passages
+        .where((p) => p.chapterIndex == scope.chapterIndex && p.start <= scope.start && p.end >= scope.end)
+        .lastOrNull
+        ?.language;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheet) {
+        final t = AppLocalizations.of(sheet)!;
+        Widget option(String tag, String label) => ListTile(
+          key: ValueKey('passage-language-$tag'),
+          title: Text(label),
+          trailing: (current ?? '') == tag ? const Icon(Icons.check) : null,
+          onTap: () => Navigator.pop(sheet, tag),
+        );
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(t.readerPassageLanguage, style: Theme.of(sheet).textTheme.titleLarge),
+              ),
+              option('', t.bookLanguageAutomatic),
+              for (final tag in pickableLanguageTags) option(tag, languageChoiceLabel(tag)),
+            ],
+          ),
+        );
+      },
+    );
+    if (chosen == null) return;
+    await corrections.set(chosen, bookId: book, passage: scope);
   }
 
   Future<void> _saveNote(TextRange range) async {

@@ -39,6 +39,24 @@ final class MacPlayerBarAccessibilityTests: XCTestCase {
         try fixture.assertCurrentAccessibleContent(includes: bar)
     }
 
+    func testOpenReaderDoesNotCoverTheVisiblePlayerBar() async throws {
+        let fixture = try PlayerAccessibilityFixture(hasSnapshot: true)
+        defer { fixture.cleanup() }
+        let bar = try fixture.bar()
+        fixture.root.showReader(bookID: "missing-covering-book-\(UUID().uuidString)")
+        await Task.yield()
+        fixture.window.layoutIfNeeded()
+        XCTAssertFalse(bar.isHidden)
+        XCTAssertGreaterThan(bar.frame.height, 0)
+        let reader = try XCTUnwrap(fixture.detail.subviews.first { $0 !== bar })
+        let overlap = reader.frame.intersection(bar.frame)
+        XCTAssertTrue(overlap.isEmpty, "The reader must end where the player bar starts, overlap: \(overlap)")
+        let center = NSPoint(x: bar.frame.midX, y: bar.frame.midY)
+        let hit = fixture.detail.hitTest(fixture.detail.convert(center, to: fixture.detail.superview))
+        XCTAssertTrue(hit?.isDescendant(of: bar) == true,
+                      "A click on the player bar must reach it, got \(String(describing: hit))")
+    }
+
     func testEmptyLibraryDoesNotExposeCollapsedPlayer() throws {
         let fixture = try PlayerAccessibilityFixture(hasSnapshot: false)
         defer { fixture.cleanup() }

@@ -353,6 +353,15 @@ class MirrorAppSettings with PlaybackSettings {
   Future<void> setReaderShowPageNumbers(bool v) =>
       _prefs.setBool('readerShowPageNumbers', v);
 
+  /// Paginated page turn animation, as on the 16e: `flip` (default), `slide`
+  /// or `none`.
+  String get readerPageTurnStyle {
+    final raw = _prefs.getString('pageTurnStyle');
+    return const {'flip', 'slide', 'none'}.contains(raw) ? raw! : 'flip';
+  }
+  Future<void> setReaderPageTurnStyle(String v) =>
+      _prefs.setString('pageTurnStyle', v);
+
   /// Horizontal alignment for reader body text. Default `.justified`
   /// matches Apple Books and printed-book typography. Forced on every
   /// paragraph, overriding the EPUB's own CSS alignment declaration.

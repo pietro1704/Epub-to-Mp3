@@ -302,7 +302,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
             contentView.topAnchor.constraint(equalTo: detailContainer.view.safeAreaLayoutGuide.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: detailContainer.view.bottomAnchor),
+            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
         ])
         detailController = reader
         refreshPlayerBar()
