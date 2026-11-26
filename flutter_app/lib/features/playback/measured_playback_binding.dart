@@ -22,6 +22,9 @@ class MeasuredPlaybackBinding {
     _subscriptions.add(
       player.currentIndex.listen((_) => update(player.positionSeconds)),
     );
+    _subscriptions.add(
+      player.playing.listen((_) => update(player.positionSeconds)),
+    );
   }
   final AudioPlayerInterface player;
   final String bookId;
@@ -36,6 +39,13 @@ class MeasuredPlaybackBinding {
   int _generation = 0;
   bool _disposed = false;
   TextRange? _last;
+
+  /// The narrated passage stays painted while paused (it marks where narration resumes) and goes
+  /// only on a jump or seek, like the Apple reader. A book that was never narrated shows none.
+  bool _narrated = false;
+  double _heldSeconds = 0;
+  bool _released = false;
+  static const _seekTolerance = 0.25;
 
   void update(double seconds) {
     if (_disposed) return;
@@ -73,7 +83,18 @@ class MeasuredPlaybackBinding {
         );
       }
     }
-    _emit(player.isLoading ? null : _alignment.rangeAt(seconds, source));
+    if (uri == null) {
+      _narrated = false;
+      _released = false;
+    } else if (player.isPlaying && !player.isLoading) {
+      _narrated = true;
+      _released = false;
+      _heldSeconds = seconds;
+    } else if (!player.isPlaying && _narrated && (seconds - _heldSeconds).abs() > _seekTolerance) {
+      _released = true;
+    }
+    final hidden = player.isLoading || (!player.isPlaying && (!_narrated || _released));
+    _emit(hidden ? null : _alignment.rangeAt(seconds, source));
   }
 
   void _emit(TextRange? range) {
