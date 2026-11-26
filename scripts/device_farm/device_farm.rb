@@ -266,15 +266,77 @@ module DeviceFarm
     adb(serial, 'shell', 'am', 'force-stop', PACKAGE, timeout: 20)
   end
 
+  # --- exclusive foreground (2026-11-26) -------------------------------------------------------
+  # The monkey ran on the tablet while DeX/split screen showed the owner's other apps and its touches
+  # landed in them. A phase touches a device only while the app is the only thing on its screen:
+  # focused, the one resumed activity, in a fullscreen task, with no other visible standard task.
+  NOT_EXCLUSIVE = 'foreground not exclusive'
+
+  def self.exclusive_foreground?(activities, window)
+    top = activities[/topResumedActivity=ActivityRecord\{\S+ \S+ ([\w.]+)\//, 1] ||
+          activities[/ResumedActivity: ActivityRecord\{\S+ \S+ ([\w.]+)\//, 1]
+    focus = window[/mCurrentFocus=Window\{\S+ \S+ ([\w.]+)\//, 1]
+    return [false, NOT_EXCLUSIVE] unless top == PACKAGE && focus == PACKAGE
+
+    resumed = activities.scan(/ResumedActivity[:=] ?ActivityRecord\{(\S+) /).flatten.uniq
+    return [false, NOT_EXCLUSIVE] if resumed.size > 1
+
+    tasks = activities.lines.grep(/^\s*\* Task\{\S+ #\d+ /)
+    ours = tasks.find { |line| line.match?(/:#{Regexp.escape(PACKAGE)}\b/) }
+    mode = ours && ours[/\bmode=([\w-]+)/, 1]
+    return [false, NOT_EXCLUSIVE] if mode && mode != 'fullscreen'
+
+    others = tasks.select { |line| line.include?('type=standard') && line.include?('visible=true') && line != ours }
+    return [false, NOT_EXCLUSIVE] unless others.empty?
+
+    [true, nil]
+  end
+
+  def self.foreground_exclusive(serial)
+    activities, ok1 = adb(serial, 'shell', 'dumpsys', 'activity', 'activities', timeout: 30)
+    window, ok2 = adb(serial, 'shell', 'dumpsys', 'window', timeout: 30)
+    return [false, NOT_EXCLUSIVE] unless ok1 && ok2
+
+    exclusive_foreground?(activities, window)
+  end
+
+  def self.skipped(serial, phase, reason)
+    Result.new(serial, phase, true, "SKIP #{reason}", nil, '')
+  end
+
   # --- phases --------------------------------------------------------------------------------
+  MONKEY_BATCH = 100
+
+  # Batches of MONKEY_BATCH events; the foreground is checked before each one and the run aborts
+  # as soon as the app is no longer alone on the screen.
   def self.monkey(serial, seed: Time.now.to_i % 100_000, events: 1500)
     adb(serial, 'logcat', '-c', timeout: 20)
-    out, = adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-s', seed.to_s, '--throttle', '250',
-               '--pct-syskeys', '0', '--pct-appswitch', '0', '--pct-nav', '0', '--pct-majornav', '2',
-               '-v', events.to_s, timeout: 60 + events / 2)
+    out = +''
+    sent = 0
+    aborted = nil
+    while sent < events
+      count = [MONKEY_BATCH, events - sent].min
+      ok, reason = foreground_exclusive(serial)
+      unless ok
+        aborted = reason
+        break
+      end
+      batch, = adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-s', (seed + sent).to_s, '--throttle', '250',
+                   '--pct-syskeys', '0', '--pct-appswitch', '0', '--pct-nav', '0', '--pct-majornav', '2',
+                   '-v', count.to_s, timeout: 60 + count / 2)
+      out << batch.to_s
+      sent += count
+    end
     logcat, = adb(serial, 'logcat', '-d', '-t', '4000', timeout: 30)
     crashes = crash_lines(logcat) + out.lines.grep(/CRASH|ANR/)
     close_app(serial)
+    return skipped(serial, 'monkey', aborted) if aborted && sent.zero?
+
+    if aborted
+      return Result.new(serial, 'monkey', false, "monkey seed #{seed}: aborted after #{sent} events, #{aborted}",
+                        'monkey:aborted-foreground', "#{out.lines.last(40).join}\n#{logcat.lines.last(100).join}")
+    end
+
     ok = crashes.empty?
     Result.new(serial, 'monkey', ok, ok ? "monkey seed #{seed}: #{events} events, no crash" : "monkey seed #{seed}: #{crashes.first.to_s.strip}",
                ok ? nil : "monkey:#{signature(crashes)}", ok ? '' : "#{out.lines.last(40).join}\n#{logcat.lines.last(300).join}")
@@ -287,6 +349,11 @@ module DeviceFarm
     adb(serial, 'logcat', '-c', timeout: 20)
     adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.MONKEY', '1', timeout: 30)
     sleep 8
+    ok, reason = foreground_exclusive(serial)
+    unless ok
+      close_app(serial)
+      return skipped(serial, 'soak', reason)
+    end
     pid_before, = adb(serial, 'shell', 'pidof', PACKAGE, timeout: 20)
     window, = adb(serial, 'shell', 'dumpsys', 'window', timeout: 20)
     screen_off = screen_off_safe?(window)
@@ -405,6 +472,13 @@ module DeviceFarm
     adb(serial, 'shell', "run-as #{PACKAGE} sh -c 'mkdir -p files && echo #{shard} > files/farm_shard'", timeout: 30)
     adb(serial, 'logcat', '-c', timeout: 20)
     adb(serial, 'shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.MONKEY', '1', timeout: 30)
+    sleep 5
+    ok, reason = foreground_exclusive(serial)
+    unless ok
+      close_app(serial)
+      install_normal(serial)
+      return skipped(serial, 'regression', reason)
+    end
     verdict = nil
     logcat = +''
     deadline = Time.now + minutes * 60
