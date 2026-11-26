@@ -375,6 +375,7 @@
 "settings.insufficientStorageMessage" = "No hay suficiente espacio libre para seguir creando audio. Gestiona las descargas de libros para liberar espacio; las descargas existentes permanecerán hasta que las elimines.";
 "settings.noDownloadedBooks" = "No hay libros descargados";
 "settings.downloadedChapters" = "%d capítulos descargados";
+"settings.downloadedChapters.one" = "%d capítulo descargado";
 "settings.removeBookDownload" = "Eliminar descarga";
 "settings.removeBookDownloadConfirmTitle" = "¿Eliminar audio descargado?";
 "settings.removeBookDownloadConfirmMessage" = "El audio descargado de %@ se eliminará de este dispositivo.";

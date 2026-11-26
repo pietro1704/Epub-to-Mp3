@@ -23,6 +23,11 @@ enum L10n {
         string("reader.chapter", number)
     }
 
+    /// Chapter count of one book's offline audio.
+    static func downloadedChapters(_ count: Int) -> String {
+        string(count == 1 ? "settings.downloadedChapters.one" : "settings.downloadedChapters", count)
+    }
+
     private static var defaultBundle: Bundle {
         if let bundleOverrideForTesting { return bundleOverrideForTesting }
         #if SWIFT_PACKAGE

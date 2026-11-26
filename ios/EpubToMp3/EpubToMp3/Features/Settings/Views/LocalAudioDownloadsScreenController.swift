@@ -67,7 +67,7 @@ final class LocalAudioDownloadsScreenController: UITableViewController {
 
         let book = entry.book
         content.text = book.title
-        let chapterText = L10n.string("settings.downloadedChapters", book.chapterCount)
+        let chapterText = L10n.downloadedChapters(book.chapterCount)
         let storageText = ByteCountFormatter.string(fromByteCount: book.byteCount, countStyle: .file)
         content.secondaryText = [book.author, chapterText, storageText]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
