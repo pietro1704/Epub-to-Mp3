@@ -116,6 +116,10 @@ final class MacReaderViewComposition {
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
         toolbar.spacing = 10
         toolbar.distribution = .fill
+        // Equal spacers give the title a single position between the controls.
+        let balance = leadingSpacer.widthAnchor.constraint(equalTo: trailingSpacer.widthAnchor)
+        balance.priority = .defaultHigh
+        balance.isActive = true
         toolbar.wantsLayer = true
         toolbar.layer?.backgroundColor = nil
         toolbar.setAccessibilityIdentifier("reader.toolbar")
