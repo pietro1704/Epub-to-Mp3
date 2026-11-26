@@ -203,6 +203,23 @@ class _ReadingPreferencesScreenState extends ConsumerState<ReadingPreferencesScr
             ),
             showSelectedIcon: false,
           ),
+          if (settings.readerLayout == ReaderLayout.paginated) ...[
+            const SizedBox(height: 8),
+            Text(t.readerPageTurnStyle, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              key: const ValueKey('reader-page-turn-style'),
+              segments: [
+                ButtonSegment(value: 'flip', label: Text(t.pageTurnFlip)),
+                ButtonSegment(value: 'slide', label: Text(t.pageTurnSlide)),
+                ButtonSegment(value: 'none', label: Text(t.pageTurnNone)),
+              ],
+              selected: {settings.readerPageTurnStyle},
+              onSelectionChanged: (s) =>
+                  ref.read(settingsProvider.notifier).setReaderPageTurnStyle(s.first),
+              showSelectedIcon: false,
+            ),
+          ],
           if (!_forBook) ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

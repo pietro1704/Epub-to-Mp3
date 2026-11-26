@@ -253,6 +253,18 @@ class AppLocalizationsEs extends AppLocalizations {
   String get readerShowPageNumbers => 'Mostrar números de página';
 
   @override
+  String get readerPageTurnStyle => 'Paso de página';
+
+  @override
+  String get pageTurnFlip => 'Voltear';
+
+  @override
+  String get pageTurnSlide => 'Deslizar';
+
+  @override
+  String get pageTurnNone => 'Ninguna';
+
+  @override
   String get readerAlignmentLabel => 'Alineación';
 
   @override
