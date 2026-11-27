@@ -23,6 +23,8 @@ final class ReaderPDFPresentation {
     private var hasLoaded = false
     private var viewportPage: PDFPage?
     private var viewportOffset: CGPoint?
+    private var viewportWidth: CGFloat = 0
+    private var requestedLayout: ReaderLayout = .scrolling
     private var isViewportTransitioning = false
     private(set) var audioMap: PDFReadingAudioMap?
     var onToggleChrome: (() -> Void)?
@@ -37,6 +39,7 @@ final class ReaderPDFPresentation {
         self.settings = settings
         self.player = player
         view.autoScales = true
+        view.onViewportResize = { [weak self] page in self?.configureDisplay(returningTo: page) }
         view.onReaderTap = { [weak self] point in self?.tap(at: point) }
         view.onReaderLongPress = { [weak self] point in self?.showActions(at: point) }
         for name in [Notification.Name.PDFViewPageChanged, .PDFViewVisiblePagesChanged] {
@@ -112,12 +115,15 @@ final class ReaderPDFPresentation {
         isViewportTransitioning = true
         viewportPage = view.currentPage
         viewportOffset = documentOffset
+        viewportWidth = view.bounds.width
     }
 
     func completeViewportTransition() {
         guard isViewportTransitioning else { return }
         view.layoutIfNeeded()
-        if !view.isUsingPageViewController, let viewportOffset, let scroll = documentScrollView {
+        // A raw offset only survives a height change: another width rescales the pages.
+        if !view.isUsingPageViewController, view.bounds.width == viewportWidth,
+           let viewportOffset, let scroll = documentScrollView {
             // PDFDestination restoration can align the bottom of a page with
             // the new viewport and advance currentPage. A chrome resize owns
             // geometry only, so preserve the document scroll view's raw origin.
@@ -132,8 +138,17 @@ final class ReaderPDFPresentation {
     }
 
     func applyLayout(_ mode: ReaderLayout) {
-        let destination = view.currentDestination
-        let sourcePage = view.currentPage
+        requestedLayout = mode
+        configureDisplay()
+    }
+
+    /// A page shown whole in a landscape viewport is unreadably small, so landscape
+    /// always scrolls vertically at page width. Portrait restores the chosen layout.
+    private func configureDisplay(returningTo resizedPage: PDFPage? = nil) {
+        let isLandscape = view.bounds.width > view.bounds.height
+        let mode: ReaderLayout = isLandscape ? .scrolling : requestedLayout
+        let destination = resizedPage == nil ? view.currentDestination : nil
+        let sourcePage = resizedPage ?? view.currentPage
         let targetMode: PDFDisplayMode = mode == .paginated ? .singlePage : .singlePageContinuous
         let direction: PDFDisplayDirection = mode == .paginated ? .horizontal : .vertical
         guard view.isUsingPageViewController != (mode == .paginated) || view.displayDirection != direction
@@ -147,7 +162,7 @@ final class ReaderPDFPresentation {
         view.layoutIfNeeded()
         // A paginated page is shown whole, and restoring its destination in the
         // continuous layout can land on the next page: return to the page itself.
-        if mode == .paginated || wasPaginated, let sourcePage { view.go(to: sourcePage) }
+        if mode == .paginated || wasPaginated || resizedPage != nil, let sourcePage { view.go(to: sourcePage) }
         else if let destination { view.go(to: destination) }
         publishPosition()
     }

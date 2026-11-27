@@ -7,6 +7,9 @@ import UIKit
 final class ReaderPDFView: PDFView {
     var onReaderTap: ((CGPoint) -> Void)?
     var onReaderLongPress: ((CGPoint) -> Void)?
+    /// Called after a layout at a new size, with the page shown before it.
+    var onViewportResize: ((PDFPage?) -> Void)?
+    private var laidOutSize = CGSize.zero
     private lazy var readerGestureDelegate = ReaderPDFGestureDelegate(view: self)
     private lazy var readerTap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
     private lazy var readerLongPress = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
@@ -40,7 +43,11 @@ final class ReaderPDFView: PDFView {
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool { false }
 
     override func layoutSubviews() {
+        let resized = bounds.size != laidOutSize
+        let pageBeforeLayout = resized ? currentPage : nil
+        laidOutSize = bounds.size
         super.layoutSubviews()
+        if resized { onViewportResize?(pageBeforeLayout) }
         prepareForReaderInteraction()
         if currentSelection != nil { clearSelection() }
     }
