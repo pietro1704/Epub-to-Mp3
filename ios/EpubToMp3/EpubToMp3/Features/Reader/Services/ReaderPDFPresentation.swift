@@ -232,6 +232,16 @@ final class ReaderPDFPresentation {
         follower?.userTurnedThePage()
     }
 
+    var currentPageNumber: Int? { currentPage.map { $0 + 1 } }
+
+    func pageNumber(of playback: ReaderPlaybackLocation) -> Int? {
+        let index = playback.chapterIndex
+        guard let map = audioMap, map.chapters.indices.contains(index) else { return nil }
+        let text = map.chapters[index].text
+        let offset = playback.characterOffset(chapterText: text, renderedText: text)
+        return map.displayLocation(chapter: index, character: offset).map { $0.page + 1 }
+    }
+
     private var follower: ReaderNarrationFollower?
 
     /// Starts following the narration of `bookID`; the reader owns the lifetime of the player subscription.
