@@ -28,6 +28,26 @@ final class MiniPlayerSurfaceOwnershipTests: XCTestCase {
         }
     }
 
+    /// iOS 26 sizes the tab accessory container 0x0 during transitions. Every
+    /// constraint that cannot hold at that size must be able to yield.
+    func testZeroSizedTabAccessoryDoesNotRequireImpossibleConstraints() throws {
+        let mini = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
+        let pill = try XCTUnwrap(mini.subviews.first {
+            $0.accessibilityIdentifier == "miniPlayer.pillMaterial"
+        })
+        let content = try XCTUnwrap(mini.subviews.compactMap { $0 as? UIStackView }.first)
+        let own = mini.constraints.filter { $0.firstItem === content || $0.firstItem === pill || $0.firstItem === mini }
+        func priority(_ item: UIView, _ attribute: NSLayoutConstraint.Attribute) throws -> UILayoutPriority {
+            try XCTUnwrap(own.first { $0.firstItem === item && $0.firstAttribute == attribute }).priority
+        }
+
+        XCTAssertLessThan(try priority(mini, .height), .required, "minimum height")
+        XCTAssertLessThan(try priority(pill, .trailing), .required, "material trailing")
+        XCTAssertLessThan(try priority(content, .trailing), .required, "content trailing")
+        XCTAssertLessThan(try priority(content, .top), .required, "content top inset")
+        XCTAssertLessThan(try priority(content, .bottom), .required, "content bottom inset")
+    }
+
     func testRemovingAccessoryMaterialPreservesLayoutAndControlTouchAreas() throws {
         let mini = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
         mini.frame = CGRect(x: 0, y: 0, width: 390, height: 60)
