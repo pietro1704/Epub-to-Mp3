@@ -139,6 +139,10 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.allowsMultipleSelection = false
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
+        collectionView.itemMenu = { [weak self] indexPath in
+            guard let self else { return nil }
+            return self.collectionView(self.collectionView, menuForItemsAt: [indexPath])
+        }
         collectionView.dataSource = self
         let layout = MacLibraryCollectionLayout()
         layout.requestedColumns = columns.chosenColumns
@@ -346,7 +350,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
 
     func collectionView(_ collectionView: NSCollectionView,
                         menuForItemsAt indexPaths: Set<IndexPath>) -> NSMenu? {
-        guard let indexPath = indexPaths.first else { return nil }
+        guard let indexPath = indexPaths.first, books.indices.contains(indexPath.item) else { return nil }
         let book = books[indexPath.item]
         let menu = NSMenu()
         let language = NSMenuItem(title: L10n.string("language.chooseTitle"),
@@ -435,6 +439,17 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
 
 /// Resolve the current cards on every query; collection items are recycled during layout.
 private final class MacLibraryCollectionView: NSCollectionView {
+    var itemMenu: ((IndexPath) -> NSMenu?)?
+
+    /// AppKit asks the view for a contextual menu; NSCollectionViewDelegate has no per-item menu callback.
+    /// The card's own buttons have no menu, so a right click on them reaches this view.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let indexPath = indexPathForItem(at: convert(event.locationInWindow, from: nil)) else {
+            return super.menu(for: event)
+        }
+        return itemMenu?(indexPath)
+    }
+
     override func accessibilityChildren() -> [Any]? {
         visibleItems().map(\.view)
     }
