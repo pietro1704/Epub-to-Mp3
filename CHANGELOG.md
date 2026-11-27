@@ -1,9 +1,32 @@
 # Changelog
 
+## [0.14.2] — 2026-11-27
+
+### Bug Fixes
+
+- Search the book like iOS, off the main thread (#1705) ([d147ee6](https://github.com/pietro1704/Epub-to-Mp3/commit/d147ee601577f19be47ad5ae3b195e19752199c7))
+- Survive a broken stderr and report real chapter progress (#1702) ([cd1f41f](https://github.com/pietro1704/Epub-to-Mp3/commit/cd1f41fd35a544f0bfc225d37619bf530ec32944))
+- Stop Auto Layout conflicts in the tab accessory mini player and settings fields (#1697) ([cc81978](https://github.com/pietro1704/Epub-to-Mp3/commit/cc819781465f95ffe373ae0eea41c46b1bfdd686))
+- Drop the App Group from the macOS app so the library stays visible (#1696) ([8d9333a](https://github.com/pietro1704/Epub-to-Mp3/commit/8d9333a155347296b4a6483939730d5ae2aadad7))
+
+### Chores
+
+- Bump version to 0.14.2 ([837bd4a](https://github.com/pietro1704/Epub-to-Mp3/commit/837bd4af83e3a5457ee986507790d38a229fece2))
+- Adopt Xcode 26.3 recommended project settings (#1695) ([bef4bdf](https://github.com/pietro1704/Epub-to-Mp3/commit/bef4bdf91ee14f1e514c77cec09bde213d19cacc))
+
+### Performance
+
+- Lay out only the text that can reach the page being built (#1703) ([7927cc3](https://github.com/pietro1704/Epub-to-Mp3/commit/7927cc34a14dd5bad76809b9a60474c3189c5e45))
+- Parse a cached book off the UI isolate (#1701) ([99f7508](https://github.com/pietro1704/Epub-to-Mp3/commit/99f7508db27e1cfa95c8b0090d533bc8e09eb8ac))
+- Reuse the page offsets of an unchanged geometry and viewport (#1700) ([3e7c7d1](https://github.com/pietro1704/Epub-to-Mp3/commit/3e7c7d1b8b79a392665a19b827af8acc728a55eb))
+- Decode each book cover once, not on every player tick (#1699) ([82f5fde](https://github.com/pietro1704/Epub-to-Mp3/commit/82f5fde0e71d823f6ef3de35cfb598859e4481b2))
+- Split a chapter's sentences once, not on every narrated word (#1698) ([af871bd](https://github.com/pietro1704/Epub-to-Mp3/commit/af871bdc664cce2a8b91e31e097ce91fd60e8c65))
+
 ## [0.14.1] — 2026-11-27
 
 ### Bug Fixes
 
+- A timed-out apt attempt no longer leaves an orphan apt-get holding the dpkg lock (#1693) ([32c3f55](https://github.com/pietro1704/Epub-to-Mp3/commit/32c3f554d69b30e57e0770922e5bbc871f553e53))
 - Keep sentences cut by a page break in one paragraph (#1691) ([c90c4e6](https://github.com/pietro1704/Epub-to-Mp3/commit/c90c4e6be268c7b7af8d9904a1a022621e2dc7fc))
 
 ### CI
@@ -12,7 +35,7 @@
 
 ### Chores
 
-- Bump version to 0.14.1 ([c5ff5d0](https://github.com/pietro1704/Epub-to-Mp3/commit/c5ff5d025ad30465706415bf5670808098c8c9cd))
+- V0.14.1 (#1694) ([4293df0](https://github.com/pietro1704/Epub-to-Mp3/commit/4293df0a162e1e02402eb6c8492aa0e82b36e8ff))
 
 ## [0.14.0] — 2026-11-27
 
