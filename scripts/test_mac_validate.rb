@@ -39,7 +39,8 @@ class MacValidateTest < Minitest::Test
       File.chmod(0o755, File.join(@bin, name))
     end
     @entitlements = File.join(@temporary, 'entitlements.plist')
-    write_entitlements(%w[com.apple.security.app-sandbox com.apple.security.network.client])
+    write_entitlements(%w[com.apple.security.app-sandbox com.apple.security.network.client
+                          com.apple.security.files.user-selected.read-write])
     @environment = { 'PATH' => "#{@bin}:/usr/bin:/bin", 'MAC_VALIDATE_TEST_TRACE' => @trace,
                      'MAC_VALIDATE_TEST_ENTITLEMENTS' => @entitlements, 'DEVELOPER_DIR' => nil }
   end
@@ -195,9 +196,10 @@ class MacValidateTest < Minitest::Test
 
   def test_missing_entitlements_lists_network_client_only_for_sandboxed_apps
     sandboxed = %(<plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/></dict></plist>)
-    assert_equal ['com.apple.security.network.client'], MacValidate.missing_entitlements(sandboxed)
-    networked = sandboxed.sub('</dict>', '<key>com.apple.security.network.client</key><true/></dict>')
-    assert_empty MacValidate.missing_entitlements(networked)
+    assert_includes MacValidate.missing_entitlements(sandboxed), 'com.apple.security.network.client'
+    granted = sandboxed.sub('</dict>', '<key>com.apple.security.network.client</key><true/>' \
+                                       '<key>com.apple.security.files.user-selected.read-write</key><true/></dict>')
+    assert_empty MacValidate.missing_entitlements(granted)
     assert_empty MacValidate.missing_entitlements('<plist version="1.0"><dict></dict></plist>')
   end
 
@@ -216,6 +218,22 @@ class MacValidateTest < Minitest::Test
     files.each do |path|
       assert_empty MacValidate.missing_entitlements(File.read(path)), "#{File.basename(path)} lacks network.client"
     end
+  end
+
+  # MAC-LOCAL-INSTALL-NO-FILE-PANEL: without user-selected file access AppKit
+  # refuses to display the open panel, so no book can be chosen.
+  def test_sandboxed_app_without_user_selected_files_is_refused_before_gui_launch
+    receipt
+    write_entitlements(%w[com.apple.security.app-sandbox com.apple.security.network.client])
+    _out, error, status = invoke('gui')
+    refute status.success?
+    assert_includes error, 'com.apple.security.files.user-selected.read-write'
+    refute_includes File.read(@trace), 'open '
+  end
+
+  def test_project_grants_user_selected_files_to_the_sandboxed_mac_app
+    project = File.read(File.expand_path('../ios/EpubToMp3/project.yml', __dir__))
+    assert_match(/"ENABLE_USER_SELECTED_FILES\[sdk=macosx\*\]": readwrite/, project)
   end
 
   def test_signature_failure_prevents_gui_launch

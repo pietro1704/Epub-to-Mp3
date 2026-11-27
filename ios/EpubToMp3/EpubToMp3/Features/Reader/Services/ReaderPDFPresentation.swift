@@ -79,6 +79,7 @@ final class ReaderPDFPresentation {
         hasLoaded = false
         audioMap = nil
         heldAudioSelection = nil
+        toldSkippedPages = false
         if let document, let metadata {
             audioMap = try? PDFReadingAudioMap(metadata: metadata,
                 pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
@@ -285,7 +286,20 @@ final class ReaderPDFPresentation {
         guard let anchor = currentAnchor ?? currentPage.flatMap({ audioMap?.playbackAnchor(page: $0) }) else {
             showUnavailable(); return
         }
+        play(from: anchor)
+    }
+
+    private var toldSkippedPages = false
+
+    /// Starts playback, then says once per opened book what the narration leaves out.
+    private func play(from anchor: PDFReadingAudioMap.Anchor) {
         onPlayFrom?(anchor)
+        guard !toldSkippedPages, let notice = audioMap?.skippedPagesNotice,
+              let controller = presenter(), controller.presentedViewController == nil else { return }
+        toldSkippedPages = true
+        let alert = UIAlertController(title: nil, message: notice, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+        controller.present(alert, animated: true)
     }
 
     private func showActions(at point: CGPoint) {
@@ -296,7 +310,8 @@ final class ReaderPDFPresentation {
         guard let controller = presenter(), controller.presentedViewController == nil else { return }
         let alert = UIAlertController(title: L10n.string("reader.selection.playFromHere"), message: nil, preferredStyle: .actionSheet)
         let play = UIAlertAction(title: L10n.string("reader.selection.playFromHere"), style: .default) { [weak self] _ in
-            if let anchor { self?.onPlayFrom?(anchor) }
+            // The action sheet is still presented while its handler runs.
+            if let anchor { DispatchQueue.main.async { self?.play(from: anchor) } }
         }
         play.isEnabled = anchor != nil
         alert.addAction(play)

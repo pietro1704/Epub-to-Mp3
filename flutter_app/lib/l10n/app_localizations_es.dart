@@ -588,6 +588,16 @@ class AppLocalizationsEs extends AppLocalizations {
       'Permitir la voz secundaria configurada en esta conversión';
 
   @override
+  String activeVoice(String name) {
+    return 'Voz activa: $name';
+  }
+
+  @override
+  String activeVoiceSystem(String name) {
+    return 'Voz activa: $name (voz del sistema)';
+  }
+
+  @override
   String ttsActualVoices(String voices) {
     return 'Voz utilizada: $voices';
   }

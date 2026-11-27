@@ -48,8 +48,10 @@ module MacValidate
   end
 
   # A sandboxed app needs these to work at all: without network.client DNS is
-  # denied and model downloads fail with NSURLError -1003.
-  SANDBOX_REQUIRED_ENTITLEMENTS = %w[com.apple.security.network.client].freeze
+  # denied and model downloads fail with NSURLError -1003; without user-selected
+  # file access no open or save panel is displayed.
+  SANDBOX_REQUIRED_ENTITLEMENTS = %w[com.apple.security.network.client
+                                     com.apple.security.files.user-selected.read-write].freeze
 
   def self.missing_entitlements(plist_xml)
     granted = plist_xml.scan(%r{<key>([^<]+)</key>\s*<true\s*/>}).flatten

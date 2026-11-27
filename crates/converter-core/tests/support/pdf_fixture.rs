@@ -14,7 +14,12 @@ pub fn pdf_with(outline: bool, texts: &[&str], change: impl FnOnce(&mut Vec<Stri
             .replace('\\', "\\\\")
             .replace('(', "\\(")
             .replace(')', "\\)");
-        let stream = format!("BT /F1 12 Tf 50 700 Td ({escaped}) Tj ET");
+        // Each `\n` in a fixture text starts a new visual line, like a word-processor export.
+        let lines: Vec<String> = escaped
+            .split('\n')
+            .map(|line| format!("({line}) Tj 0 -14 Td"))
+            .collect();
+        let stream = format!("BT /F1 12 Tf 50 700 Td {} ET", lines.join(" "));
         objects.push(format!(
             "<< /Length {} >>\nstream\n{stream}\nendstream",
             stream.len()
