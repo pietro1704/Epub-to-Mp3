@@ -188,7 +188,14 @@ jobs:
         run: |
           identity_only=false
           if [[ "$ANDROID_VERIFICATION_MODE" == identity ]]; then identity_only=true; fi
-          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"
+          # Retry once: plugins.gradle.org sometimes drops a dependency download (kotlin-stdlib).
+          for attempt in 1 2; do
+            if mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"; then
+              break
+            fi
+            if [[ "$attempt" == 2 ]]; then exit 1; fi
+            echo "::warning::APK build failed on attempt $attempt; retrying once."
+          done
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
       - name: Save Gradle dependency downloads on master
         if: github.ref == 'refs/heads/master' && steps.gradle-cache.outputs.cache-hit != 'true'
