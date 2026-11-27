@@ -45,6 +45,9 @@ _FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) =>
       footnotes: (json['footnotes'] as List<dynamic>?)
           ?.map((e) => FulltextFootnote.fromJson(e as Map<String, dynamic>))
           .toList(),
+      anchors: (json['anchors'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, (e as num).toInt()),
+      ),
     );
 
 Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
@@ -57,6 +60,7 @@ Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
       'charCount': instance.charCount,
       'segments': instance.segments,
       'footnotes': instance.footnotes,
+      'anchors': instance.anchors,
     };
 
 _FulltextTocEntry _$FulltextTocEntryFromJson(Map<String, dynamic> json) =>
@@ -64,6 +68,7 @@ _FulltextTocEntry _$FulltextTocEntryFromJson(Map<String, dynamic> json) =>
       title: json['title'] as String,
       level: (json['level'] as num?)?.toInt() ?? 1,
       chapterIndex: (json['chapterIndex'] as num?)?.toInt(),
+      fragment: json['fragment'] as String?,
       children:
           (json['children'] as List<dynamic>?)
               ?.map((e) => FulltextTocEntry.fromJson(e as Map<String, dynamic>))
@@ -76,6 +81,7 @@ Map<String, dynamic> _$FulltextTocEntryToJson(_FulltextTocEntry instance) =>
       'title': instance.title,
       'level': instance.level,
       'chapterIndex': instance.chapterIndex,
+      'fragment': instance.fragment,
       'children': instance.children,
     };
 

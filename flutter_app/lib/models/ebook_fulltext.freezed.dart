@@ -1086,6 +1086,9 @@ mixin _$FulltextChapter {
   List<FulltextSegment>? get segments;
   List<FulltextFootnote>? get footnotes;
 
+  /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
+  Map<String, int>? get anchors;
+
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1120,6 +1123,10 @@ mixin _$FulltextChapter {
             const DeepCollectionEquality().equals(
               other.footnotes,
               _this.footnotes,
+            ) &&
+            const DeepCollectionEquality().equals(
+              other.anchors,
+              _this.anchors,
             ));
   }
 
@@ -1137,13 +1144,14 @@ mixin _$FulltextChapter {
       _this.charCount,
       const DeepCollectionEquality().hash(_this.segments),
       const DeepCollectionEquality().hash(_this.footnotes),
+      const DeepCollectionEquality().hash(_this.anchors),
     );
   }
 
   @override
   String toString() {
     final _this = this as FulltextChapter;
-    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments}, footnotes: ${_this.footnotes})';
+    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments}, footnotes: ${_this.footnotes}, anchors: ${_this.anchors})';
   }
 }
 
@@ -1163,6 +1171,7 @@ abstract mixin class $FulltextChapterCopyWith<$Res> {
     int? charCount,
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
+    Map<String, int>? anchors,
   });
 }
 
@@ -1187,6 +1196,7 @@ class _$FulltextChapterCopyWithImpl<$Res>
     Object? charCount = freezed,
     Object? segments = freezed,
     Object? footnotes = freezed,
+    Object? anchors = freezed,
   }) {
     return _then(
       FulltextChapter(
@@ -1222,6 +1232,10 @@ class _$FulltextChapterCopyWithImpl<$Res>
             ? _self.footnotes
             : footnotes // ignore: cast_nullable_to_non_nullable
                   as List<FulltextFootnote>?,
+        anchors: freezed == anchors
+            ? _self.anchors
+            : anchors // ignore: cast_nullable_to_non_nullable
+                  as Map<String, int>?,
       ),
     );
   }
@@ -1329,6 +1343,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       int? charCount,
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
+      Map<String, int>? anchors,
     )?
     $default, {
     required TResult orElse(),
@@ -1345,6 +1360,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.charCount,
           _that.segments,
           _that.footnotes,
+          _that.anchors,
         );
       case _:
         return orElse();
@@ -1375,6 +1391,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       int? charCount,
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
+      Map<String, int>? anchors,
     )
     $default,
   ) {
@@ -1390,6 +1407,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.charCount,
           _that.segments,
           _that.footnotes,
+          _that.anchors,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -1419,6 +1437,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       int? charCount,
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
+      Map<String, int>? anchors,
     )?
     $default,
   ) {
@@ -1434,6 +1453,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.charCount,
           _that.segments,
           _that.footnotes,
+          _that.anchors,
         );
       case _:
         return null;
@@ -1453,8 +1473,10 @@ class _FulltextChapter extends FulltextChapter {
     this.charCount,
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
+    Map<String, int>? anchors,
   }) : _segments = segments,
        _footnotes = footnotes,
+       _anchors = anchors,
        super._();
   factory _FulltextChapter.fromJson(Map<String, dynamic> json) =>
       _$FulltextChapterFromJson(json);
@@ -1492,6 +1514,19 @@ class _FulltextChapter extends FulltextChapter {
     return EqualUnmodifiableListView(value);
   }
 
+  /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
+  final Map<String, int>? _anchors;
+
+  /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
+  @override
+  Map<String, int>? get anchors {
+    final value = _anchors;
+    if (value == null) return null;
+    if (_anchors is EqualUnmodifiableMapView) return _anchors;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
   @override
@@ -1518,7 +1553,11 @@ class _FulltextChapter extends FulltextChapter {
             (identical(other.charCount, charCount) ||
                 other.charCount == charCount) &&
             const DeepCollectionEquality().equals(other.segments, _segments) &&
-            const DeepCollectionEquality().equals(other.footnotes, _footnotes));
+            const DeepCollectionEquality().equals(
+              other.footnotes,
+              _footnotes,
+            ) &&
+            const DeepCollectionEquality().equals(other.anchors, _anchors));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1534,12 +1573,13 @@ class _FulltextChapter extends FulltextChapter {
       charCount,
       const DeepCollectionEquality().hash(_segments),
       const DeepCollectionEquality().hash(_footnotes),
+      const DeepCollectionEquality().hash(_anchors),
     );
   }
 
   @override
   String toString() {
-    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments, footnotes: $footnotes)';
+    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments, footnotes: $footnotes, anchors: $anchors)';
   }
 }
 
@@ -1561,6 +1601,7 @@ abstract mixin class _$FulltextChapterCopyWith<$Res>
     int? charCount,
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
+    Map<String, int>? anchors,
   });
 }
 
@@ -1585,6 +1626,7 @@ class __$FulltextChapterCopyWithImpl<$Res>
     Object? charCount = freezed,
     Object? segments = freezed,
     Object? footnotes = freezed,
+    Object? anchors = freezed,
   }) {
     return _then(
       _FulltextChapter(
@@ -1620,6 +1662,10 @@ class __$FulltextChapterCopyWithImpl<$Res>
             ? _self._footnotes
             : footnotes // ignore: cast_nullable_to_non_nullable
                   as List<FulltextFootnote>?,
+        anchors: freezed == anchors
+            ? _self._anchors
+            : anchors // ignore: cast_nullable_to_non_nullable
+                  as Map<String, int>?,
       ),
     );
   }
@@ -1630,6 +1676,9 @@ mixin _$FulltextTocEntry {
   String get title;
   int get level;
   int? get chapterIndex;
+
+  /// The `#fragment` the entry points at inside its chapter's file, when it has one.
+  String? get fragment;
   List<FulltextTocEntry> get children;
 
   /// Create a copy of FulltextTocEntry
@@ -1657,6 +1706,8 @@ mixin _$FulltextTocEntry {
                 other.level == _this.level) &&
             (identical(other.chapterIndex, _this.chapterIndex) ||
                 other.chapterIndex == _this.chapterIndex) &&
+            (identical(other.fragment, _this.fragment) ||
+                other.fragment == _this.fragment) &&
             const DeepCollectionEquality().equals(
               other.children,
               _this.children,
@@ -1672,6 +1723,7 @@ mixin _$FulltextTocEntry {
       _this.title,
       _this.level,
       _this.chapterIndex,
+      _this.fragment,
       const DeepCollectionEquality().hash(_this.children),
     );
   }
@@ -1679,7 +1731,7 @@ mixin _$FulltextTocEntry {
   @override
   String toString() {
     final _this = this as FulltextTocEntry;
-    return 'FulltextTocEntry(title: ${_this.title}, level: ${_this.level}, chapterIndex: ${_this.chapterIndex}, children: ${_this.children})';
+    return 'FulltextTocEntry(title: ${_this.title}, level: ${_this.level}, chapterIndex: ${_this.chapterIndex}, fragment: ${_this.fragment}, children: ${_this.children})';
   }
 }
 
@@ -1694,6 +1746,7 @@ abstract mixin class $FulltextTocEntryCopyWith<$Res> {
     String title,
     int level,
     int? chapterIndex,
+    String? fragment,
     List<FulltextTocEntry> children,
   });
 }
@@ -1714,6 +1767,7 @@ class _$FulltextTocEntryCopyWithImpl<$Res>
     Object? title = null,
     Object? level = null,
     Object? chapterIndex = freezed,
+    Object? fragment = freezed,
     Object? children = null,
   }) {
     return _then(
@@ -1730,6 +1784,10 @@ class _$FulltextTocEntryCopyWithImpl<$Res>
             ? _self.chapterIndex
             : chapterIndex // ignore: cast_nullable_to_non_nullable
                   as int?,
+        fragment: freezed == fragment
+            ? _self.fragment
+            : fragment // ignore: cast_nullable_to_non_nullable
+                  as String?,
         children: null == children
             ? _self.children
             : children // ignore: cast_nullable_to_non_nullable
@@ -1836,6 +1894,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
       String title,
       int level,
       int? chapterIndex,
+      String? fragment,
       List<FulltextTocEntry> children,
     )?
     $default, {
@@ -1848,6 +1907,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
           _that.title,
           _that.level,
           _that.chapterIndex,
+          _that.fragment,
           _that.children,
         );
       case _:
@@ -1874,6 +1934,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
       String title,
       int level,
       int? chapterIndex,
+      String? fragment,
       List<FulltextTocEntry> children,
     )
     $default,
@@ -1885,6 +1946,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
           _that.title,
           _that.level,
           _that.chapterIndex,
+          _that.fragment,
           _that.children,
         );
       case _:
@@ -1910,6 +1972,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
       String title,
       int level,
       int? chapterIndex,
+      String? fragment,
       List<FulltextTocEntry> children,
     )?
     $default,
@@ -1921,6 +1984,7 @@ extension FulltextTocEntryPatterns on FulltextTocEntry {
           _that.title,
           _that.level,
           _that.chapterIndex,
+          _that.fragment,
           _that.children,
         );
       case _:
@@ -1936,6 +2000,7 @@ class _FulltextTocEntry implements FulltextTocEntry {
     required this.title,
     this.level = 1,
     this.chapterIndex,
+    this.fragment,
     List<FulltextTocEntry> children = const <FulltextTocEntry>[],
   }) : _children = children;
   factory _FulltextTocEntry.fromJson(Map<String, dynamic> json) =>
@@ -1948,6 +2013,10 @@ class _FulltextTocEntry implements FulltextTocEntry {
   final int level;
   @override
   final int? chapterIndex;
+
+  /// The `#fragment` the entry points at inside its chapter's file, when it has one.
+  @override
+  final String? fragment;
   final List<FulltextTocEntry> _children;
   @override
   @JsonKey()
@@ -1979,6 +2048,8 @@ class _FulltextTocEntry implements FulltextTocEntry {
             (identical(other.level, level) || other.level == level) &&
             (identical(other.chapterIndex, chapterIndex) ||
                 other.chapterIndex == chapterIndex) &&
+            (identical(other.fragment, fragment) ||
+                other.fragment == fragment) &&
             const DeepCollectionEquality().equals(other.children, _children));
   }
 
@@ -1990,13 +2061,14 @@ class _FulltextTocEntry implements FulltextTocEntry {
       title,
       level,
       chapterIndex,
+      fragment,
       const DeepCollectionEquality().hash(_children),
     );
   }
 
   @override
   String toString() {
-    return 'FulltextTocEntry(title: $title, level: $level, chapterIndex: $chapterIndex, children: $children)';
+    return 'FulltextTocEntry(title: $title, level: $level, chapterIndex: $chapterIndex, fragment: $fragment, children: $children)';
   }
 }
 
@@ -2013,6 +2085,7 @@ abstract mixin class _$FulltextTocEntryCopyWith<$Res>
     String title,
     int level,
     int? chapterIndex,
+    String? fragment,
     List<FulltextTocEntry> children,
   });
 }
@@ -2033,6 +2106,7 @@ class __$FulltextTocEntryCopyWithImpl<$Res>
     Object? title = null,
     Object? level = null,
     Object? chapterIndex = freezed,
+    Object? fragment = freezed,
     Object? children = null,
   }) {
     return _then(
@@ -2049,6 +2123,10 @@ class __$FulltextTocEntryCopyWithImpl<$Res>
             ? _self.chapterIndex
             : chapterIndex // ignore: cast_nullable_to_non_nullable
                   as int?,
+        fragment: freezed == fragment
+            ? _self.fragment
+            : fragment // ignore: cast_nullable_to_non_nullable
+                  as String?,
         children: null == children
             ? _self._children
             : children // ignore: cast_nullable_to_non_nullable
