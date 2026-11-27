@@ -12,6 +12,14 @@ import AppKit
 #endif
 
 final class ReaderFontCatalogTests: XCTestCase {
+    /// IOS-FONT-PREVIEW-SERIF-BOLD-ITALIC: no Times New Roman face ends in "Regular".
+    func testRegularFaceIsUprightWhenNoNameSaysRegular() {
+        XCTAssertEqual(ReaderFontCatalog.regularFace(in: [
+            "TimesNewRomanPS-BoldItalicMT", "TimesNewRomanPS-BoldMT",
+            "TimesNewRomanPS-ItalicMT", "TimesNewRomanPSMT",
+        ]), "TimesNewRomanPSMT")
+    }
+
     func testReferenceCatalogRetainsOriginalNamedChoicesAndLegacyKeys() {
         let keys = Set(ReaderFontFamily.allCases.map(\.rawValue))
         let expected: Set<String> = ["original", "athelas", "avenirNext", "canela", "charter", "georgia",
