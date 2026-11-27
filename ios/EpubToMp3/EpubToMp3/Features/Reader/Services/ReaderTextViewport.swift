@@ -119,6 +119,19 @@ final class ReaderTextViewport {
         return index + 1
     }
 
+    /// Only a paginated chapter has page numbers.
+    var numbersPages: Bool { facts.layoutResult != nil || facts.canonicalPageOffsets.count > 1 }
+
+    func pageNumber(containingCharacterAt offset: Int) -> Int? {
+        guard offset >= 0, offset < textView.textStorage.length else { return nil }
+        let manager = textView.layoutManager
+        manager.ensureLayout(for: textView.textContainer)
+        let glyph = manager.glyphIndexForCharacter(at: offset)
+        guard glyph < manager.numberOfGlyphs else { return nil }
+        let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return pageNumber(at: max(0, line.minY + textView.textContainerInset.top))
+    }
+
     func pageOffset(for page: Int) -> CGFloat {
         if let result = facts.layoutResult { return result.pageOffset(for: page - 1) }
         let offsets = facts.canonicalPageOffsets

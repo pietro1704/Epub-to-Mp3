@@ -1,5 +1,10 @@
 import Foundation
 
+/// Listening was requested where there is nothing to narrate; start at `chapterIndex` instead.
+struct ReaderListeningStartRedirect: Error {
+    let chapterIndex: Int
+}
+
 /// A reader position and a Rust structure position are different coordinate
 /// systems. Only the source document identity can connect them reliably.
 struct ReaderConversionChapterMap: Codable, Sendable {
@@ -63,6 +68,14 @@ struct ReaderConversionChapterMap: Codable, Sendable {
             throw EmbeddedConverterError.conversionFailed("The selected reader chapter has no convertible source text.")
         }
         return position
+    }
+
+    /// The first reader position after an unmapped one that Rust can narrate. A cover or contents
+    /// page exists for the reader only; `nil` also means `readerPosition` itself is convertible.
+    func listeningRedirect(from readerPosition: Int) -> ReaderListeningStartRedirect? {
+        guard !coreToReader.values.contains(readerPosition) else { return nil }
+        return coreToReader.values.filter { $0 > readerPosition }.min()
+            .map(ReaderListeningStartRedirect.init(chapterIndex:))
     }
 
     func readerPosition(for corePosition: Int) throws -> Int {

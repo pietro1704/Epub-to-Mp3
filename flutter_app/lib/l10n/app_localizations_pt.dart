@@ -1016,4 +1016,58 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get chapterRenameSave => 'Salvar';
+
+  @override
+  String get resumeChoiceTitle => 'Continuar de onde?';
+
+  @override
+  String resumeChoiceMessage(String reader, String audio, String time) {
+    return 'Você está no cap. $reader. O áudio parou no cap. $audio ($time).';
+  }
+
+  @override
+  String resumeChoiceFromHere(String reader) {
+    return 'Ouvir daqui (cap. $reader)';
+  }
+
+  @override
+  String resumeChoiceBackToAudio(String audio, String time) {
+    return 'Voltar ao áudio (cap. $audio, $time)';
+  }
+
+  @override
+  String get manualAddToLibrary => 'Adicionar à biblioteca';
+
+  @override
+  String get manualAddedToLibrary => 'Adicionado à biblioteca com o áudio.';
+
+  @override
+  String get manualExportAudio => 'Exportar áudio';
+
+  @override
+  String get manualExportOneFile => 'Um arquivo para o livro todo';
+
+  @override
+  String get manualExportPerChapter => 'Um arquivo por capítulo (NN - título)';
+
+  @override
+  String get manualExportNeedsPiper =>
+      'A exportação em MP3 precisa da voz Piper. Este áudio não foi narrado com Piper.';
+
+  @override
+  String get manualExportChooseFolder => 'Escolher pasta';
+
+  @override
+  String manualExportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count arquivos exportados.',
+      one: '1 arquivo exportado.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get manualExportFailed => 'Não foi possível exportar o áudio.';
 }

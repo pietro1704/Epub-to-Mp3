@@ -17,7 +17,10 @@ class FakeAudioPlayerService extends AudioPlayerInterface {
   List<ChapterProgress> _chapters = const [];
   int? _currentIndex;
   Duration _position = Duration.zero;
-  final Duration _duration = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  /// Length of the loaded chapter, for tests that map the position onto text.
+  set duration(Duration value) => _duration = value;
 
   final _positionController = StreamController<Duration>.broadcast();
   final _playingController = StreamController<bool>.broadcast();

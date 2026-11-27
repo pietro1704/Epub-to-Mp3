@@ -163,9 +163,15 @@
 
 /* Diálogo de divergência ao tocar play (leitor em capítulo diferente do áudio) */
 "player.divergence.title" = "Continuar de onde?";
-"player.divergence.message" = "A página que você está lendo não é onde o áudio parou.";
-"player.divergence.fromCurrentPage" = "Ouvir a partir desta página";
-"player.divergence.fromWhereStopped" = "Continuar de onde parei";
+"player.divergence.readerPage" = "Você está na página %1$d (cap. %2$d).";
+"player.divergence.readerChapter" = "Você está no cap. %d.";
+"player.divergence.audioPage" = "O áudio parou na página %1$d (cap. %2$d, %3$@).";
+"player.divergence.audioChapter" = "O áudio parou no cap. %1$d (%2$@).";
+"player.divergence.listenPage" = "Ouvir desta página (p. %d)";
+"player.divergence.listen" = "Ouvir desta página";
+"player.divergence.returnPage" = "Voltar ao áudio (p. %1$d, cap. %2$d)";
+"player.divergence.returnChapter" = "Voltar ao áudio (cap. %d)";
+"player.divergence.return" = "Voltar ao áudio";
 "common.cancel" = "Cancelar";
 
 /* Native reader selection actions. */
@@ -324,7 +330,7 @@
 
 /* === JobsListView === */
 "jobs.title" = "Trabalhos";
-"jobs.noConversionsDescription" = "Execute uma conversão pelo CLI ou pelo app web para preencher o histórico.";
+"jobs.noConversionsDescription" = "Nenhuma conversão ainda. Use Converter para gerar o áudio de um livro.";
 "jobs.historyReadLimit" = "O histórico recente excede o limite de leitura.";
 "jobs.refresh" = "Atualizar trabalhos";
 "jobs.chaptersAbbrev" = "%d cap.";

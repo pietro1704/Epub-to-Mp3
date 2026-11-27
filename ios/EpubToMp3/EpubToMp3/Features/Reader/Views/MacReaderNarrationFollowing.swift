@@ -76,6 +76,7 @@ final class MacReaderNarrationFollowing {
     func observe() {
         guard !isObserving else { return }
         isObserving = true
+        player.readerPages = pageSource
         follower.start { [weak self] in self?.refresh() }
         highlight.observe()
         player.playbackClock.audioOutput.$position
@@ -144,6 +145,31 @@ final class MacReaderNarrationFollowing {
               !document.isRestoringInitialPosition, isUserInput() else { return }
         if !computePaired() { follower.userTurnedThePage() }
         refresh()
+    }
+
+    // MARK: Page numbers
+
+    private var pageSource: ReaderPageSource {
+        ReaderPageSource(current: { [weak self] in self?.currentPageNumber() },
+                         narrated: { [weak self] in self?.pageNumber(of: $0) })
+    }
+
+    private func currentPageNumber() -> Int? {
+        if let pdf = scrollView.documentView as? MacReaderPDFView {
+            return pdf.currentPage.flatMap { page in pdf.document.map { $0.index(for: page) + 1 } }
+        }
+        guard let text = scrollView.documentView as? NSTextView, let starts = pageStarts(in: text) else { return nil }
+        return MacReaderTextLayout.pageIndex(of: scrollView.contentView.bounds.minY, in: starts) + 1
+    }
+
+    private func pageNumber(of location: ReaderPlaybackLocation) -> Int? {
+        if let pdf = scrollView.documentView as? MacReaderPDFView { return spokenPage(location, in: pdf).map { $0 + 1 } }
+        guard let text = scrollView.documentView as? NSTextView, let chapter = document.chapter(at: document.selectedChapter),
+              chapter.zeroBasedEpubIndex == location.chapterIndex, let starts = pageStarts(in: text) else { return nil }
+        let offset = location.characterOffset(chapterText: chapter.text, renderedText: text.string)
+        guard offset >= 0, offset < text.string.utf16.count,
+              let line = MacReaderTextLayout.lineRect(forCharacterAt: offset, in: text) else { return nil }
+        return MacReaderTextLayout.pageIndex(of: line.minY, in: starts) + 1
     }
 
     // MARK: Pairing

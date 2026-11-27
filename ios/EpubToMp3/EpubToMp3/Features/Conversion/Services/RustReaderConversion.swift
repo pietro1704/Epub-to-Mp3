@@ -32,6 +32,9 @@ extension RustConversionCoordinator {
             return try ReaderConversionChapterMap(reader: reader, metadata: metadata)
         }.value
         try Task.checkCancellation()
+        // An open-ended request is listening from here on, so a page without text starts at the next one.
+        // A bounded request names specific chapters and keeps failing.
+        if chapterEnd < 0, let redirect = chapterMap.listeningRedirect(from: Int(chapterStart)) { throw redirect }
         let coreStart = try chapterMap.corePosition(for: Int(chapterStart))
         let coreEnd = chapterEnd < 0 ? -1 : try chapterMap.corePosition(for: Int(chapterEnd))
         control.installReaderChapterMap(chapterMap)

@@ -6,6 +6,7 @@ import 'reader_search_overlay.dart';
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -380,7 +381,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: SafeArea(
                 bottom: false,
-                child: Row(
+                child: LayoutBuilder(
+                  builder: (context, bar) => Row(
                   children: [
                     BackButton(
                       color: fg,
@@ -402,15 +404,16 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                     ),
                     // Apple-style chrome: the recent tool beside More; the
                     // other tools live in the overflow menu.
-                    ..._chromeTools(chapter, fg),
+                    ..._chromeTools(chapter, fg, bar.maxWidth),
                     ReaderNarrationMenu(
                       color: fg,
                       bookId: widget.bookId,
-                      entries: _menuEntries(chapter),
+                      entries: _menuEntries(chapter, bar.maxWidth),
                       onChanged: widget.onNarrationChanged,
                       currentSentence: _liveSentencePosition,
                     ),
                   ],
+                  ),
                 ),
               ),
             ),

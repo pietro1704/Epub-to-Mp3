@@ -18,12 +18,15 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
     private val embeddedLogTag = "EmbeddedConverter"
     internal val executor = Executors.newSingleThreadExecutor()
     private val converterExecutor get() = executor
+    // Read-only lookups (catalog, metadata, parse, renames) must not wait for a running conversion,
+    // which holds the single converter thread for minutes.
+    private val queryExecutor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val replies = ChannelReplies()
     private var audioChunkSink: EventChannel.EventSink? = null
     internal var platformVoiceEvents: EventChannel.EventSink? = null
     private val activeConversions = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private val models = ConversionModelChannels(activity, executor)
+    private val models = ConversionModelChannels(activity, executor, queryExecutor)
     private val EMBEDDED_CHANNEL = "epub_to_mp3/embedded_converter"
     private val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
 
@@ -79,7 +82,7 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                 "jobLog" -> {
                     val jobId = call.argument<String>("jobId")
                     if (jobId.isNullOrBlank()) result.error("BAD_ARGS", "jobId is required", null)
-                    else runNative(result) {
+                    else runQuery(result) {
                         val value = nativeJobLog(jobId)
                         runOnUiThread {
                             if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -96,7 +99,7 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                             result.error("BAD_ARGS", "inputPath is required", null)
                         } else {
                             Log.i(embeddedLogTag, "parse start input=$inputPath")
-                            runNative(result) {
+                            runQuery(result) {
                                 try {
                                     val native = nativeParse(inputPath)
                                     runOnUiThread {
@@ -118,7 +121,7 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                         if (inputPath.isNullOrBlank()) {
                             result.error("BAD_ARGS", "inputPath is required", null)
                         } else {
-                            runNative(result) {
+                            runQuery(result) {
                                 try {
                                     val native = nativeLibraryMetadata(inputPath)
                                     runOnUiThread {
@@ -128,6 +131,53 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                                 } catch (error: Throwable) {
                                     runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
                                 }
+                            }
+                        }
+                    }
+                }
+                "chapterNames", "filenameCover" -> {
+                    if (!MainActivity.converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val isNames = call.method == "chapterNames"
+                        val key = if (isNames) "path" else "fileName"
+                        val value = call.argument<String>(key)
+                        if (value.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "$key is required", null)
+                        } else {
+                            val index = call.argument<String>("index")
+                            val name = call.argument<String>("name")
+                            runQuery(result) {
+                                try {
+                                    val native = if (isNames) nativeChapterNames(value, index, name) else nativeFilenameCover(value)
+                                    runOnUiThread {
+                                        if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                        else result.success(native)
+                                    }
+                                } catch (error: Throwable) {
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
+                            }
+                        }
+                    }
+                }
+                "exportMp3" -> {
+                    val request = call.argument<String>("request")
+                    if (!MainActivity.converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else if (request.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "request is required", null)
+                    } else {
+                        // Joining a whole book is slow: keep it off the converter thread and the UI.
+                        runQuery(result) {
+                            try {
+                                val native = nativeExportMp3(request)
+                                runOnUiThread {
+                                    if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                    else result.success(native)
+                                }
+                            } catch (error: Throwable) {
+                                runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
                             }
                         }
                     }
@@ -211,10 +261,15 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
         platformVoiceEvents = null
         replies.close()
         executor.shutdownNow()
+        queryExecutor.shutdownNow()
     }
-    private fun runNative(result: MethodChannel.Result, action: () -> Unit) {
+    private fun runQuery(result: MethodChannel.Result, action: () -> Unit) = runOn(queryExecutor, result, action)
+
+    private fun runNative(result: MethodChannel.Result, action: () -> Unit) = runOn(converterExecutor, result, action)
+
+    private fun runOn(pool: java.util.concurrent.ExecutorService, result: MethodChannel.Result, action: () -> Unit) {
         try {
-            converterExecutor.execute {
+            pool.execute {
                 try {
                     action()
                 } catch (error: Throwable) {

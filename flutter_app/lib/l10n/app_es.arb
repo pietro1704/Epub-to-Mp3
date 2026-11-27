@@ -333,5 +333,19 @@
   "silenceTrimStrong": "Fuerte",
   "chapterRename": "Renombrar capítulo",
   "chapterRenameReset": "Usar el nombre automático",
-  "chapterRenameSave": "Guardar"
+  "chapterRenameSave": "Guardar",
+  "resumeChoiceTitle": "¿Continuar desde dónde?",
+  "resumeChoiceMessage": "Estás en el capítulo {reader}. El audio se detuvo en el capítulo {audio} ({time}).",
+  "resumeChoiceFromHere": "Escuchar desde aquí (capítulo {reader})",
+  "resumeChoiceBackToAudio": "Volver al audio (capítulo {audio}, {time})",
+  "manualAddToLibrary": "Añadir a la biblioteca",
+  "manualAddedToLibrary": "Añadido a la biblioteca con su audio.",
+  "manualExportAudio": "Exportar audio",
+  "manualExportOneFile": "Un archivo para todo el libro",
+  "manualExportPerChapter": "Un archivo por capítulo (NN - título)",
+  "manualExportNeedsPiper": "La exportación en MP3 necesita la voz Piper. Este audio no se narró con Piper.",
+  "manualExportChooseFolder": "Elegir carpeta",
+  "manualExportDone": "{count, plural, =1{1 archivo exportado.} other{{count} archivos exportados.}}",
+  "@manualExportDone": { "placeholders": { "count": { "type": "int" } } },
+  "manualExportFailed": "No se pudo exportar el audio."
 }

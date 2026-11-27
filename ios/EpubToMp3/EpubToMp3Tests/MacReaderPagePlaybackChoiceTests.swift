@@ -174,7 +174,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         play.performClick(nil)
         let sheet = try await waitForSheet(window)
         let page = try XCTUnwrap(buttons(in: try XCTUnwrap(sheet.contentView)).first {
-            $0.title == L10n.string("player.divergence.fromCurrentPage")
+            $0.title == player.resumeChoiceCopy(readerChapterIndex: 0).listenTitle
         })
         page.performClick(nil)
         try await waitForPlayback(player, minimum: 35)
@@ -184,7 +184,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         play.performClick(nil)
         let continuationSheet = try await waitForSheet(window)
         let continuation = try XCTUnwrap(buttons(in: try XCTUnwrap(continuationSheet.contentView)).first {
-            $0.title == L10n.string("player.divergence.fromWhereStopped")
+            $0.title == player.resumeChoiceCopy(readerChapterIndex: 0).returnTitle
         })
         continuation.performClick(nil)
         try await waitForPlayback(player, minimum: pausedAt - 1)
@@ -200,8 +200,8 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         let cancelSheet = try await waitForSheet(window)
         let sheetButtons = buttons(in: try XCTUnwrap(cancelSheet.contentView))
         XCTAssertEqual(Set(sheetButtons.map(\.title)), Set([
-            L10n.string("player.divergence.fromWhereStopped"),
-            L10n.string("player.divergence.fromCurrentPage"), L10n.string("common.cancel")
+            player.resumeChoiceCopy(readerChapterIndex: 0).returnTitle,
+            player.resumeChoiceCopy(readerChapterIndex: 0).listenTitle, L10n.string("common.cancel")
         ]))
         let cancel = try XCTUnwrap(sheetButtons.first { $0.title == L10n.string("common.cancel") })
         cancel.performClick(nil)
@@ -211,7 +211,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         play.performClick(nil)
         let newPageSheet = try await waitForSheet(window)
         try XCTUnwrap(buttons(in: try XCTUnwrap(newPageSheet.contentView)).first {
-            $0.title == L10n.string("player.divergence.fromCurrentPage")
+            $0.title == player.resumeChoiceCopy(readerChapterIndex: 0).listenTitle
         }).performClick(nil)
         try await waitForPlayback(player, minimum: 17)
         player.pause()

@@ -346,5 +346,22 @@
   "silenceTrimStrong": "Strong",
   "chapterRename": "Rename chapter",
   "chapterRenameReset": "Use automatic name",
-  "chapterRenameSave": "Save"
+  "chapterRenameSave": "Save",
+  "resumeChoiceTitle": "Continue from where?",
+  "resumeChoiceMessage": "You are in chapter {reader}. The audio stopped in chapter {audio} ({time}).",
+  "@resumeChoiceMessage": {"placeholders": {"reader": {"type": "String"}, "audio": {"type": "String"}, "time": {"type": "String"}}},
+  "resumeChoiceFromHere": "Listen from here (chapter {reader})",
+  "@resumeChoiceFromHere": {"placeholders": {"reader": {"type": "String"}}},
+  "resumeChoiceBackToAudio": "Back to the audio (chapter {audio}, {time})",
+  "@resumeChoiceBackToAudio": {"placeholders": {"audio": {"type": "String"}, "time": {"type": "String"}}},
+  "manualAddToLibrary": "Add to library",
+  "manualAddedToLibrary": "Added to the library with its audio.",
+  "manualExportAudio": "Export audio",
+  "manualExportOneFile": "One file for the whole book",
+  "manualExportPerChapter": "One file per chapter (NN - title)",
+  "manualExportNeedsPiper": "MP3 export needs the Piper voice. This audio was not narrated with Piper.",
+  "manualExportChooseFolder": "Choose folder",
+  "manualExportDone": "{count, plural, =1{1 file exported.} other{{count} files exported.}}",
+  "@manualExportDone": { "placeholders": { "count": { "type": "int" } } },
+  "manualExportFailed": "Could not export the audio."
 }

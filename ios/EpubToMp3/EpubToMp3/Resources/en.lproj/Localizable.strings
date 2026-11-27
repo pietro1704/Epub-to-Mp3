@@ -166,9 +166,15 @@
 
 /* Play-tap divergence dialog (reader on a different chapter than the audio) */
 "player.divergence.title" = "Continue from where?";
-"player.divergence.message" = "The page you're reading isn't where the audio left off.";
-"player.divergence.fromCurrentPage" = "Listen from this page";
-"player.divergence.fromWhereStopped" = "Continue where I left off";
+"player.divergence.readerPage" = "You are on page %1$d (ch. %2$d).";
+"player.divergence.readerChapter" = "You are in ch. %d.";
+"player.divergence.audioPage" = "The audio stopped on page %1$d (ch. %2$d, %3$@).";
+"player.divergence.audioChapter" = "The audio stopped in ch. %1$d (%2$@).";
+"player.divergence.listenPage" = "Listen from this page (p. %d)";
+"player.divergence.listen" = "Listen from this page";
+"player.divergence.returnPage" = "Back to the audio (p. %1$d, ch. %2$d)";
+"player.divergence.returnChapter" = "Back to the audio (ch. %d)";
+"player.divergence.return" = "Back to the audio";
 "common.cancel" = "Cancel";
 
 /* Native reader selection actions. */
@@ -327,7 +333,7 @@
 
 /* === JobsListView === */
 "jobs.title" = "Jobs";
-"jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
+"jobs.noConversionsDescription" = "No conversions yet. Use Convert to generate a book's audio.";
 "jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";

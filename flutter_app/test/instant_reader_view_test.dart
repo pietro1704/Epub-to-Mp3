@@ -10,27 +10,26 @@ import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/instant_reader_view.dart';
 import 'package:flutter_app/views/reader_view.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
+
 import 'support/fake_audio_player_service.dart';
 
 EbookFulltext _sampleFulltext() => EbookFulltext.fromJson({
-      'jobId': 'test-job',
-      'bookTitle': 'Sample Book',
-      'bookAuthor': 'Author Name',
-      'chapters': [
-        {
-          'index': 0,
-          'name': 'Introduction',
-          'text':
-              'This is the introduction chapter with enough text to be readable. It has multiple sentences for testing purposes and more.',
-        },
-        {
-          'index': 1,
-          'name': 'Chapter 1',
-          'text':
-              'This is chapter one with content. It continues with more text here. And even more content for testing.',
-        },
-      ],
-    });
+  'jobId': 'test-job',
+  'bookTitle': 'Sample Book',
+  'bookAuthor': 'Author Name',
+  'chapters': [
+    {
+      'index': 0,
+      'name': 'Introduction',
+      'text': 'This is the introduction chapter with enough text to be readable. It has multiple sentences for testing purposes and more.',
+    },
+    {
+      'index': 1,
+      'name': 'Chapter 1',
+      'text': 'This is chapter one with content. It continues with more text here. And even more content for testing.',
+    },
+  ],
+});
 
 Future<SharedPreferences> _mockPrefs([Map<String, Object>? seed]) async {
   SharedPreferences.setMockInitialValues(seed ?? {});
@@ -43,10 +42,10 @@ Widget _wrap(SharedPreferences prefs, Widget child) {
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: SizedBox(
-        width: 400,
-        height: 800,
-        child: Scaffold(body: child),
+      // A phone-sized window: the tablet bar shows every tool and is tested elsewhere.
+      home: MediaQuery(
+        data: const MediaQueryData(size: Size(400, 800)),
+        child: SizedBox(width: 400, height: 800, child: Scaffold(body: child)),
       ),
     ),
   );
@@ -70,7 +69,9 @@ void main() {
       expect(find.text('Dedication'), findsOneWidget);
     });
 
-    testWidgets('rebuilding the same chapter splits its sentences once', (t) async {
+    testWidgets('rebuilding the same chapter splits its sentences once', (
+      t,
+    ) async {
       final prefs = await _mockPrefs();
       final fulltext = _sampleFulltext();
       FulltextChapter.splitSentencesCalls = 0;
@@ -84,10 +85,9 @@ void main() {
 
     testWidgets('shows settings button', (t) async {
       final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: _sampleFulltext()),
-      ));
+      await t.pumpWidget(
+        _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+      );
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       expect(find.byIcon(Icons.text_format), findsOneWidget);
@@ -95,10 +95,9 @@ void main() {
 
     testWidgets('renders reader content without a player bar', (t) async {
       final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: _sampleFulltext()),
-      ));
+      await t.pumpWidget(
+        _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+      );
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       expect(find.text('Author Name'), findsNothing);
@@ -106,10 +105,9 @@ void main() {
 
     testWidgets('does not render a play button in the reader', (t) async {
       final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: _sampleFulltext()),
-      ));
+      await t.pumpWidget(
+        _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+      );
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       expect(find.byIcon(Icons.play_circle_filled), findsNothing);
@@ -121,10 +119,7 @@ void main() {
         'jobId': 'empty',
         'chapters': <Map<String, dynamic>>[],
       });
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: empty),
-      ));
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: empty)));
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       expect(find.text('No content available'), findsOneWidget);
@@ -144,7 +139,11 @@ void main() {
       'jobId': 'notes',
       'bookTitle': 'Annotated',
       'chapters': [
-        {'index': 0, 'name': 'Plain opening', 'text': 'A plain opening chapter with prose.'},
+        {
+          'index': 0,
+          'name': 'Plain opening',
+          'text': 'A plain opening chapter with prose.',
+        },
         {
           'index': 1,
           'name': 'Annotated chapter',
@@ -154,7 +153,11 @@ void main() {
             {'text': 'A note without a label.'},
           ],
         },
-        {'index': 2, 'name': 'Plain ending', 'text': 'A plain closing chapter.'},
+        {
+          'index': 2,
+          'name': 'Plain ending',
+          'text': 'A plain closing chapter.',
+        },
       ],
     });
 
@@ -177,41 +180,64 @@ void main() {
 
     Future<bool> footnotesListed(WidgetTester t) async {
       await openMenu(t);
-      final listed = find.byKey(const ValueKey('reader-menu-footnotes')).evaluate().isNotEmpty;
+      final listed = find
+          .byKey(const ValueKey('reader-menu-footnotes'))
+          .evaluate()
+          .isNotEmpty;
       await closeMenu(t);
       return listed;
     }
 
-    testWidgets('Footnotes entry follows the chapter: absent, present, absent, present',
-        (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: annotatedBook(), initialChapterIndex: 0),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
+    testWidgets(
+      'Footnotes entry follows the chapter: absent, present, absent, present',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          _wrap(
+            prefs,
+            InstantReaderView(
+              fulltext: annotatedBook(),
+              initialChapterIndex: 0,
+            ),
+          ),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
 
-      expect(await footnotesListed(t), isFalse, reason: 'opening chapter has no notes');
-      await openChapter(t, 'Annotated chapter');
-      expect(await footnotesListed(t), isTrue);
-      await openChapter(t, 'Plain ending');
-      expect(await footnotesListed(t), isFalse);
-      await openChapter(t, 'Annotated chapter');
-      expect(await footnotesListed(t), isTrue, reason: 'returns with the chapter');
+        expect(
+          await footnotesListed(t),
+          isFalse,
+          reason: 'opening chapter has no notes',
+        );
+        await openChapter(t, 'Annotated chapter');
+        expect(await footnotesListed(t), isTrue);
+        await openChapter(t, 'Plain ending');
+        expect(await footnotesListed(t), isFalse);
+        await openChapter(t, 'Annotated chapter');
+        expect(
+          await footnotesListed(t),
+          isTrue,
+          reason: 'returns with the chapter',
+        );
 
-      await openMenu(t);
-      await t.tap(find.byKey(const ValueKey('reader-menu-footnotes')));
-      await t.pumpAndSettle();
-      expect(find.text('Footnotes'), findsOneWidget);
-      expect(find.text('The first cited source.'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text('A note without a label.'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget, reason: 'unlabelled notes are numbered by position');
-    });
+        await openMenu(t);
+        await t.tap(find.byKey(const ValueKey('reader-menu-footnotes')));
+        await t.pumpAndSettle();
+        expect(find.text('Footnotes'), findsOneWidget);
+        expect(find.text('The first cited source.'), findsOneWidget);
+        expect(find.text('1'), findsOneWidget);
+        expect(find.text('A note without a label.'), findsOneWidget);
+        expect(
+          find.text('2'),
+          findsOneWidget,
+          reason: 'unlabelled notes are numbered by position',
+        );
+      },
+    );
 
-
-    testWidgets('a pending player request opens the playing chapter once', (t) async {
+    testWidgets('a pending player request opens the playing chapter once', (
+      t,
+    ) async {
       final prefs = await _mockPrefs();
       final fulltext = EbookFulltext.fromJson({
         'jobId': 'jump',
@@ -221,17 +247,23 @@ void main() {
           {'index': 30, 'name': 'Third', 'text': 'Third chapter prose.'},
         ],
       });
-      await t.pumpWidget(ProviderScope(
-        overrides: [
-          sharedPrefsProvider.overrideWithValue(prefs),
-          readerPlaybackJumpProvider.overrideWith((ref) => (bookId: 'b1', chapterIndex: 1)),
-        ],
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: Scaffold(body: InstantReaderView(fulltext: fulltext, bookId: 'b1')),
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPrefsProvider.overrideWithValue(prefs),
+            readerPlaybackJumpProvider.overrideWith(
+              (ref) => (bookId: 'b1', chapterIndex: 1),
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: InstantReaderView(fulltext: fulltext, bookId: 'b1'),
+            ),
+          ),
         ),
-      ));
+      );
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       expect(find.text('Second chapter prose.'), findsOneWidget);
@@ -243,134 +275,251 @@ void main() {
       );
     });
 
-    testWidgets('a request raised while open moves the reader; another book is ignored', (t) async {
-      final prefs = await _mockPrefs();
-      final fulltext = EbookFulltext.fromJson({
-        'jobId': 'jump2',
-        'chapters': [
-          {'index': 10, 'name': 'First', 'text': 'First chapter prose.'},
-          {'index': 20, 'name': 'Second', 'text': 'Second chapter prose.'},
-        ],
-      });
-      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: fulltext, bookId: 'b1')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.text('First chapter prose.'), findsOneWidget);
-      final container = ProviderScope.containerOf(t.element(find.byType(InstantReaderView)));
+    testWidgets(
+      'a request raised while open moves the reader; another book is ignored',
+      (t) async {
+        final prefs = await _mockPrefs();
+        final fulltext = EbookFulltext.fromJson({
+          'jobId': 'jump2',
+          'chapters': [
+            {'index': 10, 'name': 'First', 'text': 'First chapter prose.'},
+            {'index': 20, 'name': 'Second', 'text': 'Second chapter prose.'},
+          ],
+        });
+        await t.pumpWidget(
+          _wrap(prefs, InstantReaderView(fulltext: fulltext, bookId: 'b1')),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.text('First chapter prose.'), findsOneWidget);
+        final container = ProviderScope.containerOf(
+          t.element(find.byType(InstantReaderView)),
+        );
 
-      container.read(readerPlaybackJumpProvider.notifier).state = (bookId: 'other', chapterIndex: 1);
-      await t.pump();
-      expect(find.text('First chapter prose.'), findsOneWidget);
+        container.read(readerPlaybackJumpProvider.notifier).state = (
+          bookId: 'other',
+          chapterIndex: 1,
+        );
+        await t.pump();
+        expect(find.text('First chapter prose.'), findsOneWidget);
 
-      container.read(readerPlaybackJumpProvider.notifier).state = (bookId: 'b1', chapterIndex: 1);
-      await t.pumpAndSettle();
-      expect(find.text('Second chapter prose.'), findsOneWidget);
-      expect(container.read(readerPlaybackJumpProvider), isNull);
-    });
+        container.read(readerPlaybackJumpProvider.notifier).state = (
+          bookId: 'b1',
+          chapterIndex: 1,
+        );
+        await t.pumpAndSettle();
+        expect(find.text('Second chapter prose.'), findsOneWidget);
+        expect(container.read(readerPlaybackJumpProvider), isNull);
+      },
+    );
 
-    testWidgets('the recent tool sits beside More and the others are in the menu', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
+    testWidgets(
+      'the recent tool sits beside More and the others are in the menu',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
 
-      expect(find.descendant(of: find.byKey(const ValueKey('reader-recent-tool')), matching: find.byIcon(Icons.text_format)), findsOneWidget);
-      expect(find.byIcon(Icons.list), findsNothing, reason: 'no loose tool icons besides the recent one');
-      expect(find.byIcon(Icons.search), findsNothing);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('reader-recent-tool')),
+            matching: find.byIcon(Icons.text_format),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byIcon(Icons.list),
+          findsNothing,
+          reason: 'no loose tool icons besides the recent one',
+        );
+        expect(find.byIcon(Icons.search), findsNothing);
 
-      await openMenu(t);
-      for (final tool in ['contents', 'search', 'bookmarks', 'add-bookmark']) {
-        expect(find.byKey(ValueKey('reader-menu-$tool')), findsOneWidget, reason: tool);
-      }
-      expect(find.byKey(const ValueKey('reader-menu-appearance')), findsNothing);
-      expect(find.byKey(const ValueKey('reader-menu-footnotes')), findsNothing,
-          reason: 'no notes in this chapter');
-    });
+        await openMenu(t);
+        for (final tool in [
+          'contents',
+          'search',
+          'bookmarks',
+          'add-bookmark',
+        ]) {
+          expect(
+            find.byKey(ValueKey('reader-menu-$tool')),
+            findsOneWidget,
+            reason: tool,
+          );
+        }
+        expect(
+          find.byKey(const ValueKey('reader-menu-appearance')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('reader-menu-footnotes')),
+          findsNothing,
+          reason: 'no notes in this chapter',
+        );
+      },
+    );
 
-    testWidgets('Listen and Voice models are tools; Listen needs a way to start listening', (t) async {
-      final started = <ReaderListeningPosition>[];
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext(), onListenFrom: (p) async => started.add(p))));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      await openMenu(t);
-      expect(find.byKey(const ValueKey('reader-menu-voiceModels')), findsOneWidget);
-      await t.tap(find.byKey(const ValueKey('reader-menu-listen')));
-      await t.pumpAndSettle();
-      expect(started, hasLength(1));
-      expect(started.single.chapterIndex, 0);
+    testWidgets(
+      'Listen and Voice models are tools; Listen needs a way to start listening',
+      (t) async {
+        final started = <ReaderListeningPosition>[];
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          _wrap(
+            prefs,
+            InstantReaderView(
+              fulltext: _sampleFulltext(),
+              onListenFrom: (p) async => started.add(p),
+            ),
+          ),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
+        await openMenu(t);
+        expect(
+          find.byKey(const ValueKey('reader-menu-voiceModels')),
+          findsOneWidget,
+        );
+        await t.tap(find.byKey(const ValueKey('reader-menu-listen')));
+        await t.pumpAndSettle();
+        expect(started, hasLength(1));
+        expect(started.single.chapterIndex, 0);
 
-      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())));
-      await t.pump();
-      await openMenu(t);
-      expect(find.byKey(const ValueKey('reader-menu-listen')), findsNothing);
-    });
+        await t.pumpWidget(
+          _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+        );
+        await t.pump();
+        await openMenu(t);
+        expect(find.byKey(const ValueKey('reader-menu-listen')), findsNothing);
+      },
+    );
 
-    testWidgets('choosing a tool from More makes it the recent tool and persists', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
+    testWidgets(
+      'choosing a tool from More makes it the recent tool and persists',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          _wrap(prefs, InstantReaderView(fulltext: _sampleFulltext())),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
 
-      await openMenu(t);
-      await t.tap(find.byKey(const ValueKey('reader-menu-search')));
-      await t.pumpAndSettle();
-      expect(prefs.getString('reader.recentTool.v1'), 'search');
-      await closeMenu(t); // dismisses the search sheet through its barrier
-      expect(find.descendant(of: find.byKey(const ValueKey('reader-recent-tool')), matching: find.byIcon(Icons.search)), findsOneWidget);
-      await openMenu(t);
-      expect(find.byKey(const ValueKey('reader-menu-appearance')), findsOneWidget,
-          reason: 'the tool it replaced moves into the menu');
-      expect(find.byKey(const ValueKey('reader-menu-search')), findsNothing);
-    });
+        await openMenu(t);
+        await t.tap(find.byKey(const ValueKey('reader-menu-search')));
+        await t.pumpAndSettle();
+        expect(prefs.getString('reader.recentTool.v1'), 'search');
+        await closeMenu(t); // dismisses the search sheet through its barrier
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('reader-recent-tool')),
+            matching: find.byIcon(Icons.search),
+          ),
+          findsOneWidget,
+        );
+        await openMenu(t);
+        expect(
+          find.byKey(const ValueKey('reader-menu-appearance')),
+          findsOneWidget,
+          reason: 'the tool it replaced moves into the menu',
+        );
+        expect(find.byKey(const ValueKey('reader-menu-search')), findsNothing);
+      },
+    );
 
-    testWidgets('Footnotes as recent tool stands down where there are no notes', (t) async {
-      final prefs = await _mockPrefs({'reader.recentTool.v1': 'footnotes'});
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: annotatedBook(), initialChapterIndex: 0),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      Finder recent(IconData icon) => find.descendant(
-        of: find.byKey(const ValueKey('reader-recent-tool')),
-        matching: find.byIcon(icon),
-      );
-      expect(recent(Icons.text_format), findsOneWidget, reason: 'plain chapter shows the appearance tool');
-      expect(prefs.getString('reader.recentTool.v1'), 'footnotes', reason: 'standing down does not forget the tool');
+    testWidgets(
+      'Footnotes as recent tool stands down where there are no notes',
+      (t) async {
+        final prefs = await _mockPrefs({'reader.recentTool.v1': 'footnotes'});
+        await t.pumpWidget(
+          _wrap(
+            prefs,
+            InstantReaderView(
+              fulltext: annotatedBook(),
+              initialChapterIndex: 0,
+            ),
+          ),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
+        Finder recent(IconData icon) => find.descendant(
+          of: find.byKey(const ValueKey('reader-recent-tool')),
+          matching: find.byIcon(icon),
+        );
+        expect(
+          recent(Icons.text_format),
+          findsOneWidget,
+          reason: 'plain chapter shows the appearance tool',
+        );
+        expect(
+          prefs.getString('reader.recentTool.v1'),
+          'footnotes',
+          reason: 'standing down does not forget the tool',
+        );
 
-      // Reopen on the annotated chapter: the remembered tool returns.
-      await t.pumpWidget(const SizedBox());
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: annotatedBook(), initialChapterIndex: 1),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(recent(Icons.notes), findsOneWidget, reason: 'the remembered tool returns with notes');
-    });
+        // Reopen on the annotated chapter: the remembered tool returns.
+        await t.pumpWidget(const SizedBox());
+        await t.pumpWidget(
+          _wrap(
+            prefs,
+            InstantReaderView(
+              fulltext: annotatedBook(),
+              initialChapterIndex: 1,
+            ),
+          ),
+        );
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 100));
+        expect(
+          recent(Icons.notes),
+          findsOneWidget,
+          reason: 'the remembered tool returns with notes',
+        );
+      },
+    );
 
-
-    testWidgets('the estimated sentence stays highlighted while paused', (t) async {
+    testWidgets('the estimated sentence stays highlighted while paused', (
+      t,
+    ) async {
       final prefs = await _mockPrefs();
       final player = FakeAudioPlayerService()..currentBookId = 'b1';
       await player.setQueue([
-        const ChapterProgress(index: 0, name: 'Introduction', status: 'completed', durationSeconds: 20),
+        const ChapterProgress(
+          index: 0,
+          name: 'Introduction',
+          status: 'completed',
+          durationSeconds: 20,
+        ),
       ]);
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: _sampleFulltext(), bookId: 'b1', player: player),
-      ));
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          InstantReaderView(
+            fulltext: _sampleFulltext(),
+            bookId: 'b1',
+            player: player,
+          ),
+        ),
+      );
       await t.pump();
-      final container = ProviderScope.containerOf(t.element(find.byType(InstantReaderView)));
+      final container = ProviderScope.containerOf(
+        t.element(find.byType(InstantReaderView)),
+      );
       final engine = container.read(syncEngineProvider('b1'));
       engine.load(_sampleFulltext().chapters.first, 20);
       await player.play();
       await player.seek(const Duration(seconds: 3));
       await t.pump();
       await t.pump();
-      String? shown() => t.widget<ReaderView>(find.byType(ReaderView)).currentSentenceId;
-      expect(shown(), isNotNull, reason: 'playing shows the estimated sentence');
+      String? shown() =>
+          t.widget<ReaderView>(find.byType(ReaderView)).currentSentenceId;
+      expect(
+        shown(),
+        isNotNull,
+        reason: 'playing shows the estimated sentence',
+      );
       final playing = shown();
       await player.pause();
       await t.pump();
@@ -378,12 +527,99 @@ void main() {
       await player.seek(const Duration(seconds: 15));
       await t.pump();
       await t.pump();
-      expect(shown(), isNull, reason: 'a seek while paused clears it, as the measured path does');
+      expect(
+        shown(),
+        isNull,
+        reason: 'a seek while paused clears it, as the measured path does',
+      );
       await player.play();
       await t.pump();
       await t.pump();
       expect(shown(), isNotNull);
-      expect(shown(), isNot(playing), reason: 'playing again paints the new place');
+      expect(
+        shown(),
+        isNot(playing),
+        reason: 'playing again paints the new place',
+      );
+    });
+
+    Future<(FakeAudioPlayerService, List<Object>)> pumpListenChoice(
+      WidgetTester t, {
+      required int readerChapter,
+    }) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService()..currentBookId = 'b1';
+      await player.setQueue([
+        const ChapterProgress(
+          index: 0,
+          name: 'Introduction',
+          status: 'completed',
+          durationSeconds: 60,
+        ),
+        const ChapterProgress(
+          index: 1,
+          name: 'Chapter 1',
+          status: 'completed',
+          durationSeconds: 60,
+        ),
+      ]);
+      player.duration = const Duration(seconds: 60);
+      await player.seek(const Duration(seconds: 15), index: 0);
+      final started = <Object>[];
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          InstantReaderView(
+            fulltext: _sampleFulltext(),
+            bookId: 'b1',
+            player: player,
+            initialChapterIndex: readerChapter,
+            onListenFrom: (p) async => started.add(p),
+          ),
+        ),
+      );
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('reader-overflow-menu')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('reader-menu-listen')));
+      await t.pumpAndSettle();
+      return (player, started);
+    }
+
+    testWidgets(
+      'Listen asks where to continue when the audio waits in another chapter',
+      (t) async {
+        final (player, started) = await pumpListenChoice(t, readerChapter: 1);
+        expect(find.text('Continue from where?'), findsOneWidget);
+        expect(find.textContaining('chapter 2'), findsWidgets);
+        await t.tap(find.byKey(const ValueKey('resume-choice-here')));
+        await t.pumpAndSettle();
+        expect(
+          started,
+          hasLength(1),
+          reason: 'listening from here starts at the reader position',
+        );
+        expect(player.isPlaying, isFalse);
+      },
+    );
+
+    testWidgets(
+      'going back to the audio resumes it without starting a new listen',
+      (t) async {
+        final (player, started) = await pumpListenChoice(t, readerChapter: 1);
+        await t.tap(find.byKey(const ValueKey('resume-choice-audio')));
+        await t.pumpAndSettle();
+        expect(started, isEmpty);
+        expect(player.isPlaying, isTrue);
+      },
+    );
+
+    testWidgets('Listen in the chapter where the audio waits does not ask', (
+      t,
+    ) async {
+      final (_, started) = await pumpListenChoice(t, readerChapter: 0);
+      expect(find.text('Continue from where?'), findsNothing);
+      expect(started, hasLength(1));
     });
   });
 }

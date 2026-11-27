@@ -13,6 +13,7 @@ import java.util.concurrent.TimeoutException
 internal class ConversionModelChannels(
     private val activity: MainActivity,
     private val converterExecutor: java.util.concurrent.ExecutorService,
+    private val queryExecutor: java.util.concurrent.ExecutorService,
 ) {
     private val embeddedLogTag = "EmbeddedConverter"
     private val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
@@ -24,7 +25,7 @@ internal class ConversionModelChannels(
                     if (!MainActivity.converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
                     } else {
-                        runNative(result) {
+                        runQuery(result) {
                             val value = nativeTtsCatalogV3()
                             runOnUiThread {
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -184,7 +185,7 @@ internal class ConversionModelChannels(
                     }
                 }
                 "ttsCatalogLanguages" -> {
-                    runNative(result) {
+                    runQuery(result) {
                         val value = nativeTtsCatalogLanguages(Build.VERSION.SDK_INT)
                         runOnUiThread {
                             if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -197,7 +198,7 @@ internal class ConversionModelChannels(
                     if (request.isNullOrBlank()) {
                         result.error("BAD_ARGS", "request is required", null)
                     } else {
-                        runNative(result) {
+                        runQuery(result) {
                             val value = nativeTtsResolveLanguageModel(request)
                             runOnUiThread {
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -211,7 +212,7 @@ internal class ConversionModelChannels(
                     if (request.isNullOrBlank()) {
                         result.error("BAD_ARGS", "request is required", null)
                     } else {
-                        runNative(result) {
+                        runQuery(result) {
                             // Pure and fast, but it runs on the converter executor like the other language calls.
                             val value = nativeBookNarrationPlan(request)
                             runOnUiThread {
@@ -227,7 +228,7 @@ internal class ConversionModelChannels(
                         result.error("BAD_ARGS", "path is required", null)
                     } else {
                         // Blocking (parses the book): runs on the converter executor.
-                        runNative(result) {
+                        runQuery(result) {
                             val value = nativeBookLanguage(path)
                             runOnUiThread {
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -272,7 +273,7 @@ internal class ConversionModelChannels(
                     if (modelId.isNullOrBlank() || root.isNullOrBlank()) {
                         result.error("BAD_ARGS", "modelId and root are required", null)
                     } else {
-                        runNative(result) {
+                        runQuery(result) {
                             val value = nativeTtsModelMetadata(modelId, root)
                             runOnUiThread { result.success(value) }
                         }
@@ -379,9 +380,14 @@ internal class ConversionModelChannels(
         }
     }
 
-    private fun runNative(result: MethodChannel.Result, action: () -> Unit) {
+    /** Read-only lookups run beside a long conversion instead of queueing behind it. */
+    private fun runQuery(result: MethodChannel.Result, action: () -> Unit) = runOn(queryExecutor, result, action)
+
+    private fun runNative(result: MethodChannel.Result, action: () -> Unit) = runOn(converterExecutor, result, action)
+
+    private fun runOn(executor: java.util.concurrent.ExecutorService, result: MethodChannel.Result, action: () -> Unit) {
         try {
-            converterExecutor.execute {
+            executor.execute {
                 try {
                     action()
                 } catch (error: Throwable) {

@@ -63,7 +63,10 @@ void main() {
         of: find.byKey(const ValueKey('reader-recent-tool')),
         matching: find.byIcon(Icons.list),
       );
-      if (recent.evaluate().isNotEmpty) {
+      final barTool = find.byKey(const ValueKey('reader-tool-contents'));
+      if (barTool.evaluate().isNotEmpty) {
+        await t.tap(barTool);
+      } else if (recent.evaluate().isNotEmpty) {
         await t.tap(find.byKey(const ValueKey('reader-recent-tool')));
       } else {
         await t.tap(find.byKey(const ValueKey('reader-overflow-menu')));

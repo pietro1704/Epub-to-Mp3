@@ -49,7 +49,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
       ReaderTool.listen => (
         icon: Icons.play_arrow,
         label: t.play,
-        run: () => _playFromHere(chapter, _visibleTextOffset),
+        run: () => unawaited(_listenTool(chapter)),
       ),
       ReaderTool.voiceModels => (
         icon: Icons.record_voice_over,
@@ -61,27 +61,54 @@ extension _InstantReaderTools on _InstantReaderViewState {
     };
   }
 
-  List<Widget> _chromeTools(Chapter chapter, Color color) {
-    final tool = _shownTool(chapter);
-    final descriptor = _toolDescriptor(tool, chapter);
+  /// Tablet Android, Linux and Windows show every tool in the bar; a phone keeps the
+  /// recent tool beside More.
+  bool get _showsEveryTool {
+    if (kIsWeb) return false;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.linux || TargetPlatform.windows => true,
+      TargetPlatform.android => MediaQuery.sizeOf(context).shortestSide >= 600,
+      _ => false,
+    };
+  }
+
+  /// Tools shown as bar buttons for the width the bar has now; the rest go to More.
+  /// Order and labels follow the Apple reader (the order of [ReaderTool]).
+  List<ReaderTool> _barTools(Chapter chapter, double barWidth) {
+    if (!_showsEveryTool) return [_shownTool(chapter)];
+    const button = 48.0, back = 48.0, more = 48.0, titleMin = 120.0;
+    final fit = ((barWidth - back - more - titleMin) / button).floor();
+    final applicable = [
+      for (final tool in ReaderTool.values)
+        if (_toolApplies(tool, chapter)) tool,
+    ];
+    return applicable.take(fit.clamp(0, applicable.length)).toList();
+  }
+
+  List<Widget> _chromeTools(Chapter chapter, Color color, double barWidth) {
+    final everyTool = _showsEveryTool;
     return [
-      IconButton(
-        key: const ValueKey('reader-recent-tool'),
-        icon: Icon(descriptor.icon, color: color),
-        tooltip: descriptor.label,
-        onPressed: descriptor.run,
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-      ),
+      for (final tool in _barTools(chapter, barWidth))
+        () {
+          final descriptor = _toolDescriptor(tool, chapter);
+          return IconButton(
+            key: ValueKey(everyTool ? 'reader-tool-${tool.name}' : 'reader-recent-tool'),
+            icon: Icon(descriptor.icon, color: color),
+            tooltip: descriptor.label,
+            onPressed: descriptor.run,
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          );
+        }(),
     ];
   }
 
-  /// Every tool except the one already beside More, plus Add bookmark.
-  List<ReaderMenuEntry> _menuEntries(Chapter chapter) {
+  /// Every tool not already in the bar, plus Add bookmark.
+  List<ReaderMenuEntry> _menuEntries(Chapter chapter, double barWidth) {
     final t = AppLocalizations.of(context)!;
-    final shown = _shownTool(chapter);
+    final shown = _barTools(chapter, barWidth).toSet();
     return [
       for (final tool in ReaderTool.values)
-        if (tool != shown && _toolApplies(tool, chapter))
+        if (!shown.contains(tool) && _toolApplies(tool, chapter))
           () {
             final descriptor = _toolDescriptor(tool, chapter);
             return ReaderMenuEntry(
@@ -145,6 +172,56 @@ extension _InstantReaderTools on _InstantReaderViewState {
           seconds: seconds,
           durationSeconds: player.durationSeconds,
         );
+  }
+
+  /// Listen tool: when the book's audio waits in another chapter than the one on screen, the
+  /// person chooses between listening from here and going back to the audio; otherwise it
+  /// listens from the visible text.
+  Future<void> _listenTool(Chapter chapter) async {
+    final player = widget.player;
+    final position = widget.fulltext.chapters.indexOf(chapter);
+    final audio =
+        player != null &&
+            !player.isPlaying &&
+            player.currentBookId == widget.bookId
+        ? await _liveSentencePosition()
+        : null;
+    if (!mounted) return;
+    if (audio == null || position < 0 || audio.chapterIndex == position) {
+      _playFromHere(chapter, _visibleTextOffset);
+      return;
+    }
+    final t = AppLocalizations.of(context)!;
+    final seconds = player!.positionSeconds.floor();
+    final time =
+        '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    final reader = '${position + 1}',
+        audioChapter = '${audio.chapterIndex + 1}';
+    final backToAudio = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(t.resumeChoiceTitle),
+        content: Text(t.resumeChoiceMessage(reader, audioChapter, time)),
+        actions: [
+          TextButton(
+            key: const ValueKey('resume-choice-here'),
+            onPressed: () => Navigator.pop(dialog, false),
+            child: Text(t.resumeChoiceFromHere(reader)),
+          ),
+          TextButton(
+            key: const ValueKey('resume-choice-audio'),
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(t.resumeChoiceBackToAudio(audioChapter, time)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || backToAudio == null) return;
+    if (backToAudio) {
+      unawaited(player.play());
+    } else {
+      _playFromHere(chapter, _visibleTextOffset);
+    }
   }
 
   /// "Play from here": the selection start becomes the listening start. The

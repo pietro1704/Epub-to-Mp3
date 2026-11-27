@@ -31,6 +31,8 @@ final class ReaderNarrationPairingPresentation {
     func observe() {
         guard !isObserving else { return }
         isObserving = true
+        player.readerPages = ReaderPageSource(current: { [weak self] in self?.currentPageNumber() },
+                                              narrated: { [weak self] in self?.pageNumber(of: $0) })
         follower.start { [weak self] in self?.refresh() }
         player.playbackClock.audioOutput.$position
             .throttle(for: .milliseconds(400), scheduler: DispatchQueue.main, latest: true)
@@ -68,6 +70,21 @@ final class ReaderNarrationPairingPresentation {
         return ReaderNarrationPairing.isPaired(
             spokenChapter: location.chapterIndex, spokenOffset: offset,
             readerChapter: chapter.zeroBasedEpubIndex, visible: Self.visibleCharacterRange(in: textView, scrollView: composition.scrollView))
+    }
+
+    private func currentPageNumber() -> Int? {
+        if composition.contentSurface.kind == .pdf { return composition.contentSurface.pdfPresentation?.currentPageNumber }
+        guard composition.textViewport.numbersPages else { return nil }
+        return composition.textViewport.pageNumber(at: composition.scrollView.contentOffset.y)
+    }
+
+    private func pageNumber(of location: ReaderPlaybackLocation) -> Int? {
+        if composition.contentSurface.kind == .pdf { return composition.contentSurface.pdfPresentation?.pageNumber(of: location) }
+        guard composition.textViewport.numbersPages, let chapter = currentChapter,
+              location.chapterIndex == chapter.zeroBasedEpubIndex else { return nil }
+        let textView = composition.textView
+        let offset = location.characterOffset(chapterText: chapter.text, renderedText: textView.text)
+        return composition.textViewport.pageNumber(containingCharacterAt: offset)
     }
 
     private var currentChapter: EbookFulltext.Chapter? {

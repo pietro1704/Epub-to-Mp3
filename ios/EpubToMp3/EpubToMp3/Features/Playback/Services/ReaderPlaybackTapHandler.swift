@@ -43,20 +43,21 @@ enum ReaderPlaybackTapHandler {
         presenting viewController: UIViewController
     ) {
         guard viewController.presentedViewController == nil else { return }
+        let copy = player.resumeChoiceCopy(readerChapterIndex: chapterIndex)
         let alert = UIAlertController(
             title: L10n.string("player.divergence.title"),
-            message: L10n.string("player.divergence.message"),
+            message: copy.message,
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(
-            title: L10n.string("player.divergence.fromWhereStopped"),
+            title: copy.returnTitle,
             style: .default
         ) { _ in
             player.rememberReaderPlaybackAnchor()
             player.resume()
         })
         alert.addAction(UIAlertAction(
-            title: L10n.string("player.divergence.fromCurrentPage"),
+            title: copy.listenTitle,
             style: .default
         ) { _ in
             player.startFromReaderPage(
