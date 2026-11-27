@@ -108,6 +108,8 @@ pub struct EmbeddedChapterMetadata {
     pub level: u32,
     /// Plain-text footnote bodies linked from this chapter; empty when none.
     pub footnotes: Vec<crate::epub::Footnote>,
+    /// TOC fragment ids with their scalar offset inside `text`; empty when none.
+    pub anchors: Vec<(String, usize)>,
 }
 
 #[derive(Debug, Error)]
@@ -350,6 +352,7 @@ fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {
                 text: chapter.text.clone(),
                 level: chapter.level,
                 footnotes: chapter.footnotes.clone(),
+                anchors: chapter.anchors.clone(),
             })
             .collect(),
         toc: toc_entries(&book.toc, &book.chapters),
@@ -401,6 +404,7 @@ mod tests {
             level: 1,
             footnotes: Vec::new(),
             note_marks: Vec::new(),
+            anchors: Vec::new(),
         };
         let entries = toc_entries(
             &[item("c.xhtml"), item("c.xhtml#caf%C3%A9"), item("c.xhtml#")],

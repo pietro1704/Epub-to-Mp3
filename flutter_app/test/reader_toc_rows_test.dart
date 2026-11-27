@@ -41,4 +41,21 @@ void main() {
       ReaderTocRow(title: 'Two', level: 0, chapterIndex: 1),
     ]);
   });
+
+  // Anchor-bearing entries (#1666 FFI `fragment`, chapter `anchors`): tapping must land on the
+  // anchor, not the chapter start; unknown fragments fall back to the chapter start.
+  test('a nav fragment resolves to its anchor offset inside the chapter', () {
+    final fulltext = EbookFulltext.fromJson({
+      'jobId': 'job',
+      'chapters': [
+        {...chapter(1, 'One'), 'anchors': {'mid': 23}},
+      ],
+      'toc': [
+        {'title': 'One', 'level': 1, 'chapterIndex': 1, 'children': []},
+        {'title': 'Middle', 'level': 1, 'chapterIndex': 1, 'fragment': 'mid', 'children': []},
+        {'title': 'Gone', 'level': 1, 'chapterIndex': 1, 'fragment': 'nope', 'children': []},
+      ],
+    });
+    expect(readerTocRows(fulltext).map((row) => row.anchorOffset), [null, 23, null]);
+  });
 }

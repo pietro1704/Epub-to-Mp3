@@ -857,6 +857,14 @@ else
   echo "ios:device:build → reusing generated Xcode project"
 fi
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+# Build the Rust library here, while this shell still holds the inherited lease
+# descriptor. Xcode closes it before script phases, so a nested native job
+# started by the bundling phase would fail.
+RUST_ROOT="$(cd ../.. && pwd)"
+if [[ ! -f "$RUST_ROOT/target/aarch64-apple-ios/release/libconverter_ffi.dylib" || "${CONVERTER_FFI_BUILD_ALWAYS:-0}" == 1 ]]; then
+  mise -C "$RUST_ROOT" run converter-ffi:ios-device
+fi
+export CONVERTER_FFI_BUILD_ALWAYS=0
 BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
 if ! xcodebuild \\
        -project EpubToMp3.xcodeproj \\
