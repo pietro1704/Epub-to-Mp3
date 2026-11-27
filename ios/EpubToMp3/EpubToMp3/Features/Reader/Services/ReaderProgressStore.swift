@@ -66,6 +66,15 @@ enum ReaderProgressStore {
         load(defaults: defaults)[bookId]
     }
 
+    /// Zero-based page the PDF reader last saved for this book.
+    static func savedPDFPage(bookId: String, defaults: UserDefaults = .standard) -> Int? {
+        struct Position: Decodable { let page: Int }
+        return defaults.data(forKey: pdfPositionKey(bookId: bookId))
+            .flatMap { try? JSONDecoder().decode(Position.self, from: $0) }?.page
+    }
+
+    static func pdfPositionKey(bookId: String) -> String { "reader.pdf.position.v1.\(bookId)" }
+
     static func evict(bookId: String, defaults: UserDefaults = .standard) {
         var entries = load(defaults: defaults)
         entries.removeValue(forKey: bookId)
