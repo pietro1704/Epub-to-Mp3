@@ -2,6 +2,7 @@ import '../design_system/adaptive_settings_layout.dart';
 import '../features/settings/local_audio_storage_screen.dart';
 import '../models/tts_preferences.dart';
 import '../models/tts_catalog.dart';
+import '../widgets/silence_trim_field.dart';
 import '../views/reader_narration_menu.dart'
     show installedNarrationModelIdsProvider;
 import 'models_screen.dart';
@@ -108,6 +109,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onChanged: (value) => notifier.setTtsPreferences(
                     settings.ttsPreferences.withFootnoteNarration(
                       value ? FootnoteNarration.inline : FootnoteNarration.skip,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: SilenceTrimField(
+                    key: const ValueKey('tts-silence-trim'),
+                    value: settings.ttsPreferences.silenceTrim,
+                    onChanged: (level) => notifier.setTtsPreferences(
+                      settings.ttsPreferences.withSilenceTrim(level),
                     ),
                   ),
                 ),

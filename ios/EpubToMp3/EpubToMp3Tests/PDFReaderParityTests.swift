@@ -171,6 +171,48 @@ final class PDFReaderParityTests: XCTestCase {
         XCTAssertEqual(highlighted(), [], "After a jump the old passage is no longer where narration resumes")
     }
 
+    /// The spoken text can differ from the page (expanded numbers, rewritten punctuation). As in the EPUB
+    /// reader, the sentence then stays marked instead of the highlight disappearing.
+    func testPDFHighlightFollowsNarrationWhenTheMeasuredWordIsNotOnThePage() throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "Narration", body: "A synthetic sentence with 12 lanterns.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let suite = "pdf-unresolved-word-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defaults.set("unresolved-pdf", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        player.services.navigation.rememberReaderPlaybackAnchor()
+        player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+            {"jobId":"unresolved-pdf","state":"finished","chapterIndexBase":1,"chapterProgress":[
+                {"index":1,"status":"completed","downloadUrl":"file:///tmp/unresolved-pdf.mp3","textOffset":0}]}
+            """.utf8)))
+        player.services.observation.publishCurrentChapter()
+        player.playbackPlayingChanged(true)
+        let settings = AppSettings(defaults: defaults)
+        settings.readerAudioTrackingEnabled = true
+        let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let pdf = ReaderPDFPresentation(view: view, bookID: "unresolved-pdf", defaults: defaults,
+                                        settings: settings, player: player)
+        pdf.load(document: try XCTUnwrap(PDFDocument(url: url)),
+                 metadata: try ConverterFFIAdapter().openBook(at: url).metadataJSON)
+        view.layoutIfNeeded()
+        let measured = try XCTUnwrap(SpeechAudioAlignment(tag: SpeechAudioAlignmentTests.tag(
+            #"[{"version":1,"text":"twelve lanterns","audioStart":0,"words":[{"location":0,"length":6,"start":0,"end":9}]}]"#)))
+        let item = NSObject()
+        for seconds in [1.0, 2.0] {
+            player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds, isOutputting: true,
+                position: .init(chapterIndex: 0, seconds: seconds, duration: 10, sentenceID: nil,
+                    itemSeconds: seconds, itemDuration: 10, alignment: measured))
+        }
+        let highlighted = (view.highlightedSelections ?? []).compactMap(\.string).joined()
+        XCTAssertFalse(highlighted.isEmpty, "Narration must stay marked when the measured word cannot be located")
+        var alpha: CGFloat = 1
+        view.highlightedSelections?.first?.color?.getRed(nil, green: nil, blue: nil, alpha: &alpha)
+        XCTAssertLessThan(alpha, 0.5, "A sentence estimate must not look like a measured word")
+    }
+
     func testListeningToAPDFWithATextlessPageTellsOnceThatItWasSkipped() async throws {
         let url = try PdfFixture.createMultiPage(pages: [
             (heading: "", body: ""),

@@ -18,6 +18,7 @@ pub mod adaptive;
 pub mod audio;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cache;
+pub mod chapter_names;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]

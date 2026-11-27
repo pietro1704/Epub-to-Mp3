@@ -1,6 +1,7 @@
 //! Text-layer PDF ingestion. OCR is a separate, explicit capability.
 use super::IngestionError;
 use crate::epub::{Book, Chapter};
+use crate::toc::TocItem;
 use pdf_extract::{decode_text_string, Document, Object, PlainTextOutput};
 use std::path::Path;
 
@@ -10,6 +11,13 @@ const MIN_READABLE_CHARS: usize = 20;
 const MIN_PAGES_FOR_SCAN_CHECK: usize = 5;
 
 pub(crate) const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
+
+/// Client-side OCR for pages with no text layer (Apple Vision, ML Kit, Windows.Media.Ocr,
+/// an installed Tesseract). The core never links an OCR engine: it asks the client for the
+/// text of a page by its 1-based number. `None` or empty text leaves the page skipped.
+pub trait PageOcr {
+    fn recognize(&self, page_number: u32) -> Option<String>;
+}
 
 pub struct PdfTextIngestion;
 impl PdfTextIngestion {
@@ -22,10 +30,21 @@ impl PdfTextIngestion {
         source: &[u8],
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Book, IngestionError> {
+        Self::from_bytes_with_ocr(path, source, cancelled, None)
+    }
+
+    /// Like [`Self::from_bytes_with_cancel`], asking `ocr` for the text of pages that have
+    /// none. Without OCR such a page is skipped and counted in `Book::skipped_pages`.
+    pub fn from_bytes_with_ocr(
+        path: &Path,
+        source: &[u8],
+        cancelled: &dyn Fn() -> bool,
+        ocr: Option<&dyn PageOcr>,
+    ) -> Result<Book, IngestionError> {
         // The dependency has fallible-input paths implemented with panics. Do not
         // let malformed content unwind across the embedded C ABI boundary.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Self::extract(path, source, cancelled)
+            Self::extract(path, source, cancelled, ocr)
         }))
         .map_err(|_| extraction_error("malformed or unsupported PDF content"))?
     }
@@ -34,6 +53,7 @@ impl PdfTextIngestion {
         path: &Path,
         source: &[u8],
         cancelled: &dyn Fn() -> bool,
+        ocr: Option<&dyn PageOcr>,
     ) -> Result<Book, IngestionError> {
         if cancelled() {
             return Err(IngestionError::Cancelled);
@@ -64,20 +84,42 @@ impl PdfTextIngestion {
                 return Err(IngestionError::Cancelled);
             }
             let mut page = String::new();
-            // Per-page extraction errors must never truncate a book silently.
-            pdf_extract::output_doc_page(&doc, &mut PlainTextOutput::new(&mut page), *number)
-                .map_err(extraction_error)?;
+            // One page the extractor cannot read (an image or form-only page, damaged
+            // content) is skipped and counted; it never rejects the rest of the book.
+            let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                pdf_extract::output_doc_page(&doc, &mut PlainTextOutput::new(&mut page), *number)
+            }));
+            let unreadable = !matches!(extracted, Ok(Ok(_)));
+            if unreadable {
+                // A page that shows text but cannot be extracted is damage, not an image.
+                if page_shows_text(&doc, *page_id) {
+                    return Err(extraction_error("malformed or unsupported PDF content"));
+                }
+                page.clear();
+            }
             page = normalize_page(page.trim());
-            // Covers, figures and blank pages have nothing to narrate: skip and count them.
             if page.trim().is_empty() {
-                skipped_pages += 1;
-                drawn_without_text |= has_drawn_content(&doc, *page_id)?;
+                let drawn = unreadable || has_drawn_content(&doc, *page_id).unwrap_or(true);
+                if drawn {
+                    if let Some(recognized) = ocr
+                        .and_then(|ocr| ocr.recognize(*number))
+                        .map(|text| normalize_page(text.trim()))
+                        .filter(|text| !text.is_empty())
+                    {
+                        page = recognized;
+                    }
+                }
+                if page.trim().is_empty() {
+                    // Covers, figures and blank pages have nothing to narrate: skip and count.
+                    skipped_pages += 1;
+                    drawn_without_text |= drawn;
+                }
             }
             if page.chars().filter(|c| !c.is_whitespace()).count() >= MIN_READABLE_CHARS {
                 readable_pages += 1;
             } else if !page.trim().is_empty() {
                 // A stray mark on a scanned page is not a text layer.
-                drawn_without_text |= has_drawn_content(&doc, *page_id)?;
+                drawn_without_text |= has_drawn_content(&doc, *page_id).unwrap_or(true);
             }
             total = total.saturating_add(page.len());
             if total > 32 * 1024 * 1024 {
@@ -100,18 +142,31 @@ impl PdfTextIngestion {
             return Err(IngestionError::Cancelled);
         }
         strip_running_lines(&mut text);
-        let (toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
+        let (mut toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
         let mut chapters = Vec::new();
         let starts = if starts.is_empty() {
             split_oversized(heading_starts(&text), &text)
         } else {
             starts
         };
+        // One chapter per page is only a navigation anchor, not a contents list.
+        let per_page = starts.is_empty() && text.len() <= MIN_PAGES_FOR_SECTIONS;
         let starts = if starts.is_empty() {
             section_starts(&text, &labels)
         } else {
             starts
         };
+        if toc.is_empty() && starts.len() > 1 && !per_page {
+            toc = starts
+                .iter()
+                .map(|(page, title, level)| TocItem {
+                    title: title.clone(),
+                    href: format!("page-{}", page + 1),
+                    level: *level,
+                    children: Vec::new(),
+                })
+                .collect();
+        }
         for (position, (start, title, level)) in starts.iter().enumerate() {
             let end = starts.get(position + 1).map_or(text.len(), |next| next.0);
             let content = join_pages(&text[*start..end]);
@@ -199,6 +254,20 @@ fn repair_cmap_names(doc: &mut Document) {
 }
 
 // Distinguishes a scanned book (OCR would help) from a PDF with only blank pages.
+/// Whether the page content has a text-showing operator, or cannot be read to rule it out.
+fn page_shows_text(doc: &Document, page: pdf_extract::ObjectId) -> bool {
+    let Ok(bytes) = doc.get_page_content(page) else {
+        return true;
+    };
+    let Ok(content) = pdf_extract::content::Content::decode(&bytes) else {
+        return true;
+    };
+    content
+        .operations
+        .iter()
+        .any(|operation| matches!(operation.operator.as_str(), "Tj" | "TJ" | "'" | "\""))
+}
+
 fn has_drawn_content(doc: &Document, page: pdf_extract::ObjectId) -> Result<bool, IngestionError> {
     let bytes = doc.get_page_content(page).map_err(extraction_error)?;
     let content = pdf_extract::content::Content::decode(&bytes).map_err(extraction_error)?;
@@ -234,6 +303,11 @@ fn is_heading_line(line: &str) -> bool {
     }
 }
 
+/// A title needs letters or digits: ornaments such as "✤✤✤", "* * *" or "———" never qualify.
+fn is_titleable(line: &str) -> bool {
+    line.chars().any(char::is_alphanumeric)
+}
+
 /// Without an outline, a page whose first line is a chapter marker starts a chapter. Needs at
 /// least two such pages, and a page packed with markers (a table of contents) never counts.
 /// Falls back to one chapter per page, which stays the navigation anchor.
@@ -242,7 +316,17 @@ fn heading_starts(pages: &[String]) -> Vec<(usize, String, u32)> {
         let mut lines = page.lines().map(str::trim).filter(|l| !l.is_empty());
         let first = lines.next().filter(|l| is_heading_line(l))?;
         let markers = page.lines().filter(|l| is_heading_line(l)).count();
-        (markers < 3).then(|| first.to_string())
+        // The real chapter name is the short line right after the marker, if any.
+        let name = lines.next().filter(|l| {
+            is_titleable(l)
+                && !is_heading_line(l)
+                && l.chars().count() <= 60
+                && !l.ends_with(['.', ',', ';', ':'])
+        });
+        (markers < 3).then(|| match name {
+            Some(name) => format!("{first} — {name}"),
+            None => first.to_string(),
+        })
     };
     let found: Vec<(usize, String)> = pages
         .iter()
@@ -303,7 +387,7 @@ fn section_starts(pages: &[String], labels: &[String]) -> Vec<(usize, String, u3
                 .iter()
                 .flat_map(|p| p.lines())
                 .map(str::trim)
-                .find(|l| !l.is_empty())
+                .find(|l| is_titleable(l))
                 .map(|l| l.chars().take(60).collect::<String>());
             match title {
                 Some(title) => (start, title, 1),

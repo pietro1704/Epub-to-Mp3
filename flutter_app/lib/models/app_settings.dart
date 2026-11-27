@@ -288,15 +288,18 @@ class MirrorAppSettings with PlaybackSettings {
   Future<void> setDarkMode(bool v) =>
       setReaderTheme(v ? ReaderTheme.dark : ReaderTheme.light);
 
+  /// Last font step: 0..4 are the original sizes, 5 and 6 the larger ones.
+  static const maxReaderFontStep = 6;
+
   // Reader appearance ---------------------------------------------------
   int get readerFontSize {
     final v = _prefs.getInt('readerFontSize') ?? 3;
-    return v.clamp(0, 4);
+    return v.clamp(0, maxReaderFontStep);
   }
 
   Future<void> setReaderFontSize(int v) async {
     await _prefs.setBool('readerOverrideFontSize', true);
-    await _prefs.setInt('readerFontSize', v.clamp(0, 4));
+    await _prefs.setInt('readerFontSize', v.clamp(0, maxReaderFontStep));
   }
 
   bool get readerOverrideFontFamily =>
@@ -464,6 +467,10 @@ class MirrorAppSettings with PlaybackSettings {
         return 24;
       case 4:
         return 28;
+      case 5:
+        return 34;
+      case 6:
+        return 42;
       case 2:
       default:
         return 20;

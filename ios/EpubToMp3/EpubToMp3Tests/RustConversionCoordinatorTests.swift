@@ -34,6 +34,17 @@ final class RustConversionCoordinatorTests: XCTestCase {
         XCTAssertEqual(foreign.snapshot(chapters: [], preserving: recovered), recovered)
     }
 
+    /// The last chapter can finish while the job is still publishing its result.
+    func testRunningConversionNeverReportsCompletionBeforeTheResult() {
+        let event = RustConversionCoordinator.ChapterCompletionEvent(
+            jobId: "active", bookTitle: "Book", bookAuthor: "Author", chapterIndex: 1, chaptersTotal: 2,
+            chaptersCompleted: 2, chapterTitle: "Last", filename: "two.mp3",
+            audioPath: URL(fileURLWithPath: "/fixture/two.mp3"), textChars: 50)
+        XCTAssertEqual(event.progressPercent, 99)
+        let running = event.snapshot(chapters: [])
+        XCTAssertEqual(running.progressPercent, 99)
+    }
+
     func testEnrichedChapterReportsActualSystemVoiceWithoutPriorProgressDelivery() throws {
         let payload = Data(#"{"jobId":"active","bookTitle":"Book","bookAuthor":"Author","chapterIndex":0,"chaptersTotal":1,"chaptersCompleted":1,"chapterTitle":"Chapter","filename":"one.mp3","audioPath":"/fixture/one.mp3","textChars":50,"engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8)
         let event = try JSONDecoder().decode(RustConversionCoordinator.ChapterCompletionEvent.self, from: payload)

@@ -102,3 +102,6 @@ class _ReaderSessionNotifier extends StateNotifier<String?> {
     }
   }
 }
+
+/// Chapter name overrides; null on platforms without the Rust binding.
+final chapterNameStoreProvider = Provider<ChapterNameStore?>((ref) => defaultChapterNameStore());

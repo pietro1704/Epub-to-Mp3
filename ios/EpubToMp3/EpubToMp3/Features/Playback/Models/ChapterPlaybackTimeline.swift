@@ -17,7 +17,11 @@ struct ChapterPlaybackTimeline: Equatable {
 
     static func estimate(for chapter: EbookFulltext.Chapter) -> TimeInterval {
         guard !chapter.isImageOnly else { return 0 }
-        let words = (chapter.speechText ?? chapter.text).split(whereSeparator: \.isWhitespace).count
+        return estimate(text: chapter.speechText ?? chapter.text)
+    }
+
+    static func estimate(text: String) -> TimeInterval {
+        let words = text.split(whereSeparator: \.isWhitespace).count
         // Preserve the reader's existing 200 WPM baseline; this is an estimate.
         return Double(words) / 200 * 60
     }

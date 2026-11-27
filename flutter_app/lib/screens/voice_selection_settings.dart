@@ -40,7 +40,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
                           : prefs.secondary,
                       allowOnlineFallback: value,
                       policyVersion: prefs.policyVersion,
-                      footnoteNarration: prefs.footnoteNarration,
+                      footnoteNarration: prefs.footnoteNarration, silenceTrim: prefs.silenceTrim,
                     ),
                   );
                 },

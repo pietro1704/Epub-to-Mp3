@@ -143,6 +143,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     /// Source metadata lets streamed playback navigate before audio is ready.
     var playbackChapterEstimates: [Int: TimeInterval] {
+        if let pdf = composition.contentSurface.pdfPresentation?.audioMap { return pdf.chapterEstimates }
         let chapters = document.fulltext?.chapters
             ?? document.activePreparedChapter.map { [$0.chapter] } ?? []
         return ChapterPlaybackTimeline.estimates(for: chapters)

@@ -526,6 +526,39 @@ fn pdf_without_outline_splits_chapters_at_repeated_heading_lines() {
 }
 
 #[test]
+fn pdf_without_outline_gets_an_automatic_contents_list_from_its_chapters() {
+    let book = ingest_pages(&[
+        "Prefacio do autor com texto longo o bastante.",
+        "Capitulo 1\nO primeiro capitulo comeca aqui com bastante texto.",
+        "Capitulo 2\nO segundo capitulo comeca aqui com bastante texto.",
+    ]);
+    let toc: Vec<(&str, &str)> = book
+        .toc
+        .iter()
+        .map(|t| (t.title.as_str(), t.href.as_str()))
+        .collect();
+    assert_eq!(
+        toc,
+        [
+            ("Front matter", "page-1"),
+            ("Capitulo 1", "page-2"),
+            ("Capitulo 2", "page-3")
+        ]
+    );
+}
+
+#[test]
+fn pdf_short_page_per_chapter_fallback_has_no_automatic_contents_list() {
+    let book = ingest_pages(&[
+        "Texto corrido da primeira pagina sem nenhum titulo.",
+        "Texto corrido da segunda pagina sem nenhum titulo.",
+        "Texto corrido da terceira pagina sem nenhum titulo.",
+    ]);
+    assert!(book.chapters.iter().all(|c| c.name.starts_with("Page ")));
+    assert!(book.toc.is_empty());
+}
+
+#[test]
 fn pdf_table_of_contents_page_never_becomes_chapters() {
     let book = ingest_pages(&[
         "Capitulo 1\nCapitulo 2\nCapitulo 3\nCapitulo 4",
@@ -578,9 +611,10 @@ fn pdf_single_entry_outline_is_treated_like_no_outline() {
     .unwrap();
     let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
-    assert!(
-        book.toc.is_empty(),
-        "the degenerate outline is not the contents list"
+    assert_eq!(
+        book.toc.len(),
+        names.len(),
+        "the degenerate outline is replaced by the automatic contents list"
     );
 }
 
@@ -673,7 +707,7 @@ fn pdf_outline_covering_only_the_first_pages_is_treated_like_no_outline() {
     let book = two_entry_outline_book(30);
     let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
-    assert!(book.toc.is_empty());
+    assert_eq!(book.toc.len(), names.len());
 }
 
 #[test]
@@ -722,4 +756,115 @@ fn pdf_page_break_after_a_finished_sentence_stays_a_paragraph_break() {
     let chapters = &session.metadata().chapters;
     assert_eq!(chapters[0].text, "The night ended.\n\nmorning came.");
     assert_eq!(chapters[1].text, "A heading\n\nBody text.");
+}
+
+/// PDF-IMAGE-PAGE-BLOCKS-BOOK: no kind of image-only page may reject a book that has text.
+fn texts_with_image_page(position: usize, content: &'static str) -> Vec<u8> {
+    let texts = [
+        "Primeira pagina com texto proprio e suficiente para narrar.",
+        "Segunda pagina com outro texto bem diferente do primeiro.",
+        "Terceira pagina fala de outra coisa totalmente distinta.",
+        "Quarta pagina continua a historia com mais algumas palavras.",
+        "Quinta pagina fecha o livro com um ultimo paragrafo longo.",
+        "",
+    ];
+    fixture::pdf_with(false, &texts, |objects| {
+        let page = 2 + position * 2;
+        objects[page + 1] = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+    })
+}
+
+fn assert_book_survives(source: Vec<u8>) {
+    let session = open_bytes(&source).expect("an image-only page must not reject the book");
+    let chapters = &session.metadata().chapters;
+    assert!(chapters.iter().any(|c| c.text.contains("Primeira pagina")));
+    assert!(chapters.iter().any(|c| c.text.contains("Quinta pagina")));
+}
+
+#[test]
+fn pdf_inline_image_page_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(
+        5,
+        "q 100 0 0 100 20 20 cm BI /W 2 /H 2 /CS /G /BPC 8 ID \u{1}\u{0}EI\u{ff}\u{fe} EI Q",
+    ));
+}
+
+#[test]
+fn pdf_page_with_unparseable_content_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(5, "q 100 0 0 [[[ /Im0 Do ((( Q"));
+}
+
+#[test]
+fn pdf_page_with_only_a_form_xobject_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(5, "/Fm0 Do"));
+}
+
+struct FakeOcr;
+impl converter_core::ingestion::pdf_text::PageOcr for FakeOcr {
+    fn recognize(&self, page_number: u32) -> Option<String> {
+        (page_number == 6).then(|| "Texto reconhecido pelo OCR do cliente na sexta pagina.".into())
+    }
+}
+
+#[test]
+fn pdf_image_page_is_read_by_the_client_ocr_hook_and_skipped_without_it() {
+    let source = texts_with_image_page(5, "/Fm0 Do");
+    let path = std::path::Path::new("book.pdf");
+    let with = converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes_with_ocr(
+        path,
+        &source,
+        &|| false,
+        Some(&FakeOcr),
+    )
+    .unwrap();
+    assert!(with
+        .chapters
+        .iter()
+        .any(|c| c.text.contains("reconhecido pelo OCR")));
+    assert_eq!(with.skipped_pages, 0);
+    let without =
+        converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(path, &source).unwrap();
+    assert!(!without.chapters.iter().any(|c| c.text.contains("OCR")));
+    assert_eq!(without.skipped_pages, 1);
+}
+
+/// PDF-AUTO-TOC-AND-TITLES: a decorative line is never a chapter title.
+#[test]
+fn pdf_without_outline_never_titles_a_chapter_with_a_decorative_line() {
+    let mut pages: Vec<String> = Vec::new();
+    for i in 0..14 {
+        pages.push(if i % 10 == 0 {
+            format!("✤✤✤\nA Chegada {i}\nTexto da pagina numero {i} com palavras suficientes para narrar.")
+        } else {
+            format!("Texto da pagina numero {i} com palavras suficientes para narrar.")
+        });
+    }
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    let book = ingest_pages(&refs);
+    for chapter in &book.chapters {
+        assert!(
+            chapter.name.chars().any(char::is_alphanumeric),
+            "decorative title: {:?}",
+            chapter.name
+        );
+    }
+    assert!(
+        book.chapters[0].name.contains("A Chegada"),
+        "{:?}",
+        book.chapters[0].name
+    );
+}
+
+#[test]
+fn pdf_without_outline_names_marker_chapters_with_their_real_title() {
+    let book = ingest_pages(&[
+        "Capitulo 1\nA Chegada\nTexto da primeira pagina com palavras suficientes para narrar.",
+        "Mais texto do primeiro capitulo com palavras suficientes para narrar.",
+        "Capitulo 2\n✤✤✤\nTexto do segundo capitulo com palavras suficientes para narrar.",
+    ]);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Capitulo 1 — A Chegada", "Capitulo 2"]);
 }

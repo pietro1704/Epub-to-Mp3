@@ -194,7 +194,7 @@ class LibraryBookTile extends StatelessWidget {
       if (bytes != null) return Image.memory(bytes, fit: BoxFit.cover);
     }
     final isPdf = book.filePath.toLowerCase().endsWith('.pdf');
-    return Container(
+    final placeholder = Container(
       color: cs.primaryContainer,
       child: Center(
         child: Icon(
@@ -203,6 +203,27 @@ class LibraryBookTile extends StatelessWidget {
           color: cs.onPrimaryContainer,
         ),
       ),
+    );
+    final fileName = book.filePath.split(RegExp(r'[\\/]')).last;
+    return FutureBuilder<FilenameCover?>(
+      future: FilenameCoverResolver.instance.resolve(fileName),
+      builder: (context, snapshot) {
+        final cover = snapshot.data;
+        if (cover == null) return placeholder;
+        return Container(
+          color: cover.background,
+          padding: const EdgeInsets.all(8),
+          alignment: Alignment.center,
+          child: Text(
+            cover.label,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+        );
+      },
     );
   }
 }

@@ -262,3 +262,63 @@ class NativeJobIntegrationTest < Minitest::Test
     end
   end
 end
+
+# Disk upkeep after a host job: below the warning floor the finished job hands
+# over to build-storage reclaim, which never changes the job's result.
+class NativeJobReclaimTest < Minitest::Test
+  def swap(target, name, implementation)
+    original = target.method(name)
+    target.define_singleton_method(name, &implementation)
+    yield
+  ensure
+    target.define_singleton_method(name, original)
+  end
+
+  def with_env(values)
+    previous = values.keys.to_h { |key| [key, ENV[key]] }
+    values.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    yield
+  ensure
+    previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
+
+  def reclaim_calls(path, phase, host: true, env: {})
+    calls = []
+    with_env({ NativeJob::FD_ENV => nil, NativeJob::PATH_ENV => nil, "EPUB_NATIVE_AUTO_RECLAIM" => nil }.merge(env)) do
+      swap(NativeJob, :host_services?, ->(*) { host }) do
+        swap(MacBuildBudget, :main, ->(arguments) { calls << arguments; 75 }) { NativeJob.reclaim_after(path, phase) }
+      end
+    end
+    calls
+  end
+
+  def test_host_build_and_heavy_jobs_request_reclaim_if_low
+    %w[build heavy].each { |phase| assert_equal [["reclaim-if-low"]], reclaim_calls(NativeJob::LOCK_PATH, phase) }
+  end
+
+  def test_simulator_fixture_nested_and_opted_out_jobs_do_not
+    assert_empty reclaim_calls(NativeJob::LOCK_PATH, "simulator")
+    assert_empty reclaim_calls("/fixture/lease", "build", host: false)
+    assert_empty reclaim_calls(NativeJob::LOCK_PATH, "build", env: { NativeJob::FD_ENV => "9" })
+    assert_empty reclaim_calls(NativeJob::LOCK_PATH, "build", env: { "EPUB_NATIVE_AUTO_RECLAIM" => "0" })
+  end
+
+  def test_reclaim_failure_is_only_a_note
+    swap(NativeJob, :host_services?, ->(*) { true }) do
+      swap(MacBuildBudget, :main, ->(*) { raise "fixture failure" }) do
+        _, error = capture_io { NativeJob.reclaim_after(NativeJob::LOCK_PATH, "build") }
+        assert_match(/reclaim skipped: fixture failure/, error)
+      end
+    end
+  end
+
+  def test_main_keeps_the_job_exit_code_and_reclaims_after_the_lease_is_released
+    order = []
+    swap(NativeJob, :run, ->(**) { order << :run; 7 }) do
+      swap(NativeJob, :reclaim_after, ->(path, phase) { order << [:reclaim, path, phase] }) do
+        assert_equal 7, NativeJob.main(["--lock-path", "/fixture/lease", "build", "--", "true"])
+      end
+    end
+    assert_equal [:run, [:reclaim, "/fixture/lease", "build"]], order
+  end
+end

@@ -7,13 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/latency_observation.dart';
 
-typedef PdfViewerBuilder =
-    Widget Function(
-      BuildContext context,
-      String path,
-      int initialPage,
-      ValueChanged<int> onPageChanged,
-    );
+typedef PdfViewerBuilder = Widget Function(
+  BuildContext context,
+  String path,
+  int initialPage,
+  ValueChanged<int> onPageChanged,
+);
 typedef PdfDocumentLoader = Future<void> Function();
 
 bool isPdfFilePath(String path) => path.toLowerCase().endsWith('.pdf');
@@ -52,6 +51,14 @@ class PdfReaderScreen extends StatefulWidget {
   @override
   State<PdfReaderScreen> createState() => _PdfReaderScreenState();
 }
+
+/// PDF-LANDSCAPE-LAYOUT: in landscape the whole-page fit leaves a tiny page in a gray strip,
+/// so the page fills the width instead; portrait keeps the whole-page fit.
+double initialPdfZoom({
+  required bool landscape,
+  required double fitZoom,
+  required double coverZoom,
+}) => landscape ? coverZoom : fitZoom;
 
 class _PdfReaderScreenState extends State<PdfReaderScreen> {
   late final PdfPageStore _pages = PdfPageStore(widget.prefs);
@@ -130,6 +137,14 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       controller: _controller,
       initialPageNumber: _page,
       params: PdfViewerParams(
+        // ignore: deprecated_member_use
+        calculateInitialZoom: (document, controller, fitZoom, coverZoom) =>
+            initialPdfZoom(
+              landscape:
+                  MediaQuery.orientationOf(context) == Orientation.landscape,
+              fitZoom: fitZoom,
+              coverZoom: coverZoom,
+            ),
         onPageChanged: (page) {
           if (page != null) _pageChanged(page);
         },

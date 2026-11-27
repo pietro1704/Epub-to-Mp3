@@ -4,6 +4,7 @@ mod audio_validation;
 mod cover_image_validation;
 mod cover_tiff_validation;
 mod mp3_assembly;
+mod mp3_export;
 mod mp3_metadata;
 mod mpeg_frame_validation;
 mod wave_bounds;
@@ -11,6 +12,7 @@ mod wave_bounds;
 pub use audio_archive::{create_archive, validate_archive};
 pub use audio_validation::{probe_duration, probe_sample_rate, validate_audio};
 pub use mp3_assembly::{finalize_mp3, join_mp3_segments, mp3_needs_finalization};
+pub use mp3_export::{export_mp3, ExportBook, ExportChapter, ExportFormat, ExportLayout};
 pub use mp3_metadata::{embed_cover, ChapterMetadata};
 
 use std::io;

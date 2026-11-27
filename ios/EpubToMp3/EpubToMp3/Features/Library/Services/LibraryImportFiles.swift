@@ -58,6 +58,13 @@ enum LibraryImportFiles {
         if let baseDirectory {
             return baseDirectory
         }
+        // iOS keeps the real home while isolated, so seeded books are redirected here.
+        if let isolated = AppIsolation.root {
+            return isolated
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+                .appendingPathComponent(applicationSupportFolderName, isDirectory: true)
+                .appendingPathComponent("ImportedBooks", isDirectory: true)
+        }
         // Unit tests run inside the app host: a store built without an explicit
         // directory must never copy fixtures into the listener's library.
         if EpubToMp3App.isRunningUnderXCTest() {

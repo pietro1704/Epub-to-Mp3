@@ -324,5 +324,14 @@
   "libraryMetaPages": "{count, plural, =1{1 página} other{{count} páginas}}",
   "libraryMetaChapters": "{count, plural, =1{1 capítulo} other{{count} capítulos}}",
   "libraryMetaAdded": "Adicionado {date}",
-  "libraryMetaLastRead": "Lido {date}"
+  "libraryMetaLastRead": "Lido {date}",
+  "silenceTrimLabel": "Corte de silêncio",
+  "silenceTrimDescription": "Pausas mais curtas no áudio novo. O áudio existente só muda ao converter de novo. Títulos e fins de capítulo mantêm as pausas.",
+  "silenceTrimOff": "Desligado",
+  "silenceTrimLight": "Leve",
+  "silenceTrimMedium": "Médio",
+  "silenceTrimStrong": "Forte",
+  "chapterRename": "Renomear capítulo",
+  "chapterRenameReset": "Usar o nome automático",
+  "chapterRenameSave": "Salvar"
 }

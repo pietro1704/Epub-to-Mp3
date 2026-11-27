@@ -7,6 +7,16 @@ mixin BookContentSession on ConsumerState<BookOpenScreen> {
   final AsyncLoadGuard _loadGuard = AsyncLoadGuard();
   String? _readerJourneyId;
 
+  bool get _isPdfBook {
+    final path = ref
+        .read(libraryStoreProvider)
+        .books
+        .where((book) => book.id == widget.bookId)
+        .firstOrNull
+        ?.filePath;
+    return path != null && isPdfFilePath(path);
+  }
+
   Future<void> _load() async {
     // didUpdateWidget can fire a new _load while a previous one is
     // still awaiting cache.read / embedded Rust parsing. Tag each load
@@ -137,5 +147,4 @@ mixin BookContentSession on ConsumerState<BookOpenScreen> {
       library.update(book);
     }
   }
-
 }

@@ -11,6 +11,8 @@ class ConversionOptionsSection extends StatelessWidget {
     required this.endController,
     required this.includeCover,
     required this.normalizeAudio,
+    required this.silenceTrim,
+    required this.onSilenceTrimChanged,
     required this.usesEmbeddedConversion,
     required this.onEngineChanged,
     required this.onAllowSecondaryChanged,
@@ -28,6 +30,8 @@ class ConversionOptionsSection extends StatelessWidget {
   final TextEditingController endController;
   final bool includeCover;
   final bool normalizeAudio;
+  final SilenceTrim silenceTrim;
+  final ValueChanged<SilenceTrim> onSilenceTrimChanged;
   final bool usesEmbeddedConversion;
   final ValueChanged<String> onEngineChanged;
   final ValueChanged<bool> onAllowSecondaryChanged;
@@ -138,6 +142,12 @@ class ConversionOptionsSection extends StatelessWidget {
             onChanged: (v) => onNormalizeAudioChanged(v),
           ),
         ],
+        const SizedBox(height: 8),
+        SilenceTrimField(
+          key: const ValueKey('convert-silence-trim'),
+          value: silenceTrim,
+          onChanged: onSilenceTrimChanged,
+        ),
       ],
     );
   }

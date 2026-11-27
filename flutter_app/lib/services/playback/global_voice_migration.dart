@@ -76,7 +76,7 @@ Future<void> migrateGlobalVoiceToLanguageChoices({
       secondary: primary,
       allowOnlineFallback: next.allowOnlineFallback,
       policyVersion: next.policyVersion,
-      footnoteNarration: next.footnoteNarration,
+      footnoteNarration: next.footnoteNarration, silenceTrim: next.silenceTrim,
     );
   }
   await savePreferences(next);
