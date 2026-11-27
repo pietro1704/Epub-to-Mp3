@@ -16,6 +16,7 @@ import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/desktop_embedded_converter.dart';
 import 'library_screen.dart' show libraryStoreProvider;
 import 'active_voice_line.dart';
+import '../widgets/silence_trim_field.dart';
 
 import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
@@ -71,6 +72,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   final _endController = TextEditingController();
   bool _includeCover = true;
   bool _normalizeAudio = true;
+  SilenceTrim? _silenceTrim;
   bool _submitting = false;
   String? _jobId;
   String? _error;
@@ -150,7 +152,10 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     try {
       var file = File('$root/conversion.log');
       if (!file.existsSync()) {
-        final nested = Directory(root).listSync().whereType<Directory>().map((d) => File('${d.path}/conversion.log'));
+        final nested = Directory(root)
+            .listSync()
+            .whereType<Directory>()
+            .map((d) => File('${d.path}/conversion.log'));
         file = nested.firstWhere((f) => f.existsSync(), orElse: () => file);
       }
       if (!file.existsSync()) return;
@@ -280,20 +285,26 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       final manualPrimary = engine == 'piper'
           ? TtsSelection.automaticPiper
           : TtsSelection(engine: 'edge', voice: voice);
-      final selected = engine == 'preferences'
-          ? saved
-          : TtsPreferences(
-              primary: manualPrimary,
-              secondary:
-                  allowSecondary &&
-                      saved.secondary?.representsSameRequest(manualPrimary) !=
-                          true
-                  ? saved.secondary
-                  : null,
-              allowOnlineFallback: allowSecondary && saved.allowOnlineFallback,
-              policyVersion: saved.policyVersion,
-              footnoteNarration: saved.footnoteNarration,
-            );
+      final selected =
+          (engine == 'preferences'
+                  ? saved
+                  : TtsPreferences(
+                      primary: manualPrimary,
+                      secondary:
+                          allowSecondary &&
+                              saved.secondary?.representsSameRequest(
+                                    manualPrimary,
+                                  ) !=
+                                  true
+                          ? saved.secondary
+                          : null,
+                      allowOnlineFallback:
+                          allowSecondary && saved.allowOnlineFallback,
+                      policyVersion: saved.policyVersion,
+                      footnoteNarration: saved.footnoteNarration,
+                      silenceTrim: saved.silenceTrim,
+                    ))
+              .withSilenceTrim(_silenceTrim ?? saved.silenceTrim);
       final request = ConversionRequest(
         filePath: path,
         ttsPreferences: selected,
@@ -339,7 +350,10 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       _voiceSession.begin(request.filePath);
       _runningLog = null;
       _voicePoll?.cancel();
-      _voicePoll = Timer.periodic(const Duration(seconds: 1), (_) => _pollRunningLog());
+      _voicePoll = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _pollRunningLog(),
+      );
       final result = await starter(request);
       var jobId = result;
       var actual = <TtsSelection>[];
@@ -473,6 +487,11 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             endController: _endController,
             includeCover: _includeCover,
             normalizeAudio: _normalizeAudio,
+            silenceTrim:
+                _silenceTrim ??
+                ref.watch(settingsProvider).ttsPreferences.silenceTrim,
+            onSilenceTrimChanged: (value) =>
+                setState(() => _silenceTrim = value),
             usesEmbeddedConversion: _usesEmbeddedConversion,
             onEngineChanged: (value) => setState(() => _engine = value),
             onAllowSecondaryChanged: (value) =>

@@ -1797,6 +1797,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read {date}'**
   String libraryMetaLastRead(String date);
+
+  /// No description provided for @silenceTrimLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Silence trimming'**
+  String get silenceTrimLabel;
+
+  /// No description provided for @silenceTrimDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Shorter pauses in new audio. Existing audio changes only when converted again. Titles and chapter ends keep their pauses.'**
+  String get silenceTrimDescription;
+
+  /// No description provided for @silenceTrimOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get silenceTrimOff;
+
+  /// No description provided for @silenceTrimLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get silenceTrimLight;
+
+  /// No description provided for @silenceTrimMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get silenceTrimMedium;
+
+  /// No description provided for @silenceTrimStrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Strong'**
+  String get silenceTrimStrong;
 }
 
 class _AppLocalizationsDelegate

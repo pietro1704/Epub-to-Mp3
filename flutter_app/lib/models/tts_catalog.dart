@@ -101,7 +101,7 @@ class TtsCatalog {
     return TtsPreferences(primary: capture(preferences.primary),
       secondary: preferences.secondary == null ? null : capture(preferences.secondary!),
       allowOnlineFallback: preferences.allowOnlineFallback, policyVersion: preferences.policyVersion,
-      footnoteNarration: preferences.footnoteNarration);
+      footnoteNarration: preferences.footnoteNarration, silenceTrim: preferences.silenceTrim);
   }
   List<TtsSelection> selections({String? target, int? androidApi}) {
     return _selections(target: target, androidApi: androidApi, includeLow: false);
