@@ -31,7 +31,7 @@ final class GoToReadingVisualDeviceUITests: XCTestCase {
         let toolbarListen = app.navigationBars.buttons["reader.listen"].firstMatch
         XCTAssertTrue(toolbarListen.waitForExistence(timeout: 10))
         toolbarListen.tap()
-        let fromPage = app.buttons["Listen from this page"].firstMatch
+        let fromPage = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Listen from this page")).firstMatch
         if fromPage.waitForExistence(timeout: 5) { fromPage.tap() }
         let open = app.buttons["miniPlayer.open"].firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 90), "Listening must show the mini player.")
