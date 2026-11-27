@@ -4,6 +4,11 @@ use crate::epub::{Book, Chapter};
 use pdf_extract::{decode_text_string, Document, Object, PlainTextOutput};
 use std::path::Path;
 
+/// A page needs this many non-space characters to count as having a text layer.
+const MIN_READABLE_CHARS: usize = 20;
+/// Books shorter than this are never judged as scans (a cover plus a few short pages).
+const MIN_PAGES_FOR_SCAN_CHECK: usize = 5;
+
 pub(crate) const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
 
 pub struct PdfTextIngestion;
@@ -53,6 +58,7 @@ impl PdfTextIngestion {
         let mut total = 0usize;
         let mut skipped_pages = 0usize;
         let mut drawn_without_text = false;
+        let mut readable_pages = 0usize;
         for (number, page_id) in &pages {
             if cancelled() {
                 return Err(IngestionError::Cancelled);
@@ -67,13 +73,22 @@ impl PdfTextIngestion {
                 skipped_pages += 1;
                 drawn_without_text |= has_drawn_content(&doc, *page_id)?;
             }
+            if page.chars().filter(|c| !c.is_whitespace()).count() >= MIN_READABLE_CHARS {
+                readable_pages += 1;
+            } else if !page.trim().is_empty() {
+                // A stray mark on a scanned page is not a text layer.
+                drawn_without_text |= has_drawn_content(&doc, *page_id)?;
+            }
             total = total.saturating_add(page.len());
             if total > 32 * 1024 * 1024 {
                 return Err(invalid("PDF extracted text exceeds the 32 MiB limit"));
             }
             text.push(page);
         }
-        if skipped_pages == text.len() {
+        // A scan with an OCR artefact or two per page has pages, but nothing to narrate.
+        let nearly_textless = text.len() >= MIN_PAGES_FOR_SCAN_CHECK
+            && readable_pages.saturating_mul(20) < text.len();
+        if skipped_pages == text.len() || nearly_textless {
             if drawn_without_text {
                 return Err(invalid(
                     "No PDF page has selectable text; OCR is required before narration",

@@ -368,3 +368,85 @@ fn pdf_blank_line_is_still_a_paragraph_break() {
     let chapter = ingest("Primeiro paragrafo sem ponto\n\nSegundo paragrafo");
     assert_eq!(ends_text(&chapter).len(), 2);
 }
+
+fn outline_edit(change: impl Fn(&str, &mut String)) -> Vec<u8> {
+    fixture::pdf_with(true, &["First", "Second", "Third"], |objects| {
+        for object in objects.iter_mut() {
+            if object.contains("/Title (First section)") {
+                change("first", object);
+            } else if object.contains("/Title (Second section)") {
+                change("second", object);
+            }
+        }
+    })
+}
+
+#[test]
+fn pdf_outline_item_with_a_goto_action_array_resolves() {
+    let source = outline_edit(|which, object| {
+        if which == "first" {
+            *object = object.replace("/Dest [3 0 R /Fit]", "/A << /S /GoTo /D [3 0 R /Fit] >>");
+        }
+    });
+    let session = open_bytes(&source).expect("an /A GoTo array destination must resolve");
+    assert_eq!(session.metadata().chapters[0].name, "First section");
+}
+
+#[test]
+fn pdf_outline_item_without_a_destination_is_skipped_not_fatal() {
+    let source = outline_edit(|which, object| {
+        if which == "second" {
+            let start = object.find("/Dest").unwrap();
+            let end = object[start..].find("]").unwrap() + start + 1;
+            object.replace_range(start..end, "");
+        }
+    });
+    let session = open_bytes(&source).expect("one bad item must not drop the book");
+    assert_eq!(session.metadata().chapters[0].name, "First section");
+}
+
+#[test]
+fn pdf_outline_items_on_one_page_all_stay_in_the_contents_list() {
+    let source = outline_edit(|which, object| {
+        if which == "second" {
+            *object = object.replace("/Dest [5 0 R /Fit]", "/Dest [3 0 R /Fit]");
+        }
+    });
+    let session = open_bytes(&source).unwrap();
+    let toc: Vec<_> = session
+        .metadata()
+        .toc
+        .iter()
+        .map(|t| t.title.clone())
+        .collect();
+    assert_eq!(toc, ["First section", "Second section"]);
+}
+
+#[test]
+fn pdf_scan_with_a_stray_character_per_page_fails_with_the_ocr_required_code() {
+    let pages = ["."; 8];
+    let source = fixture::pdf_with(false, &pages, |objects| {
+        let image = objects.len() + 1;
+        objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\nxyz\nendstream".into());
+        for position in 0..pages.len() {
+            let page = 2 + position * 2;
+            objects[page] = objects[page].replace(
+                "/Resources <<",
+                &format!("/Resources << /XObject << /Im0 {image} 0 R >>"),
+            );
+            let content = "BT /F1 12 Tf 50 700 Td (.) Tj ET q 100 0 0 100 20 20 cm /Im0 Do Q";
+            objects[page + 1] = format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            );
+        }
+    });
+    let error = converter_core::book_input::parse_book_source_with_cancel(
+        std::path::Path::new("scanned.pdf"),
+        &source,
+        &|| false,
+    )
+    .expect_err("a scan with one stray character per page needs OCR, not empty chapters");
+    let worker = converter_core::worker::WorkerError::from(error);
+    assert_eq!(worker.code(), "pdf_ocr_required", "{worker}");
+}

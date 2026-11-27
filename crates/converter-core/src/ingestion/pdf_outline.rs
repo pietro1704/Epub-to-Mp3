@@ -89,31 +89,33 @@ impl Parser<'_> {
                 .and_then(|value| decode_text_string(value).ok())
                 .filter(|s| !s.trim().is_empty())
                 .ok_or_else(|| invalid("PDF outline title is missing"))?;
-            let destination = if let Ok(dest) = node.get(b"Dest") {
-                dest
-            } else {
-                let action = dictionary(
-                    self.doc,
-                    node.get(b"A")
-                        .map_err(|_| invalid("PDF outline destination is missing"))?,
-                )?;
-                if action.get(b"S").and_then(Object::as_name).ok() != Some(b"GoTo".as_slice()) {
-                    return Err(invalid("PDF outline destination is not a local page"));
+            let page = match self.item_page(node) {
+                Ok(page) => page,
+                // One unusable item (no destination, a remote action, a dangling named
+                // destination) must not drop the book: skip it and keep its children.
+                Err(error) if is_skippable(&error) => {
+                    if let Ok(first) = node.get(b"First") {
+                        nodes.extend(self.walk(first, level + 1)?);
+                    }
+                    next = node.get(b"Next").ok();
+                    continue;
                 }
-                action
-                    .get(b"D")
-                    .map_err(|_| invalid("PDF outline destination is missing"))?
+                Err(error) => return Err(error),
             };
-            let page = self.page(destination)?;
             if self.previous_page.is_some_and(|previous| page < previous) {
                 return Err(invalid(
                     "PDF outline page order is not monotonic; review the source index",
                 ));
             }
             self.previous_page = Some(page);
-            self.starts
-                .entry(page)
-                .or_insert_with(|| (title.clone(), level));
+            // Several items may open on one page (an alphabetic index): the page keeps its
+            // shallowest item as the chapter title; every item stays in the contents list.
+            match self.starts.get(&page) {
+                Some((_, existing)) if *existing <= level => {}
+                _ => {
+                    self.starts.insert(page, (title.clone(), level));
+                }
+            }
             let children = if let Ok(first) = node.get(b"First") {
                 self.walk(first, level + 1)?
             } else {
@@ -128,6 +130,24 @@ impl Parser<'_> {
             next = node.get(b"Next").ok();
         }
         Ok(nodes)
+    }
+    fn item_page(&self, node: &Dictionary) -> Result<usize, IngestionError> {
+        let destination = if let Ok(dest) = node.get(b"Dest") {
+            dest
+        } else {
+            let action = dictionary(
+                self.doc,
+                node.get(b"A")
+                    .map_err(|_| invalid("PDF outline destination is missing"))?,
+            )?;
+            if action.get(b"S").and_then(Object::as_name).ok() != Some(b"GoTo".as_slice()) {
+                return Err(invalid("PDF outline destination is not a local page"));
+            }
+            action
+                .get(b"D")
+                .map_err(|_| invalid("PDF outline destination is missing"))?
+        };
+        self.page(destination)
     }
     fn page(&self, value: &Object) -> Result<usize, IngestionError> {
         let mut value = value;
@@ -206,4 +226,21 @@ impl Parser<'_> {
         }
         Err(invalid("PDF named destination was not found"))
     }
+}
+
+fn is_skippable(error: &IngestionError) -> bool {
+    let IngestionError::InvalidInput { message } = error else {
+        return false;
+    };
+    [
+        "destination is missing",
+        "destination is not a local page",
+        "Invalid PDF outline destination",
+        "does not reference a page",
+        "named destination was not found",
+        "named destinations are missing",
+        "Invalid PDF named destination",
+    ]
+    .iter()
+    .any(|known| message.contains(known))
 }
