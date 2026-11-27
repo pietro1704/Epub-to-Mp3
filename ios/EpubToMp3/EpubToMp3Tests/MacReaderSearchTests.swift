@@ -11,6 +11,7 @@ final class MacReaderSearchTests: XCTestCase {
         let reader = try await openReader()
         defer { reader.close() }
         reader.controller.annotations.performSearch(query: "needle")
+        await reader.controller.annotations.searchTask?.value
         XCTAssertEqual(reader.selectedText(), "needle")
     }
 
@@ -18,6 +19,7 @@ final class MacReaderSearchTests: XCTestCase {
         let reader = try await openReader()
         defer { reader.close() }
         reader.controller.annotations.performSearch(query: "haystack")
+        await reader.controller.annotations.searchTask?.value
         XCTAssertEqual(reader.selectedText(), "haystack")
         XCTAssertTrue(reader.text.string.contains("Second chapter preface"))
     }

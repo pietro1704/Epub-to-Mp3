@@ -9,6 +9,7 @@ final class MacReaderAnnotationsPresentation: NSObject {
     private let bookmarkStore: BookmarkStore
     private let persistReadingProgress: () -> Void
     private let showChapter: (Int) -> Void
+    private(set) var searchTask: Task<Void, Never>?
     private var textView: MacReaderTextView { composition.textView }
     private var view: NSView { composition.view }
     private var selectedChapter: Int {
@@ -215,36 +216,64 @@ private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
     }
 
     func performSearch(query: String) {
-        guard let chapters = fulltext?.chapters, !chapters.isEmpty else { return }
-        let order = Array(chapters.indices.dropFirst(selectedChapter))
-            + Array(chapters.indices.prefix(selectedChapter + 1))
-        for chapterIndex in order where !chapters[chapterIndex].isImageOnly {
-            // The parser text only picks candidate chapters. The selection
-            // range must come from the rendered text the view shows, whose
-            // offsets differ from the parser text for HTML chapters.
-            if chapterIndex != selectedChapter {
-                let parserText = chapters[chapterIndex].text as NSString
-                guard parserText.range(of: query, options: .caseInsensitive).location != NSNotFound else { continue }
-                persistReadingProgress()
-                selectedChapter = chapterIndex
-                showChapter(chapterIndex)
-            }
-            let range = (textView.string as NSString).range(of: query, options: .caseInsensitive)
-            guard range.location != NSNotFound else { continue }
-            textView.setSelectedRange(range)
-            if MacReaderTextLayout.showsColumns(textView),
-               let height = textView.enclosingScrollView?.contentView.bounds.height,
-               let line = MacReaderTextLayout.lineRect(forCharacterAt: range.location, in: textView) {
-                textView.scroll(NSPoint(x: 0, y: (line.minY / height).rounded(.down) * height))
-            } else {
-                textView.scrollRangeToVisible(range)
-            }
-            return
+        searchTask?.cancel()
+        guard let book = fulltext, !book.chapters.isEmpty else { return }
+        let origin = selectedChapter
+        // The current chapter is matched against what the view shows; the
+        // parser text of the others only picks candidates.
+        let sources = book.chapters.enumerated().filter { !$0.element.isImageOnly }.map {
+            ReaderBookSearch.Chapter(position: $0.offset,
+                                     text: $0.offset == origin ? textView.string : $0.element.text)
         }
+        searchTask = Task { [weak self] in
+            let worker = Task.detached(priority: .userInitiated) {
+                ReaderBookSearch.candidates(query: query, chapters: sources, startingAt: origin,
+                    isCancelled: { Task.isCancelled })
+            }
+            let candidates = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard let self, !Task.isCancelled, fulltext?.jobId == book.jobId, selectedChapter == origin else { return }
+            if !candidates.isEmpty { persistReadingProgress() }
+            for chapter in candidates {
+                if chapter != selectedChapter {
+                    selectedChapter = chapter
+                    showChapter(chapter)
+                }
+                // The selection range must come from the rendered text, whose
+                // offsets differ from the parser text for HTML chapters.
+                guard let range = ReaderBookSearch.firstRange(query: query, in: textView.string) else { continue }
+                select(range)
+                return
+            }
+            if selectedChapter != origin {
+                selectedChapter = origin
+                showChapter(origin)
+            }
+            showNoSearchResults()
+        }
+    }
+
+    private func select(_ range: NSRange) {
+        textView.setSelectedRange(range)
+        if MacReaderTextLayout.showsColumns(textView),
+           let height = textView.enclosingScrollView?.contentView.bounds.height,
+           let line = MacReaderTextLayout.lineRect(forCharacterAt: range.location, in: textView) {
+            textView.scroll(NSPoint(x: 0, y: (line.minY / height).rounded(.down) * height))
+        } else {
+            textView.scrollRangeToVisible(range)
+        }
+    }
+
+    private func showNoSearchResults() {
         let alert = NSAlert()
         alert.messageText = L10n.string("reader.search.noResults")
         alert.addButton(withTitle: L10n.string("common.ok"))
-        alert.runModal()
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
 }
