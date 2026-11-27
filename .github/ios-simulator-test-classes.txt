@@ -4,8 +4,10 @@ AppLaunchEnvironmentTests
 BookLanguageSheetSummaryTests
 BookReadingPreferencesTests
 BookVoiceOverrideTests
+CompactSliderTests
 FullPlayerContentsTests
 FullPlayerFittingTests
+FullPlayerGoToReadingTests
 GlobalVoiceMigrationTests
 IOSAppShellTests
 IOSMainReaderControllerTests
@@ -24,6 +26,7 @@ NativePlaybackFeedbackTests
 PlatformSettingsCellTests
 PlaybackBindingStoreTests
 PlaybackTransportStateTests
+PlayerPlaybackClockTests
 ReaderChapterPositionTests
 ReaderChromeOverlayTests
 ReaderContentsSheetTests
