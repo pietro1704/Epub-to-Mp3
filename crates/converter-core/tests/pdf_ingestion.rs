@@ -647,3 +647,38 @@ fn pdf_layout_file_slug_lines_are_never_narrated() {
         book.chapters.iter().map(|c| &c.text).collect::<Vec<_>>()
     );
 }
+
+fn two_entry_outline_book(page_count: usize) -> converter_core::epub::Book {
+    // The fixture outline points at pages 1 and 3 whatever the document length.
+    let pages: Vec<String> = (0..page_count)
+        .map(|n| {
+            let body = format!("Texto corrido {} do livro sintetico.", "a".repeat(n + 1));
+            match n {
+                4 => format!("Capitulo 1\n{body}"),
+                14 => format!("Capitulo 2\n{body}"),
+                _ => body,
+            }
+        })
+        .collect();
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(
+        std::path::Path::new("sintetico.pdf"),
+        &fixture::pdf(true, &refs),
+    )
+    .unwrap()
+}
+
+#[test]
+fn pdf_outline_covering_only_the_first_pages_is_treated_like_no_outline() {
+    let book = two_entry_outline_book(30);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
+    assert!(book.toc.is_empty());
+}
+
+#[test]
+fn pdf_outline_reaching_a_tenth_of_the_document_is_kept() {
+    let book = two_entry_outline_book(20);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["First section", "Second section"]);
+}

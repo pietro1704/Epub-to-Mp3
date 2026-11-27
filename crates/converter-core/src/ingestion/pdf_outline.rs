@@ -49,7 +49,7 @@ pub(super) fn structure(
     let toc = parser.walk(first, 1)?;
     // A lone entry (usually the cover) is no table of contents: it would make the whole
     // book one chapter. An outline with more entries stays, even if only one is usable.
-    if parser.seen.len() == 1 {
+    if parser.seen.len() == 1 || covers_only_the_front(&parser.starts, pages.len()) {
         return Ok((Vec::new(), Vec::new()));
     }
     if let Some((&page, _)) = parser.starts.first_key_value() {
@@ -65,6 +65,17 @@ pub(super) fn structure(
             .map(|(page, (title, level))| (page, title, level))
             .collect(),
     ))
+}
+/// Shorter documents may legitimately keep every entry near the front.
+const MIN_PAGES_FOR_COVERAGE: usize = 20;
+
+/// In a long document, an outline whose last chapter opens within the first tenth only
+/// lists front matter: the last "chapter" would hold the rest of the book.
+fn covers_only_the_front(starts: &BTreeMap<usize, (String, u32)>, page_count: usize) -> bool {
+    page_count >= MIN_PAGES_FOR_COVERAGE
+        && starts
+            .last_key_value()
+            .is_some_and(|(&last, _)| last * 10 < page_count)
 }
 struct Parser<'a> {
     doc: &'a Document,
