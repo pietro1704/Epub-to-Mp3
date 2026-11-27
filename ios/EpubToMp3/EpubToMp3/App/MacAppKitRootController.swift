@@ -100,6 +100,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
         playbackSession.observePlayback()
+        playbackSession.readerChapterEstimates = { [weak self] bookID in
+            guard self?.player.location.readingBookID == bookID else { return [:] }
+            return (self?.detailController as? MacReaderViewController)?.pdfChapterEstimates ?? [:]
+        }
         // The Settings speed and the player's speed are one preference.
         settings.$playbackRate.removeDuplicates()
             .sink { [weak player] rate in
