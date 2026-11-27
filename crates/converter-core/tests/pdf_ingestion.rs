@@ -823,3 +823,14 @@ fn pdf_without_outline_never_titles_a_chapter_with_a_decorative_line() {
         book.chapters[0].name
     );
 }
+
+#[test]
+fn pdf_without_outline_names_marker_chapters_with_their_real_title() {
+    let book = ingest_pages(&[
+        "Capitulo 1\nA Chegada\nTexto da primeira pagina com palavras suficientes para narrar.",
+        "Mais texto do primeiro capitulo com palavras suficientes para narrar.",
+        "Capitulo 2\n✤✤✤\nTexto do segundo capitulo com palavras suficientes para narrar.",
+    ]);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Capitulo 1 — A Chegada", "Capitulo 2"]);
+}

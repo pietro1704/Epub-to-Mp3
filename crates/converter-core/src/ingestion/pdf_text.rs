@@ -302,7 +302,17 @@ fn heading_starts(pages: &[String]) -> Vec<(usize, String, u32)> {
         let mut lines = page.lines().map(str::trim).filter(|l| !l.is_empty());
         let first = lines.next().filter(|l| is_heading_line(l))?;
         let markers = page.lines().filter(|l| is_heading_line(l)).count();
-        (markers < 3).then(|| first.to_string())
+        // The real chapter name is the short line right after the marker, if any.
+        let name = lines.next().filter(|l| {
+            is_titleable(l)
+                && !is_heading_line(l)
+                && l.chars().count() <= 60
+                && !l.ends_with(['.', ',', ';', ':'])
+        });
+        (markers < 3).then(|| match name {
+            Some(name) => format!("{first} — {name}"),
+            None => first.to_string(),
+        })
     };
     let found: Vec<(usize, String)> = pages
         .iter()
