@@ -37,9 +37,9 @@ final class ReaderPagePlaybackChoiceUITests: XCTestCase {
         XCTAssertTrue(wait(timeout: 5) { mini.label == "Play" })
         try turnPage(in: app, harness: harness, forward: true)
         mini.tap()
-        let currentPage = app.sheets.buttons["Listen from this page"].firstMatch
+        let currentPage = app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Listen from this page")).firstMatch
         XCTAssertTrue(currentPage.waitForExistence(timeout: 5), "Paused Play must offer the newly visible page.")
-        XCTAssertTrue(app.sheets.buttons["Continue where I left off"].firstMatch.exists)
+        XCTAssertTrue(app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to the audio")).firstMatch.exists)
         currentPage.tap()
         app.buttons["miniPlayer.open"].firstMatch.tap()
         let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
@@ -52,7 +52,7 @@ final class ReaderPagePlaybackChoiceUITests: XCTestCase {
         closePlayer.tap()
         try turnPage(in: app, harness: harness, forward: false)
         mini.tap()
-        let continuation = app.sheets.buttons["Continue where I left off"].firstMatch
+        let continuation = app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to the audio")).firstMatch
         XCTAssertTrue(continuation.waitForExistence(timeout: 5))
         continuation.tap()
         app.buttons["miniPlayer.open"].firstMatch.tap()
@@ -119,8 +119,8 @@ final class ReaderPagePlaybackChoiceUITests: XCTestCase {
         XCTAssertTrue(wait(timeout: 5) { mini.label == "Reproduzir" })
         try turnPage(in: app, harness: harness, forward: true)
         mini.tap()
-        let continuation = app.sheets.buttons["Continuar de onde parei"].firstMatch
-        let page = app.sheets.buttons["Ouvir a partir desta página"].firstMatch
+        let continuation = app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Voltar ao áudio")).firstMatch
+        let page = app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ouvir desta página")).firstMatch
         XCTAssertTrue(continuation.waitForExistence(timeout: 5))
         XCTAssertTrue(page.exists)
         XCTAssertEqual(app.sheets.buttons.count, 3)

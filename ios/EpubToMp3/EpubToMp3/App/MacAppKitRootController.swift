@@ -370,11 +370,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             case .resume: player.resume()
             case .startFromReaderPage: playCurrentReaderPage()
             case .offerStartChoice:
+                let copy = player.resumeChoiceCopy(readerChapterIndex: chapterIndex)
                 let alert = NSAlert()
                 alert.messageText = L10n.string("player.divergence.title")
-                alert.informativeText = L10n.string("player.divergence.message")
-                alert.addButton(withTitle: L10n.string("player.divergence.fromWhereStopped"))
-                alert.addButton(withTitle: L10n.string("player.divergence.fromCurrentPage"))
+                alert.informativeText = copy.message
+                alert.addButton(withTitle: copy.returnTitle)
+                alert.addButton(withTitle: copy.listenTitle)
                 alert.addButton(withTitle: L10n.string("common.cancel"))
                 let resolve: (NSApplication.ModalResponse) -> Void = { [weak self] response in
                     guard let self else { return }

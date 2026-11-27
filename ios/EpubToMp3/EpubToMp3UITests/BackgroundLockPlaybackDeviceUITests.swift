@@ -59,7 +59,7 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         if fullPlay.label != "Pause" { fullPlay.tap() }
         // A reader position that differs from the audio asks where to continue;
         // keep the audio position (observed on the 16e with a bound PDF book).
-        let continueAudio = app.buttons["Continue where I left off"].firstMatch
+        let continueAudio = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to the audio")).firstMatch
         if continueAudio.waitForExistence(timeout: 5) { continueAudio.tap() }
         log.append("START full-player button label after tap: \(fullPlay.label)")
         let elapsedLabel = app.staticTexts["fullPlayer.elapsed"].firstMatch
@@ -202,7 +202,7 @@ final class BackgroundLockPlaybackDeviceUITests: XCTestCase {
         let toolbarListen = app.navigationBars.buttons["reader.listen"].firstMatch
         XCTAssertTrue(toolbarListen.waitForExistence(timeout: 10), "The reader toolbar must expose Listen.")
         toolbarListen.tap()
-        let fromPage = app.buttons["Listen from this page"].firstMatch
+        let fromPage = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Listen from this page")).firstMatch
         if fromPage.waitForExistence(timeout: 5) { fromPage.tap() }
         let open = app.buttons["miniPlayer.open"].firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 60), "Listening must show the mini player.")

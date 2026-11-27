@@ -31,6 +31,7 @@ final class AudioPlayer: ObservableObject {
     var currentChapterIndex: Int { services.queue.currentChapterIndex }
     var currentPlaybackChapter: JobSnapshot.Chapter? { services.observation.currentChapterValue }
     @Published private(set) var activeStreamingChapterIndex: Int?
+    var readerPages: ReaderPageSource?
     @Published private(set) var isPlaying: Bool = false
     private(set) var hasPausedPlaybackToResume = false
 

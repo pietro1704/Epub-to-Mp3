@@ -102,8 +102,8 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
         let alert = try XCTUnwrap(presenter.presentedViewController as? UIAlertController,
                                  "Play after a page turn must ask before resuming the old passage.")
         XCTAssertEqual(alert.actions.map(\.title), [
-            L10n.string("player.divergence.fromWhereStopped"),
-            L10n.string("player.divergence.fromCurrentPage"),
+            player.resumeChoiceCopy(readerChapterIndex: 0).returnTitle,
+            player.resumeChoiceCopy(readerChapterIndex: 0).listenTitle,
             L10n.string("common.cancel")
         ])
         XCTAssertEqual(alert.actions.last?.style, .cancel)
