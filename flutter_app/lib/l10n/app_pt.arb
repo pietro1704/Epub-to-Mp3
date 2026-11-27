@@ -337,5 +337,15 @@
   "resumeChoiceTitle": "Continuar de onde?",
   "resumeChoiceMessage": "Você está no cap. {reader}. O áudio parou no cap. {audio} ({time}).",
   "resumeChoiceFromHere": "Ouvir daqui (cap. {reader})",
-  "resumeChoiceBackToAudio": "Voltar ao áudio (cap. {audio}, {time})"
+  "resumeChoiceBackToAudio": "Voltar ao áudio (cap. {audio}, {time})",
+  "manualAddToLibrary": "Adicionar à biblioteca",
+  "manualAddedToLibrary": "Adicionado à biblioteca com o áudio.",
+  "manualExportAudio": "Exportar áudio",
+  "manualExportOneFile": "Um arquivo para o livro todo",
+  "manualExportPerChapter": "Um arquivo por capítulo (NN - título)",
+  "manualExportNeedsPiper": "A exportação em MP3 precisa da voz Piper. Este áudio não foi narrado com Piper.",
+  "manualExportChooseFolder": "Escolher pasta",
+  "manualExportDone": "{count, plural, =1{1 arquivo exportado.} other{{count} arquivos exportados.}}",
+  "@manualExportDone": { "placeholders": { "count": { "type": "int" } } },
+  "manualExportFailed": "Não foi possível exportar o áudio."
 }

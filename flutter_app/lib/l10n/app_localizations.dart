@@ -1875,6 +1875,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to the audio (chapter {audio}, {time})'**
   String resumeChoiceBackToAudio(String audio, String time);
+
+  /// No description provided for @manualAddToLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to library'**
+  String get manualAddToLibrary;
+
+  /// No description provided for @manualAddedToLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to the library with its audio.'**
+  String get manualAddedToLibrary;
+
+  /// No description provided for @manualExportAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Export audio'**
+  String get manualExportAudio;
+
+  /// No description provided for @manualExportOneFile.
+  ///
+  /// In en, this message translates to:
+  /// **'One file for the whole book'**
+  String get manualExportOneFile;
+
+  /// No description provided for @manualExportPerChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'One file per chapter (NN - title)'**
+  String get manualExportPerChapter;
+
+  /// No description provided for @manualExportNeedsPiper.
+  ///
+  /// In en, this message translates to:
+  /// **'MP3 export needs the Piper voice. This audio was not narrated with Piper.'**
+  String get manualExportNeedsPiper;
+
+  /// No description provided for @manualExportChooseFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose folder'**
+  String get manualExportChooseFolder;
+
+  /// No description provided for @manualExportDone.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file exported.} other{{count} files exported.}}'**
+  String manualExportDone(int count);
+
+  /// No description provided for @manualExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not export the audio.'**
+  String get manualExportFailed;
 }
 
 class _AppLocalizationsDelegate

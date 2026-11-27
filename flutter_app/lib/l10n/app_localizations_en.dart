@@ -1033,4 +1033,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String resumeChoiceBackToAudio(String audio, String time) {
     return 'Back to the audio (chapter $audio, $time)';
   }
+
+  @override
+  String get manualAddToLibrary => 'Add to library';
+
+  @override
+  String get manualAddedToLibrary => 'Added to the library with its audio.';
+
+  @override
+  String get manualExportAudio => 'Export audio';
+
+  @override
+  String get manualExportOneFile => 'One file for the whole book';
+
+  @override
+  String get manualExportPerChapter => 'One file per chapter (NN - title)';
+
+  @override
+  String get manualExportNeedsPiper =>
+      'MP3 export needs the Piper voice. This audio was not narrated with Piper.';
+
+  @override
+  String get manualExportChooseFolder => 'Choose folder';
+
+  @override
+  String manualExportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files exported.',
+      one: '1 file exported.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get manualExportFailed => 'Could not export the audio.';
 }
