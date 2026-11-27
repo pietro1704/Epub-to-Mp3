@@ -327,7 +327,7 @@
 
 /* === JobsListView === */
 "jobs.title" = "Jobs";
-"jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
+"jobs.noConversionsDescription" = "No conversions yet. Use Convert to generate a book's audio.";
 "jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";
