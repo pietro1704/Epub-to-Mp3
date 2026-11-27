@@ -41,6 +41,20 @@ final class AppIsolationTests: XCTestCase {
         XCTAssertEqual(bookmarks.bookmarks.map(\.bookId), ["real-book"])
     }
 
+    /// iOS keeps the real home while isolated, so the imported book copies must be redirected on their own:
+    /// otherwise a seeded UI test book is written next to the listener's books.
+    func testIsolatedLaunchKeepsImportedBookFilesInTheThrowawayHome() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("isolation-imports-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let root = AppIsolation.activate(temporaryDirectory: temporary, redirectHome: false)
+
+        let imports = try LibraryImportFiles.importedBooksDirectory(fileManager: .default, baseDirectory: nil)
+
+        XCTAssertTrue(imports.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"),
+                      "Imported books must stay in the throwaway home, got \(imports.path)")
+    }
+
     #if os(macOS)
     private func isUnder(_ url: URL, _ root: URL) -> Bool {
         url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/")

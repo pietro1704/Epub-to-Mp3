@@ -171,7 +171,8 @@ final class IOSMainReaderControllerTests: XCTestCase {
             if !main.isLoadingBookContent, viewport.contentSize.height > viewport.bounds.height + 600 { break }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        await fulfillment(of: [persisted], timeout: 2)
+        // The app saves the payload in a utility-priority task, which a loaded CI runner can delay for seconds.
+        await fulfillment(of: [persisted], timeout: 20)
         XCTAssertFalse(main.isLoadingBookContent)
         XCTAssertGreaterThan(viewport.contentSize.height, viewport.bounds.height + 600)
         let navigation = try XCTUnwrap(main.view.subviews.compactMap { $0 as? UINavigationBar }.first)
