@@ -182,6 +182,9 @@ fn parse_epub_document<R: Read + Seek>(
         })
         .map(|(candidate, _)| candidate.clone());
 
+    let nav_path = nav_href
+        .as_ref()
+        .map(|href| resolve_resource_path(opf_dir, href));
     let toc = if let Some(href) = nav_href {
         parse_nav(&read_document(
             &mut archive,
@@ -220,6 +223,10 @@ fn parse_epub_document<R: Read + Seek>(
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
         let html = read_document(&mut archive, &path, &mut budget, reader_mode)?;
+        // The navigation document lists the book; narrating it would read the contents aloud.
+        if nav_path.as_deref() == Some(path.as_str()) || is_toc_document(&html) {
+            continue;
+        }
         let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
         // A generated title page often carries the tool's language, not the book's.
         let title_page = href.to_ascii_lowercase().contains("titlepage");
@@ -240,6 +247,13 @@ fn parse_epub_document<R: Read + Seek>(
             orphan += 1;
             orphan.to_string()
         };
+        // With a TOC, a spine file it never mentions continues the chapter before it.
+        let continues = !indices.is_empty()
+            && !indices.contains_key(key)
+            && !text.trim().is_empty()
+            && chapters
+                .last()
+                .is_some_and(|previous: &Chapter| !previous.text.trim().is_empty());
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
@@ -250,7 +264,28 @@ fn parse_epub_document<R: Read + Seek>(
             &mut footnote_targets,
         );
         let note_marks = note_marks(&html, &found);
-        let footnotes = found.into_iter().map(|(note, _)| note).collect();
+        let footnotes: Vec<_> = found.into_iter().map(|(note, _)| note).collect();
+        if continues {
+            let previous: &mut Chapter = chapters.last_mut().expect("checked above");
+            let base = previous.text.chars().count() + 1;
+            previous.text.push(' ');
+            previous.text.push_str(&text);
+            previous
+                .paragraph_ends
+                .extend(paragraph_ends.iter().map(|end| end + base));
+            previous
+                .heading_ends
+                .extend(heading_ends.iter().map(|end| end + base));
+            previous
+                .note_marks
+                .extend(note_marks.into_iter().map(|mut mark| {
+                    mark.reference_end += base;
+                    mark.body = mark.body.map(|body| body.start + base..body.end + base);
+                    mark
+                }));
+            previous.footnotes.extend(footnotes);
+            continue;
+        }
         chapters.push(Chapter {
             index,
             name: toc_title
@@ -281,6 +316,12 @@ fn parse_epub_document<R: Read + Seek>(
         cover_mime,
         skipped_pages: 0,
     })
+}
+
+/// True for an EPUB 3 navigation document or any page that is only the contents list.
+fn is_toc_document(html: &str) -> bool {
+    let lower = html.to_ascii_lowercase();
+    lower.contains("epub:type=\"toc\"") || lower.contains("role=\"doc-toc\"")
 }
 
 /// Join each reference position with the note body it links to (by link fragment).
@@ -402,3 +443,7 @@ mod tests;
 #[cfg(test)]
 #[path = "epub/epub_footnotes_tests.rs"]
 mod footnote_tests;
+
+#[cfg(test)]
+#[path = "epub/epub_spine_toc_tests.rs"]
+mod spine_toc_tests;
