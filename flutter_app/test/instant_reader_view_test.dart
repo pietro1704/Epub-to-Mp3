@@ -70,6 +70,18 @@ void main() {
       expect(find.text('Dedication'), findsOneWidget);
     });
 
+    testWidgets('rebuilding the same chapter splits its sentences once', (t) async {
+      final prefs = await _mockPrefs();
+      final fulltext = _sampleFulltext();
+      FulltextChapter.splitSentencesCalls = 0;
+      for (var i = 0; i < 20; i++) {
+        // A narrated word moves the highlight and rebuilds the reader like this.
+        await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: fulltext)));
+        await t.pump();
+      }
+      expect(FulltextChapter.splitSentencesCalls, lessThanOrEqualTo(1));
+    });
+
     testWidgets('shows settings button', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(

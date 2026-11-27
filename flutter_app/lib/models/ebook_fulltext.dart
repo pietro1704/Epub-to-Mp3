@@ -89,7 +89,12 @@ abstract class FulltextChapter with _$FulltextChapter {
         .replaceAll('￾', '\n\n');
   }
 
+  /// Counts splits so a test can prove a rebuild does not repeat the work.
+  @visibleForTesting
+  static int splitSentencesCalls = 0;
+
   List<SentenceSpan> splitSentences() {
+    splitSentencesCalls++;
     final collapsed = collapseHardWraps(text);
     final spans = <SentenceSpan>[];
     final chars = collapsed.runes.toList();

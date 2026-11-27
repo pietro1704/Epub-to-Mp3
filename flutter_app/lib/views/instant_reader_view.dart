@@ -88,6 +88,17 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   StreamSubscription<TextRange?>? _measuredSubscription;
   TextRange? _measuredRange;
   Object? _measuredIdentity;
+  FulltextChapter? _spansChapter;
+  List<SentenceSpan> _spans = const [];
+
+  /// A highlight change rebuilds the reader; the split is O(chapter), so it is kept per chapter.
+  List<SentenceSpan> _sentenceSpans(FulltextChapter chapter) {
+    if (!identical(_spansChapter, chapter)) {
+      _spansChapter = chapter;
+      _spans = chapter.splitSentences();
+    }
+    return _spans;
+  }
 
   void _bindMeasuredPlayback(FulltextChapter chapter) {
     final identity = (
@@ -342,7 +353,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
         player.chapters[queueIndex].index ==
             widget.fulltext.chapters.indexOf(chapter);
     _bindMeasuredPlayback(chapter);
-    final spans = chapter.splitSentences();
+    final spans = _sentenceSpans(chapter);
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
       custom: settings.readerCustomColors,
