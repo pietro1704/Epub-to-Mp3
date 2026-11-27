@@ -16,7 +16,7 @@ members = [
 edition = "2021"
 license = "MIT"
 # Product version: the single release version source (ruby_app/rails_gateway/VERSION mirrors it).
-version = "0.14.2"
+version = "0.15.0"
 
 [workspace.dependencies]
 serde = "1"

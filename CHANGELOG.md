@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.15.0] — 2026-11-27
+
+### Bug Fixes
+
+- Decorative lines never become automatic chapter titles (#1716) ([640a5b7](https://github.com/pietro1704/Epub-to-Mp3/commit/640a5b7f1bc702a0f4b57b18baea5295e5104ec9))
+- Keep the projected highlight within one playback sample (#1714) ([15ab2cf](https://github.com/pietro1704/Epub-to-Mp3/commit/15ab2cf4d35be88ff3947103dd6dd69bc350cece))
+- PDF fills the width in landscape instead of a tiny whole-page fit (#1717) ([e70b3cd](https://github.com/pietro1704/Epub-to-Mp3/commit/e70b3cda9d26a4ec838bc85895f085717f4d1cb9))
+- One unreadable image page no longer rejects the book; client OCR hook for text-less pages (#1715) ([d13b394](https://github.com/pietro1704/Epub-to-Mp3/commit/d13b3944e1946f70ef7124fb36f73ea19dfac5b3))
+- Keep the running job when a skip stays inside a streamed suffix (#1710) ([66fc2cb](https://github.com/pietro1704/Epub-to-Mp3/commit/66fc2cbb265a49457c2288771122ff02388083c4))
+- Keep running progress below 100 until the final result (#1709) ([9960c2b](https://github.com/pietro1704/Epub-to-Mp3/commit/9960c2b06684fc62ac542b7ce76a171221400028))
+
+### CI
+
+- Bump ruby/setup-ruby from 1.343.0 to 1.344.0 in the actions group (#1704) ([e533edd](https://github.com/pietro1704/Epub-to-Mp3/commit/e533edd2ba2fe4214693f9595f3a8a294606028e))
+
+### Chores
+
+- Bump version to 0.15.0 ([319326d](https://github.com/pietro1704/Epub-to-Mp3/commit/319326d68dc35684b4fea52697a37a50818950e6))
+
+### Features
+
+- Reader font steps 34 and 42 pt beyond the old 28 pt maximum (#1713) ([7afa97a](https://github.com/pietro1704/Epub-to-Mp3/commit/7afa97aa63ee1dd277a047ddd868bebe83b2ec0a))
+- Export chapter MP3s as one file or one per chapter with ID3 tags (#1712) ([e3e13c2](https://github.com/pietro1704/Epub-to-Mp3/commit/e3e13c28cd184dce6aa852e4b37f2771a8ad509c))
+- Reclaim build storage automatically when the disk runs low (#1711) ([3b0ddf5](https://github.com/pietro1704/Epub-to-Mp3/commit/3b0ddf5935dba47db3f6130554f59b24ded49782))
+- Silence trim level (Settings default + per-conversion) (#1708) ([785d1c1](https://github.com/pietro1704/Epub-to-Mp3/commit/785d1c1f5f864ab1708ced0be874e2bdb6218675))
+
 ## [0.14.2] — 2026-11-27
 
 ### Bug Fixes
@@ -11,8 +37,12 @@
 
 ### Chores
 
-- Bump version to 0.14.2 ([837bd4a](https://github.com/pietro1704/Epub-to-Mp3/commit/837bd4af83e3a5457ee986507790d38a229fece2))
+- V0.14.2 (#1707) ([7d56a24](https://github.com/pietro1704/Epub-to-Mp3/commit/7d56a2434160e1a7b25ad7b038e578b989dc7425))
 - Adopt Xcode 26.3 recommended project settings (#1695) ([bef4bdf](https://github.com/pietro1704/Epub-to-Mp3/commit/bef4bdf91ee14f1e514c77cec09bde213d19cacc))
+
+### Features
+
+- Silence trim levels (off/light/medium/strong) for generated speech (#1706) ([f311c0e](https://github.com/pietro1704/Epub-to-Mp3/commit/f311c0ee5fd41a22b1ee18095175d9e0dfdf8dbe))
 
 ### Performance
 
