@@ -513,6 +513,10 @@ final class MacReaderTextPresentation {
         }
     }
 
+    var pdfChapterEstimates: [Int: TimeInterval] {
+        (contentScrollView.documentView as? MacReaderPDFView)?.audioMap?.chapterEstimates ?? [:]
+    }
+
     func playFromVisiblePDFPosition(presentUnavailable: () -> Void) -> Bool {
         guard let pdf = contentScrollView.documentView as? MacReaderPDFView else { return false }
         if !pdf.playFromVisiblePosition() { presentUnavailable() }
