@@ -7,8 +7,9 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
   knownRegions: [en, pt-BR, es]
-  # XcodeGen maps this semantic version to Xcode 15's compatible project format.
-  xcodeVersion: "15.4"
+  # Matches Xcode 26.3's "Use Recommended Settings" upgrade marker
+  # (LastUpgradeCheck/LastUpgradeVersion 2630). The file format stays pinned below.
+  xcodeVersion: "26.3"
   # XcodeGen 2.46 defaults to Xcode 16 (objectVersion 77), which Xcode 15.4
   # cannot open. Explicitly emit the newest project format supported by it.
   projectFormat: xcode15_3
@@ -110,6 +111,8 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
     LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
+    # Xcode 26 recommended setting: generate Swift symbols for String Catalog keys.
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
     # Whole-module optimisation in Release was the dialog's #1 ask.
     # Already locked per-config below; setting it at base level too so
     # the dialog stops listing it.
@@ -164,7 +167,8 @@ settings:
       SWIFT_COMPILATION_MODE: singlefile
       GCC_GENERATE_DEBUGGING_SYMBOLS: NO
       OTHER_SWIFT_FLAGS: "$(inherited) -j1 -gline-tables-only"
-      DEAD_CODE_STRIPPING: NO
+      # Xcode recommended setting, accepted by Pietro on 2026-11-27.
+      DEAD_CODE_STRIPPING: YES
       # One architecture keeps local incremental builds light on the
       # constrained Intel development machine. Release is universal below.
       ONLY_ACTIVE_ARCH: YES
