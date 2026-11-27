@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "open3"
+require "tmpdir"
+require "fileutils"
 
 # Regression checks for the physical iOS device workflow.
 class IosDeviceMiseTasksTest < Minitest::Test
@@ -20,6 +23,40 @@ class IosDeviceMiseTasksTest < Minitest::Test
     assert_includes body, "IOS_DEVICE_ID"
     assert_includes body, "IOS_XCODE_DEVICE_ID"
     refute_includes body, "guard_ios_simulator_resources"
+  end
+
+  # Xcode closes the lease descriptor before script phases, so a nested
+  # native_job started by the bundling phase cannot succeed. The Rust library
+  # must already exist when xcodebuild starts.
+  def test_device_build_prepares_the_rust_library_before_xcodebuild
+    script = task("ios:device:build", "ios:simulator:run")[/<<'NATIVE_JOB'\n(.*?)^NATIVE_JOB$/m, 1]
+    # The heredoc sits inside a TOML basic string.
+    script = script.gsub("\\\\", "\\")
+    stubs = <<~SH
+      xcodegen() { :; }
+      xcodebuild() { echo "xcodebuild always=${CONVERTER_FFI_BUILD_ALWAYS:-unset}" >>"$CALLS"; }
+      mise() { echo "mise $*" >>"$CALLS"; }
+      export -f xcodegen xcodebuild mise
+    SH
+    { [false, "0"] => true, [true, "0"] => false, [true, "1"] => true }.each do |(present, always), builds|
+      Dir.mktmpdir do |dir|
+        project = File.join(dir, "ios/EpubToMp3")
+        FileUtils.mkdir_p([File.join(project, "EpubToMp3.xcodeproj"), File.join(dir, "scripts"),
+                           File.join(dir, "target/aarch64-apple-ios/release")])
+        File.write(File.join(project, "EpubToMp3.xcodeproj/project.pbxproj"), "")
+        File.write(File.join(dir, "scripts/verify_widget_embedded.sh"), "#!/bin/sh\n", perm: 0o755)
+        File.write(File.join(dir, "target/aarch64-apple-ios/release/libconverter_ffi.dylib"), "") if present
+        calls = File.join(dir, "calls")
+        env = { "CALLS" => calls, "IOS_DEVICE_ID" => "device", "IOS_XCODE_DEVICE_ID" => "udid",
+                "APPLE_DERIVED_DATA_PATH" => File.join(dir, "derived"), "TMPDIR" => dir,
+                "MISE_PROJECT_ROOT" => dir, "CONVERTER_FFI_BUILD_ALWAYS" => always }
+        output, status = Open3.capture2e(env, "bash", "-c", stubs + "bash -s", stdin_data: script, chdir: dir)
+        assert status.success?, output
+        expected = builds ? ["mise -C #{File.realpath(dir)} run converter-ffi:ios-device"] : []
+        assert_equal expected + ["xcodebuild always=0"], File.readlines(calls, chomp: true),
+                     "present=#{present} always=#{always}"
+      end
+    end
   end
 
   def test_vscode_exposes_device_build_and_launch_tasks
