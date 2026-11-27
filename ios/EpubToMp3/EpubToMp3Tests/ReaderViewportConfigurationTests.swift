@@ -52,12 +52,24 @@ final class ReaderViewportConfigurationTests: XCTestCase {
 
     @MainActor
     func testStatusBarIsHiddenOnlyWhileReaderChromeIsHidden() {
-        XCTAssertTrue(
-            IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: true)
-        )
-        XCTAssertFalse(
-            IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: false)
-        )
+        var state = ReaderPresentationState()
+        XCTAssertFalse(IOSRootContainerController.shouldHideStatusBar(state))
+        state.isReaderActive = true
+        XCTAssertFalse(IOSRootContainerController.shouldHideStatusBar(state), "Visible chrome shows the status bar")
+        state.isChromeHidden = true
+        XCTAssertTrue(IOSRootContainerController.shouldHideStatusBar(state))
+        state.isReaderActive = false
+        XCTAssertFalse(IOSRootContainerController.shouldHideStatusBar(state))
+    }
+
+    @MainActor
+    func testReaderKeepsItsTopInsetWhenTheStatusBarLeaves() {
+        // Without a sensor housing the safe area drops to zero; the reader restores it.
+        XCTAssertEqual(IOSRootContainerController.readerTopCompensation(reservedTop: 20, safeTop: 0), 20)
+        XCTAssertEqual(IOSRootContainerController.readerTopCompensation(reservedTop: 20, safeTop: 20), 0)
+        // With a sensor housing the safe area does not change.
+        XCTAssertEqual(IOSRootContainerController.readerTopCompensation(reservedTop: 47, safeTop: 47), 0)
+        XCTAssertEqual(IOSRootContainerController.readerTopCompensation(reservedTop: 0, safeTop: 47), 0)
     }
 
     @MainActor

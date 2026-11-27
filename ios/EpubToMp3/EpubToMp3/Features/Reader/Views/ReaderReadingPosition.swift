@@ -70,8 +70,6 @@ final class ReaderReadingPosition {
     }
 
     private(set) var pendingViewportAnchor: ReadingAnchor?
-    private var rawViewportOffsets: [ViewportAnchorKey: CGFloat] = [:]
-    private var chromeVisibleRawViewportOffset: CGFloat?
     private var rememberedViewportOffsets: [ViewportAnchorKey: (character: Int, offset: CGFloat)] = [:]
     /// Page offsets are invalid while the host is animating a chrome-driven
     /// viewport resize. Serializing input avoids splitting TextKit lines.
@@ -296,10 +294,6 @@ final class ReaderReadingPosition {
         // A stale child anchor must never suppress the fresh raw capture for a
         // new chrome transaction; doing so restores an earlier clamped page.
         pendingViewportAnchor = captureReadingAnchor()
-        rawViewportOffsets[viewportAnchorKey()] = composition.scrollView.contentOffset.y
-        if !facts().chromeHidden {
-            chromeVisibleRawViewportOffset = composition.scrollView.contentOffset.y
-        }
         isViewportTransitioning = true
         send(.requestTextLayoutRefresh)
     }
@@ -335,17 +329,6 @@ final class ReaderReadingPosition {
     }
 
     private func finishViewportTransitionRestore() {
-        if let anchor = pendingViewportAnchor,
-           let rawOffset = !facts().chromeHidden
-                ? chromeVisibleRawViewportOffset
-                : rawViewportOffsets[viewportAnchorKey()]
-                    ?? rawViewportOffsets.first(where: { $0.key.chromeHidden == facts().chromeHidden })?.value {
-            pendingViewportAnchor = ReadingAnchor(
-                offsetFraction: anchor.offsetFraction,
-                characterOffset: anchor.characterOffset,
-                viewportOffset: rawOffset
-            )
-        }
         isViewportTransitioning = false
         restorePendingViewportAnchorIfNeeded(preservingViewportOffset: true)
         UIAccessibility.post(notification: .layoutChanged, argument: composition.textView)
