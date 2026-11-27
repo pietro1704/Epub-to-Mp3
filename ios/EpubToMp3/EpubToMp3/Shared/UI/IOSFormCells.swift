@@ -46,12 +46,17 @@ final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
+        // Table views first lay a cell out at its estimated height. A
+        // required minimum would conflict with that encapsulated height;
+        // priority 999 still wins when the cell sizes itself.
+        let minimumFieldHeight = textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        minimumFieldHeight.priority = .required - 1
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
             stack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor),
             stack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor),
-            textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            minimumFieldHeight,
         ])
     }
 

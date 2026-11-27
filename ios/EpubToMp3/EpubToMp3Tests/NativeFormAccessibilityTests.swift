@@ -120,6 +120,26 @@ final class NativeFormAccessibilityTests: XCTestCase {
         XCTAssertEqual(cell.textField.accessibilityLabel, cell.titleLabel.text)
     }
 
+    func testInlineFieldMinimumHeightYieldsToTheEstimatedRowHeight() throws {
+        let cell = IOSInlineTextFieldCell(style: .default, reuseIdentifier: nil)
+        cell.configure(title: "Words per minute", value: "180")
+        let minimumHeight = try XCTUnwrap(cell.textField.constraints.first {
+            $0.firstAttribute == .height && $0.relation == .greaterThanOrEqual && $0.constant == 44
+        })
+
+        // A table first lays the cell out at its estimated height (64 or 75 points
+        // in the Xcode log). A required 44-point field cannot fit there.
+        XCTAssertLessThan(minimumHeight.priority, .required)
+        cell.frame = CGRect(x: 0, y: 0, width: 390, height: 64)
+        cell.layoutIfNeeded()
+        let fittingHeight = cell.systemLayoutSizeFitting(
+            CGSize(width: 390, height: 0),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+        XCTAssertGreaterThanOrEqual(fittingHeight, 44, "Self-sizing must still honor the touch target")
+    }
+
     func testSwitchHasItsOwnAccessibleNameAndUnrestrictedExplanation() {
         let cell = IOSSwitchCell(style: .default, reuseIdentifier: nil)
         cell.configure(title: "Automatic scrolling", subtitle: "A long explanation", isOn: true)
