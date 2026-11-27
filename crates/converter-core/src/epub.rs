@@ -276,7 +276,11 @@ fn parse_epub_document<R: Read + Seek>(
             && chapters.last().is_some_and(|previous: &Chapter| {
                 !previous.text.trim().is_empty() && same_logical_file(&previous.source_path, &path)
             });
-        let level = levels.get(key).copied().unwrap_or(1);
+        let level = levels
+            .get(key)
+            .copied()
+            .or_else(|| chapters.last().map(|previous: &Chapter| previous.level))
+            .unwrap_or(1);
         let toc_title = toc_qualified_title(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
             &html,
@@ -317,6 +321,7 @@ fn parse_epub_document<R: Read + Seek>(
             index,
             name: toc_title
                 .or_else(|| first_heading(&html))
+                .or_else(|| first_text_line(&text))
                 .unwrap_or_else(|| format!("Chapter {}", position + 1)),
             source_path: path,
             text,
@@ -366,13 +371,23 @@ fn same_logical_file(previous: &str, next: &str) -> bool {
         let digits = stem.bytes().rev().take_while(u8::is_ascii_digit).count();
         let head = &stem[..stem.len() - digits];
         let head = head.strip_suffix(['-', '_']).unwrap_or(head);
-        if (1..=2).contains(&digits) && !head.is_empty() {
+        if digits >= 1 && !head.is_empty() {
             head.to_owned()
         } else {
             stem.to_owned()
         }
     }
     base(previous) == base(next)
+}
+
+/// The opening words of an untitled file: a language-neutral name instead of its spine index.
+fn first_text_line(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+    let mut name: String = line.chars().take(60).collect();
+    if line.chars().count() > 60 {
+        name.push('…');
+    }
+    Some(name)
 }
 
 /// True for an EPUB 3 navigation document or any page that is only the contents list.
