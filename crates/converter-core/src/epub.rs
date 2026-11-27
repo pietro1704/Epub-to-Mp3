@@ -85,6 +85,9 @@ pub struct Chapter {
     pub footnotes: Vec<Footnote>,
     /// Where each note reference sits on the text axis, for narration; empty when none.
     pub note_marks: Vec<NoteMark>,
+    /// TOC fragment ids of this chapter's file with their scalar offset on the same text axis
+    /// (empty marker elements included); ids missing from the markup are omitted.
+    pub anchors: Vec<(String, usize)>,
 }
 
 /// One footnote reference placed on the chapter text axis (additive; the axis itself is unchanged).
@@ -264,6 +267,8 @@ fn parse_epub_document<R: Read + Seek>(
             &mut footnote_targets,
         );
         let note_marks = note_marks(&html, &found);
+        let anchors =
+            epub_chapter_content::anchor_positions(&html, &crate::toc::toc_fragments(&toc, &path));
         let footnotes: Vec<_> = found.into_iter().map(|(note, _)| note).collect();
         if continues {
             let previous: &mut Chapter = chapters.last_mut().expect("checked above");
@@ -283,6 +288,9 @@ fn parse_epub_document<R: Read + Seek>(
                     mark.body = mark.body.map(|body| body.start + base..body.end + base);
                     mark
                 }));
+            previous
+                .anchors
+                .extend(anchors.into_iter().map(|(id, offset)| (id, offset + base)));
             previous.footnotes.extend(footnotes);
             continue;
         }
@@ -298,6 +306,7 @@ fn parse_epub_document<R: Read + Seek>(
             level,
             footnotes,
             note_marks,
+            anchors,
         });
     }
     let (cover, cover_mime) =

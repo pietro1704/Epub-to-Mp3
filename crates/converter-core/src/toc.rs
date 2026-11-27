@@ -114,6 +114,31 @@ pub fn parse_nav(xml: &str) -> Result<Vec<TocItem>, quick_xml::Error> {
     Ok(out)
 }
 
+/// Fragments the TOC links into this chapter's file, percent-decoded.
+pub(crate) fn toc_fragments(
+    toc: &[TocItem],
+    source_path: &str,
+) -> std::collections::HashSet<String> {
+    let mut found = std::collections::HashSet::new();
+    for item in toc {
+        if let Some((file, fragment)) = item.href.split_once('#') {
+            let file = percent_encoding::percent_decode_str(file).decode_utf8_lossy();
+            if !file.is_empty()
+                && !fragment.is_empty()
+                && (source_path == file || source_path.ends_with(&format!("/{file}")))
+            {
+                found.insert(
+                    percent_encoding::percent_decode_str(fragment)
+                        .decode_utf8_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+        found.extend(toc_fragments(&item.children, source_path));
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -401,6 +401,7 @@ mod tests {
             level: 1,
             footnotes: Vec::new(),
             note_marks: Vec::new(),
+            anchors: Vec::new(),
         };
         let entries = toc_entries(
             &[item("c.xhtml"), item("c.xhtml#caf%C3%A9"), item("c.xhtml#")],
