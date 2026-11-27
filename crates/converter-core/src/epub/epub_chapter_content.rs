@@ -106,6 +106,15 @@ fn is_word_separator(name: &[u8]) -> bool {
     )
 }
 
+/// "1", "[3]", "*": the text of a footnote marker, as opposed to ordinal letters ("1º").
+fn is_note_label(text: &str) -> bool {
+    let text = text.trim();
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_digit() || "[](),*†‡§".contains(c))
+}
+
 /// Raw (unnormalized) projection plus the marks the note positions are derived from.
 struct RawProjection {
     out: String,
@@ -155,6 +164,8 @@ fn project_raw(html: &str) -> RawProjection {
     let mut heading_start = None;
     let mut ref_marks = Vec::new();
     let mut id_ranges = HashMap::new();
+    // A superscript or note link just opened: its first text may be a note label.
+    let mut label_opened = false;
     // Open elements outside skipped subtrees: (id, raw start) and the open link, if any.
     let mut open: Vec<Option<(String, usize)>> = Vec::new();
     let mut open_ref: Option<(usize, (String, bool), usize)> = None;
@@ -175,6 +186,8 @@ fn project_raw(html: &str) -> RawProjection {
                             open_ref = Some((start, fragment, open.len()));
                         }
                     }
+                    label_opened |=
+                        name == b"sup" || (name == b"a" && note_fragment(&event).is_some());
                     if is_word_separator(name) {
                         out.push(' ');
                     }
@@ -188,6 +201,7 @@ fn project_raw(html: &str) -> RawProjection {
                 }
             }
             Ok(Event::End(event)) => {
+                label_opened = false;
                 let name = event.name().as_ref().to_vec();
                 let name = local_name(&name);
                 if skip_depth > 0 {
@@ -235,7 +249,17 @@ fn project_raw(html: &str) -> RawProjection {
                 }
             }
             Ok(Event::Text(event)) if skip_depth == 0 => {
-                out.push_str(&String::from_utf8_lossy(event.as_ref()));
+                let text = String::from_utf8_lossy(event.as_ref());
+                if std::mem::take(&mut label_opened)
+                    && is_note_label(&text)
+                    && out
+                        .chars()
+                        .last()
+                        .is_some_and(|c| !c.is_whitespace() && !"([".contains(c))
+                {
+                    out.push(' ');
+                }
+                out.push_str(&text);
             }
             Ok(Event::CData(event)) if skip_depth == 0 => {
                 out.push_str(&String::from_utf8_lossy(event.as_ref()));
@@ -540,10 +564,10 @@ mod note_position_tests {
     fn note_references_and_same_document_bodies_are_positioned_on_the_text_axis() {
         let html = "<p>Texto antes<a href=\"#n1\" epub:type=\"noteref\">1</a> e depois.</p><aside id=\"n1\" epub:type=\"footnote\"><p>Corpo da nota.</p></aside>";
         let (text, _, _) = html_to_text_projection(html);
-        assert_eq!(text, "Texto antes1 e depois. Corpo da nota.");
+        assert_eq!(text, "Texto antes 1 e depois. Corpo da nota.");
         let notes = note_positions(html);
-        let after_label = "Texto antes1".chars().count();
-        let body_start = "Texto antes1 e depois. ".chars().count();
+        let after_label = "Texto antes 1".chars().count();
+        let body_start = "Texto antes 1 e depois. ".chars().count();
         assert_eq!(
             notes,
             vec![NoteRef {
@@ -611,9 +635,18 @@ mod text_node_tests {
     }
 
     #[test]
+    fn note_labels_never_glue_to_the_previous_word() {
+        let html = "<p>Smithfield<sup>1</sup>, fim.<a href=\"n.xhtml#note2\">2</a> Outro<sup><a href=\"#fn3\">[3]</a></sup> e o 1<sup>o</sup> dia de N<span>ADA</span> [<sup>4</sup>].</p>";
+        assert_eq!(
+            html_to_text_projection(html).0,
+            "Smithfield 1, fim. 2 Outro [3] e o 1o dia de NADA [4]."
+        );
+    }
+
+    #[test]
     fn a_glued_note_reference_ends_at_its_label() {
         let html = "<p>Texto<a href=\"notes.xhtml#n1\">1</a>. Depois.</p>";
-        assert_eq!(html_to_text_projection(html).0, "Texto1. Depois.");
-        assert_eq!(note_positions(html)[0].end, "Texto1".chars().count());
+        assert_eq!(html_to_text_projection(html).0, "Texto 1. Depois.");
+        assert_eq!(note_positions(html)[0].end, "Texto 1".chars().count());
     }
 }
