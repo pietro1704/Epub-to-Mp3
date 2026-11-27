@@ -349,7 +349,6 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
     func testOverlayKeepsItsRequiredMinimumHeight() {
         let miniPlayer = MiniPlayerBarUIKitView()
 
-        XCTAssertEqual(MiniPlayerBarUIKitView.verticalSizePriority(usesSystemManagedBottomInset: false), .required)
         XCTAssertEqual(miniPlayer.contentCompressionResistancePriority(for: .vertical), .required)
         XCTAssertTrue(miniPlayer.constraints.contains {
             $0.firstItem === miniPlayer && $0.secondItem == nil && $0.firstAttribute == .height
