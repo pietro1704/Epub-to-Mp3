@@ -132,6 +132,7 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeLibraryMetadata(inputPath: String): String?
     external fun nativeChapterNames(path: String, index: String?, name: String?): String?
     external fun nativeFilenameCover(fileName: String): String?
+    external fun nativeExportMp3(request: String): String?
     external fun nativeJobLog(jobId: String): String?
     external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     external fun nativeTtsCatalogV3(): String?
