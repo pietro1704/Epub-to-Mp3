@@ -22,6 +22,15 @@ final class MacReaderSearchTests: XCTestCase {
         XCTAssertTrue(reader.text.string.contains("Second chapter preface"))
     }
 
+    func testSearchIgnoresAccentsAndSurroundingSpacesLikeIOS() async throws {
+        let reader = try await openReader()
+        defer { reader.close() }
+        reader.controller.annotations.performSearch(query: "  háystack ")
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in reader.selectedText() == "haystack" }, object: nil)
+        await fulfillment(of: [selected], timeout: 5)
+    }
+
     private struct OpenReader {
         let controller: MacReaderViewController
         let text: MacReaderTextView
