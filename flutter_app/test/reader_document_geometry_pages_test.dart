@@ -6,6 +6,17 @@ import 'package:flutter_app/features/reader/reader_document_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('asking for the same viewport again reuses the page offsets', () {
+    final geometry = ReaderDocumentGeometry(2936, [
+      for (var i = 0; i < 90; i++) Rect.fromLTWH(0, 16.0 + i * 32, 100, 32),
+    ], const []);
+    final first = geometry.pageOffsets(305);
+    expect(identical(geometry.pageOffsets(305), first), isTrue);
+    // Another viewport is another answer.
+    expect(geometry.pageOffsets(610).length, lessThan(first.length));
+    expect(geometry.pageOffsets(305), first);
+  });
+
   test('the last page is never made only of the document padding', () {
     // Three lines of 20 px between 16 px of padding: height 92. Viewport 40 fits two.
     final geometry = ReaderDocumentGeometry(92, [

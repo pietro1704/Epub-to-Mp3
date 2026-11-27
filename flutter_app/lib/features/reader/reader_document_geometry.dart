@@ -93,8 +93,21 @@ class ReaderDocumentGeometry {
     );
   }
 
-  /// Boundaries for page turns and source anchor restoration.
+  double? _pagedViewport;
+  List<double> _pagedOffsets = const [0];
+
+  /// Boundaries for page turns and source anchor restoration. The surface asks on
+  /// every build and scroll tick while the geometry never changes, so the last
+  /// viewport's answer is kept.
   List<double> pageOffsets(double viewport) {
+    if (_pagedViewport != viewport) {
+      _pagedOffsets = List.unmodifiable(_computePageOffsets(viewport));
+      _pagedViewport = viewport;
+    }
+    return _pagedOffsets;
+  }
+
+  List<double> _computePageOffsets(double viewport) {
     if (viewport <= 0) return const [0];
     final offsets = <double>[0];
     // The document padding is not content: a page that would hold only it stays out.
