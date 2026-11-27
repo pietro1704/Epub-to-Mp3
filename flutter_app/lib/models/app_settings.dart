@@ -139,7 +139,9 @@ class MirrorAppSettings with PlaybackSettings {
     final raw = _prefs.getString('ttsPreferences');
     if (raw == null) return;
     try {
-      final saved = TtsPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      final saved = TtsPreferences.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
       if (saved.primary.engine != 'edge' || saved.allowOnlineFallback) return;
       _prefs.setString(
         'ttsPreferences',
@@ -158,9 +160,8 @@ class MirrorAppSettings with PlaybackSettings {
     final raw = _prefs.getString('ttsPreferences');
     if (raw != null) {
       try {
-        return TtsPreferences.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>,
-        ).withSupportedPiperQuality();
+        return TtsPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>)
+            .withSupportedPiperQuality();
       } catch (_) {
         /* Ignore invalid persisted data and preserve old explicit selection. */
       }
@@ -288,8 +289,8 @@ class MirrorAppSettings with PlaybackSettings {
   Future<void> setDarkMode(bool v) =>
       setReaderTheme(v ? ReaderTheme.dark : ReaderTheme.light);
 
-  /// Last font step: 0..4 are the original sizes, 5 and 6 the larger ones.
-  static const maxReaderFontStep = 6;
+  /// Last font step: 0..4 are the original sizes, 5 to 8 the larger ones (same table as Apple).
+  static const maxReaderFontStep = 8;
 
   // Reader appearance ---------------------------------------------------
   int get readerFontSize {
@@ -362,6 +363,7 @@ class MirrorAppSettings with PlaybackSettings {
     final raw = _prefs.getString('pageTurnStyle');
     return const {'flip', 'slide', 'none'}.contains(raw) ? raw! : 'flip';
   }
+
   Future<void> setReaderPageTurnStyle(String v) =>
       _prefs.setString('pageTurnStyle', v);
 
@@ -468,9 +470,13 @@ class MirrorAppSettings with PlaybackSettings {
       case 4:
         return 28;
       case 5:
-        return 34;
+        return 32;
       case 6:
+        return 36;
+      case 7:
         return 42;
+      case 8:
+        return 48;
       case 2:
       default:
         return 20;
