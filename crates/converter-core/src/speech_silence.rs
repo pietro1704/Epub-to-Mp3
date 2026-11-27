@@ -21,9 +21,21 @@ struct Rule {
 fn rule(level: SilenceTrim) -> Option<Rule> {
     match level {
         SilenceTrim::Off => None,
-        SilenceTrim::Light => Some(Rule { min_ms: 600, keep_ms: 300, floor: 0 }),
-        SilenceTrim::Medium => Some(Rule { min_ms: 400, keep_ms: 200, floor: 0 }),
-        SilenceTrim::Strong => Some(Rule { min_ms: 250, keep_ms: 120, floor: STRONG_NEAR_SILENCE }),
+        SilenceTrim::Light => Some(Rule {
+            min_ms: 600,
+            keep_ms: 300,
+            floor: 0,
+        }),
+        SilenceTrim::Medium => Some(Rule {
+            min_ms: 400,
+            keep_ms: 200,
+            floor: 0,
+        }),
+        SilenceTrim::Strong => Some(Rule {
+            min_ms: 250,
+            keep_ms: 120,
+            floor: STRONG_NEAR_SILENCE,
+        }),
     }
 }
 
@@ -42,9 +54,7 @@ pub(crate) fn removed_ranges(pcm: &[u8], rate: u32, level: SilenceTrim) -> Vec<(
     let Some(rule) = rule(level) else {
         return Vec::new();
     };
-    let quiet = |at: usize| {
-        i16::from_le_bytes([pcm[at], pcm[at + 1]]).unsigned_abs() <= rule.floor
-    };
+    let quiet = |at: usize| i16::from_le_bytes([pcm[at], pcm[at + 1]]).unsigned_abs() <= rule.floor;
     if (0..pcm.len() / 2).all(|i| quiet(i * 2)) {
         return Vec::new();
     }
@@ -123,7 +133,10 @@ mod tests {
     #[test]
     fn preserves_silent_responses_and_rejects_invalid_input() {
         let silence = vec![0; 48_000];
-        assert_eq!(compact(&silence, 24_000, SilenceTrim::Light).unwrap(), silence);
+        assert_eq!(
+            compact(&silence, 24_000, SilenceTrim::Light).unwrap(),
+            silence
+        );
         for (pcm, rate) in [(vec![], 24_000), (vec![0], 24_000), (vec![0, 0], 0)] {
             assert!(compact(&pcm, rate, SilenceTrim::Light).is_err());
         }
@@ -149,5 +162,22 @@ mod tests {
                 assert_eq!(compact(&output, rate, SilenceTrim::Light).unwrap(), output);
             }
         }
+    }
+
+    #[test]
+    fn only_strong_counts_near_silent_samples_and_keeps_audible_ones() {
+        let rate = 24_000;
+        // Speech, 400 ms of +-20 noise (about -64 dBFS), speech, 400 ms of +-200 (audible), speech.
+        let mut samples = vec![4_000i16; 2_400];
+        samples.extend((0..9_600).map(|i| if i % 2 == 0 { 20 } else { -20 }));
+        samples.extend(vec![4_000; 2_400]);
+        samples.extend((0..9_600).map(|i| if i % 2 == 0 { 200 } else { -200 }));
+        samples.extend(vec![4_000; 2_400]);
+        let pcm = bytes(&samples);
+        for level in [SilenceTrim::Off, SilenceTrim::Light, SilenceTrim::Medium] {
+            assert!(removed_ranges(&pcm, rate, level).is_empty());
+        }
+        let strong = removed_ranges(&pcm, rate, SilenceTrim::Strong);
+        assert_eq!(strong, [(2_400 + 2_880, 2_400 + 9_600)]);
     }
 }

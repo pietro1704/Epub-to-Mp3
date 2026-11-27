@@ -391,7 +391,8 @@ mod tests {
             .position(|bytes| bytes == b"\"version\":1")
             .unwrap();
         wav[version + 10] = b'9';
-        let without_invalid_markers = crate::pcm::encode_speech_wav_mp3(&wav, Default::default()).unwrap();
+        let without_invalid_markers =
+            crate::pcm::encode_speech_wav_mp3(&wav, Default::default()).unwrap();
         crate::pcm::validate_mp3(&without_invalid_markers).unwrap();
         assert!(
             from_tag(&without_invalid_markers).is_empty(),

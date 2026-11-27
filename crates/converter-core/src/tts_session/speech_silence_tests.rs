@@ -69,7 +69,14 @@ fn processing_profile_invalidates_both_segment_and_chapter_cache_keys() {
         artifacts: Default::default(),
         reusable: true,
     };
-    let segment = cache_material("book", "text-v1", &identity, &AudioFormat::Mp3, Default::default()).unwrap();
+    let segment = cache_material(
+        "book",
+        "text-v1",
+        &identity,
+        &AudioFormat::Mp3,
+        Default::default(),
+    )
+    .unwrap();
     let legacy = serde_json::to_string(&(
         CONTRACT_VERSION,
         "book",
