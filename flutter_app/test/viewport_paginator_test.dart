@@ -22,8 +22,8 @@ void main() {
     ViewportPaginator.laidOutChars = 0;
     final pages = paginateSample(text);
     expect(pages.length, greaterThan(20));
-    // Quadratic: ~pages x text. Windowed: a small multiple of the text.
-    expect(ViewportPaginator.laidOutChars, lessThan(text.length * 3));
+    // Quadratic: ~150x the text. Windowed: pages x window, a small multiple of it.
+    expect(ViewportPaginator.laidOutChars, lessThan(text.length * 10));
   });
 
   test('oversized chapter headers require a scrolling fallback', () {

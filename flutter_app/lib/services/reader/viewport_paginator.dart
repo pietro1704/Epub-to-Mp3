@@ -41,7 +41,7 @@ class ViewportPaginator {
         // window may be cut short, so it is never used; if every other line fits,
         // the window doubles. Lines before it break exactly as in the full remainder.
         final all = span.text.substring(offset);
-        var window = 3000;
+        var window = 1500;
         late String remaining;
         var end = 0;
         var lineHeight = 0.0;
