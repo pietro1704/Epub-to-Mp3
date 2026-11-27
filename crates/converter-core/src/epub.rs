@@ -254,9 +254,9 @@ fn parse_epub_document<R: Read + Seek>(
         let continues = !indices.is_empty()
             && !indices.contains_key(key)
             && !text.trim().is_empty()
-            && chapters
-                .last()
-                .is_some_and(|previous: &Chapter| !previous.text.trim().is_empty());
+            && chapters.last().is_some_and(|previous: &Chapter| {
+                !previous.text.trim().is_empty() && same_logical_file(&previous.source_path, &path)
+            });
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
@@ -325,6 +325,29 @@ fn parse_epub_document<R: Read + Seek>(
         cover_mime,
         skipped_pages: 0,
     })
+}
+
+/// `chapter_split_001.xhtml` and `chapter2.xhtml` are parts of `chapter_split_000.xhtml` and
+/// `chapter.xhtml`; unrelated files (promotional pages, copyright) are not.
+fn same_logical_file(previous: &str, next: &str) -> bool {
+    fn base(path: &str) -> String {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+        if let Some((head, tail)) = stem.rsplit_once("_split_") {
+            if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) {
+                return head.to_owned();
+            }
+        }
+        let digits = stem.bytes().rev().take_while(u8::is_ascii_digit).count();
+        let head = &stem[..stem.len() - digits];
+        let head = head.strip_suffix(['-', '_']).unwrap_or(head);
+        if (1..=2).contains(&digits) && !head.is_empty() {
+            head.to_owned()
+        } else {
+            stem.to_owned()
+        }
+    }
+    base(previous) == base(next)
 }
 
 /// True for an EPUB 3 navigation document or any page that is only the contents list.

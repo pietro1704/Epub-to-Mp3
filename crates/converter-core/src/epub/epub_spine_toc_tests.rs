@@ -79,6 +79,31 @@ fn spine_file_without_toc_entry_continues_the_previous_chapter() {
     );
 }
 
+// Parse audit 2026-11-27: promotional pages and copyright files with no TOC entry were folded
+// into the chapter before them. Only a file named like a part of that chapter continues it.
+#[test]
+fn unrelated_spine_files_without_a_toc_entry_stay_separate_chapters() {
+    let one = format!("<h1>Um</h1><p>{BODY}</p>");
+    let promo = format!("<h1>Outro Livro</h1><p>{BODY}</p>");
+    let split = "<p>Continuacao do mesmo arquivo.</p>";
+    let two = format!("<h1>Dois</h1><p>{BODY}</p>");
+    let b = parsed(book(
+        &[
+            ("part0001_split_000", &one),
+            ("part0001_split_001", split),
+            ("promo", &promo),
+            ("b", &two),
+        ],
+        &[("Um", "part0001_split_000.xhtml"), ("Dois", "b.xhtml")],
+        &[],
+    ));
+    let names: Vec<&str> = b.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Um", "Outro Livro", "Dois"], "{names:?}");
+    assert!(b.chapters[0]
+        .text
+        .ends_with("Continuacao do mesmo arquivo."));
+}
+
 #[test]
 fn nav_document_is_not_narrated() {
     let one = format!("<h1>Um</h1><p>{BODY}</p>");
