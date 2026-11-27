@@ -8,8 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/screens/convert_screen.dart';
+import 'package:flutter_app/screens/library_screen.dart'
+    show libraryStoreProvider;
 import 'package:flutter_app/services/conversion/audio_export.dart';
 import 'package:flutter_app/services/conversion/local_conversion_record.dart';
+import 'package:flutter_app/services/storage/library_store.dart';
 import 'package:flutter_app/services/storage/local_conversion_store.dart';
 import 'package:flutter_app/state/providers.dart';
 
@@ -18,6 +21,8 @@ Future<void> _pump(
   required String audioName,
   required AudioExporter exporter,
   String? folder = '/chosen',
+  String filePath = '/books/hamlet.epub',
+  LibraryStore Function(SharedPreferences prefs)? library,
 }) async {
   final dir = Directory.systemTemp.createTempSync('manual-actions');
   addTearDown(() => dir.deleteSync(recursive: true));
@@ -26,7 +31,7 @@ Future<void> _pump(
   final prefs = await SharedPreferences.getInstance();
   await LocalConversionJobStore(prefs).save(
     LocalConversionJob(
-      bookId: '/books/hamlet.epub',
+      bookId: filePath,
       jobId: 'job-1',
       status: LocalConversionJobStatus.completed,
       createdAt: DateTime(2026),
@@ -43,14 +48,18 @@ Future<void> _pump(
   );
   await t.pumpWidget(
     ProviderScope(
-      overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPrefsProvider.overrideWithValue(prefs),
+        if (library != null)
+          libraryStoreProvider.overrideWith((_) => library(prefs)),
+      ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: ManualConversionActions(
-            filePath: '/books/hamlet.epub',
-            bookId: '/books/hamlet.epub',
+            filePath: filePath,
+            bookId: filePath,
             jobId: 'job-1',
             exporter: exporter,
             chooseFolder: () async => folder,
@@ -120,5 +129,45 @@ void main() {
     await t.tap(find.byKey(const ValueKey('export-single')));
     await t.pumpAndSettle();
     expect(find.textContaining('exported'), findsNothing);
+  });
+
+  testWidgets('adds the book to the library and links the audio job to it', (
+    t,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('manual-add');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final book = File('${dir.path}/hamlet.epub')
+      ..writeAsStringSync('synthetic');
+    late LibraryStore store;
+    await _pump(
+      t,
+      audioName: 'one.mp3',
+      filePath: book.path,
+      library: (prefs) => store = LibraryStore(
+        prefs: prefs,
+        metadataReader: (_) async => const EpubMetadata(title: 'Hamlet'),
+      ),
+      exporter: AudioExporter(call: (_) async => fail('must not export')),
+    );
+    expect(store.books, isEmpty);
+    await t.tap(find.byKey(const ValueKey('manual-add-to-library')));
+    // Hashing the file is real I/O: let it finish outside the fake clock.
+    for (var i = 0; i < 20 && store.books.isEmpty; i++) {
+      await t.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+    }
+    await t.pumpAndSettle();
+
+    expect(store.books, hasLength(1));
+    final added = store.books.single;
+    expect(added.filePath, book.path);
+    expect(added.lastJobId, 'local-${added.id}');
+    expect(find.text('Added to the library with its audio.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('manual-add-to-library')), findsNothing);
+    final linked = await LocalConversionJobStore(
+      await SharedPreferences.getInstance(),
+    ).load(added.id, 'local-${added.id}');
+    expect(linked?.chapters.single.name, 'Act I');
   });
 }
