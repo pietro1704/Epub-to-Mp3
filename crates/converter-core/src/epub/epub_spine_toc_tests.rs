@@ -79,6 +79,61 @@ fn spine_file_without_toc_entry_continues_the_previous_chapter() {
     );
 }
 
+// Parse audit 2026-11-27: promotional pages and copyright files with no TOC entry were folded
+// into the chapter before them. Only a file named like a part of that chapter continues it.
+#[test]
+fn unrelated_spine_files_without_a_toc_entry_stay_separate_chapters() {
+    let one = format!("<h1>Um</h1><p>{BODY}</p>");
+    let promo = format!("<h1>Outro Livro</h1><p>{BODY}</p>");
+    let split = "<p>Continuacao do mesmo arquivo.</p>";
+    let two = format!("<h1>Dois</h1><p>{BODY}</p>");
+    let b = parsed(book(
+        &[
+            ("part0001_split_000", &one),
+            ("part0001_split_001", split),
+            ("promo", &promo),
+            ("b", &two),
+        ],
+        &[("Um", "part0001_split_000.xhtml"), ("Dois", "b.xhtml")],
+        &[],
+    ));
+    let names: Vec<&str> = b.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Um", "Outro Livro", "Dois"], "{names:?}");
+    assert!(b.chapters[0]
+        .text
+        .ends_with("Continuacao do mesmo arquivo."));
+}
+
+// Parse audit 2026-11-27: Part/Volume divider entries (image-only files) became unmapped and the
+// dropped printed contents page carried no reason.
+#[test]
+fn skipped_documents_are_reported_and_empty_dividers_still_map() {
+    let divider = r#"<p><img src="d.png" alt="Parte"/></p>"#;
+    let one = format!("<h1>Um</h1><p>{BODY}</p>");
+    let printed = r#"<nav epub:type="toc"><ol><li><a href="a.xhtml">Um</a></li></ol></nav>"#;
+    let b = parsed(book(
+        &[("div", divider), ("a", &one), ("sumario", printed)],
+        &[("Parte I", "div.xhtml"), ("Um", "a.xhtml")],
+        &[],
+    ));
+    let reasons: Vec<_> = b
+        .skipped_documents
+        .iter()
+        .map(|d| (d.path.rsplit('/').next().unwrap(), d.reason))
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            ("div.xhtml", "EMPTY_DOCUMENT"),
+            ("sumario.xhtml", "TOC_DOCUMENT")
+        ]
+    );
+    let check = crate::structure::verify_epub_toc(&b);
+    assert_eq!((check.mapped_toc_items, check.total_toc_items), (2, 2));
+    assert!(check.verified, "{:?}", check.warnings);
+    assert_eq!(check.notes.len(), 2, "{:?}", check.notes);
+}
+
 #[test]
 fn nav_document_is_not_narrated() {
     let one = format!("<h1>Um</h1><p>{BODY}</p>");

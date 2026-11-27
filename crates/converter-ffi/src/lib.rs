@@ -194,6 +194,18 @@ fn metadata_json(
             })).collect::<Vec<_>>(),
         },
     });
+    if !structure.notes.is_empty() {
+        value["structure"]["notes"] = structure
+            .notes
+            .iter()
+            .map(|note| {
+                json!({
+                    "code": note.code,
+                    "message": note.message,
+                })
+            })
+            .collect();
+    }
     // Additive: a book without a contents list keeps the previous shape.
     if !metadata.toc.is_empty() {
         value["toc"] = metadata.toc.iter().map(toc_entry_json).collect();

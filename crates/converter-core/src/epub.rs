@@ -115,6 +115,16 @@ pub struct Book {
     pub cover_mime: Option<String>,
     /// Source pages left out of narration because they have no selectable text (PDF only).
     pub skipped_pages: usize,
+    /// Spine documents left out of narration, with the reason (never silent).
+    pub skipped_documents: Vec<SkippedDocument>,
+}
+
+/// A spine document the parser did not turn into a chapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkippedDocument {
+    pub path: String,
+    /// `TOC_DOCUMENT` (navigation or printed contents list) or `EMPTY_DOCUMENT` (no text).
+    pub reason: &'static str,
 }
 
 pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
@@ -214,6 +224,7 @@ fn parse_epub_document<R: Read + Seek>(
     let mut footnote_budget = EpubReadBudget::new(limits);
     let mut footnote_targets = epub_footnotes::FootnoteTargets::default();
     let mut markup_language = None;
+    let mut skipped_documents: Vec<SkippedDocument> = Vec::new();
     let mut orphan = indices
         .values()
         .filter_map(|v| v.parse::<u32>().ok())
@@ -228,6 +239,10 @@ fn parse_epub_document<R: Read + Seek>(
         let html = read_document(&mut archive, &path, &mut budget, reader_mode)?;
         // The navigation document lists the book; narrating it would read the contents aloud.
         if nav_path.as_deref() == Some(path.as_str()) || is_toc_document(&html) {
+            skipped_documents.push(SkippedDocument {
+                path: path.clone(),
+                reason: "TOC_DOCUMENT",
+            });
             continue;
         }
         let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
@@ -237,6 +252,10 @@ fn parse_epub_document<R: Read + Seek>(
             markup_language = crate::language::markup_language(&html);
         }
         if text.trim().is_empty() && !reader_mode {
+            skipped_documents.push(SkippedDocument {
+                path: path.clone(),
+                reason: "EMPTY_DOCUMENT",
+            });
             continue;
         }
         let key = href.split('#').next().unwrap_or(&href);
@@ -254,9 +273,9 @@ fn parse_epub_document<R: Read + Seek>(
         let continues = !indices.is_empty()
             && !indices.contains_key(key)
             && !text.trim().is_empty()
-            && chapters
-                .last()
-                .is_some_and(|previous: &Chapter| !previous.text.trim().is_empty());
+            && chapters.last().is_some_and(|previous: &Chapter| {
+                !previous.text.trim().is_empty() && same_logical_file(&previous.source_path, &path)
+            });
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
@@ -324,7 +343,31 @@ fn parse_epub_document<R: Read + Seek>(
         cover,
         cover_mime,
         skipped_pages: 0,
+        skipped_documents,
     })
+}
+
+/// `chapter_split_001.xhtml` and `chapter2.xhtml` are parts of `chapter_split_000.xhtml` and
+/// `chapter.xhtml`; unrelated files (promotional pages, copyright) are not.
+fn same_logical_file(previous: &str, next: &str) -> bool {
+    fn base(path: &str) -> String {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+        if let Some((head, tail)) = stem.rsplit_once("_split_") {
+            if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) {
+                return head.to_owned();
+            }
+        }
+        let digits = stem.bytes().rev().take_while(u8::is_ascii_digit).count();
+        let head = &stem[..stem.len() - digits];
+        let head = head.strip_suffix(['-', '_']).unwrap_or(head);
+        if (1..=2).contains(&digits) && !head.is_empty() {
+            head.to_owned()
+        } else {
+            stem.to_owned()
+        }
+    }
+    base(previous) == base(next)
 }
 
 /// True for an EPUB 3 navigation document or any page that is only the contents list.

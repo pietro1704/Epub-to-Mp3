@@ -13,12 +13,28 @@ fn flatten_toc(item: &TocItem) -> Vec<&TocItem> {
     items
 }
 
+/// A bare number, roman numeral or single letter: a label, not a title.
+fn is_label_title(title: &str) -> bool {
+    let title = title.trim();
+    title.chars().all(|c| c.is_ascii_digit() || c == '.')
+        || title.chars().all(|c| "IVXLCDMivxlcdm".contains(c))
+        || title.chars().count() == 1
+}
+
+/// The first non-empty TOC title of the file; a numeric label only when no real title exists.
 pub(super) fn toc_title_for(toc: &[TocItem], key: &str) -> Option<String> {
-    toc.iter()
+    let titles: Vec<&str> = toc
+        .iter()
         .flat_map(flatten_toc)
-        .find(|item| item.href.split('#').next().unwrap_or_default() == key)
-        .map(|item| item.title.clone())
+        .filter(|item| item.href.split('#').next().unwrap_or_default() == key)
+        .map(|item| item.title.as_str())
         .filter(|title| !title.is_empty())
+        .collect();
+    titles
+        .iter()
+        .find(|title| !is_label_title(title))
+        .or(titles.first())
+        .map(|title| (*title).to_owned())
 }
 
 pub(super) fn hierarchy_indices(toc: &[TocItem]) -> HashMap<String, String> {
@@ -546,6 +562,36 @@ mod heading_tests {
 #[cfg(test)]
 mod note_position_tests {
     use super::*;
+
+    #[test]
+    fn a_file_shared_by_a_numeric_label_and_a_real_title_takes_the_title() {
+        let item = |title: &str, href: &str, children: Vec<TocItem>| TocItem {
+            title: title.into(),
+            href: href.into(),
+            level: 1,
+            children,
+        };
+        let toc = vec![
+            item(
+                "5",
+                "c5.xhtml",
+                vec![item("Entidades", "c5.xhtml#s", vec![])],
+            ),
+            item("VI", "c6.xhtml", vec![]),
+            item(
+                "A",
+                "ca.xhtml",
+                vec![item("Apendice", "ca.xhtml#s", vec![])],
+            ),
+        ];
+        assert_eq!(
+            toc_title_for(&toc, "c5.xhtml").as_deref(),
+            Some("Entidades")
+        );
+        assert_eq!(toc_title_for(&toc, "ca.xhtml").as_deref(), Some("Apendice"));
+        // Nothing better is available, so the label stays.
+        assert_eq!(toc_title_for(&toc, "c6.xhtml").as_deref(), Some("VI"));
+    }
 
     #[test]
     fn anchor_positions_cover_empty_and_wrapping_id_elements() {
