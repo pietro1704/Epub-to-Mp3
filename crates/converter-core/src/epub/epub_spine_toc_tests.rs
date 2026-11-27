@@ -190,13 +190,21 @@ fn numbered_body_files_outside_the_toc_continue_the_toc_chapter() {
         &[
             ("part0001", &one),
             ("part0002", "<h2>Capitulo I</h2><p>Mais texto do livro.</p>"),
-            ("part0003", "<h2>Capitulo II</h2><p>Mais texto do livro.</p>"),
+            (
+                "part0003",
+                "<h2>Capitulo II</h2><p>Mais texto do livro.</p>",
+            ),
             ("part0100", "<h2>Capitulo C</h2><p>Mais texto do livro.</p>"),
         ],
         &[("Obra", "part0001.xhtml")],
         &[],
     ));
-    assert_eq!(b.chapters.len(), 1, "{:?}", b.chapters.iter().map(|c| &c.name).collect::<Vec<_>>());
+    assert_eq!(
+        b.chapters.len(),
+        1,
+        "{:?}",
+        b.chapters.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
 }
 
 // Parse audit #2 (b): a separate untoc'd file never outranks the TOC entry above it.
@@ -209,5 +217,9 @@ fn separate_untoc_file_is_not_shallower_than_the_toc_entry_above() {
         &[("Um", "a.xhtml")],
         &[],
     ));
-    assert!(b.chapters[1].level >= b.chapters[0].level, "{:?}", b.chapters.iter().map(|c| c.level).collect::<Vec<_>>());
+    assert!(
+        b.chapters[1].level >= b.chapters[0].level,
+        "{:?}",
+        b.chapters.iter().map(|c| c.level).collect::<Vec<_>>()
+    );
 }
