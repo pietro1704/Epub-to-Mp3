@@ -4,7 +4,18 @@ use converter_core::ingestion::pdf_text::PdfTextIngestion;
 use pdf_extract::{dictionary, Document, Object, Stream};
 use std::path::Path;
 
-fn spread_pdf() -> Vec<u8> {
+/// How a cut page shifts the spread and hides the other half.
+#[derive(Clone, Copy)]
+enum Cut {
+    /// A wrapper Form whose BBox is one page wide.
+    WrapperBBox,
+    /// The page shifts the spread itself, so only the page box hides a half.
+    PageBox,
+    /// The wrapper shifts through its /Matrix and its BBox selects the half.
+    FormMatrix,
+}
+
+fn spread_pdf(cut: Cut) -> Vec<u8> {
     let mut doc = Document::with_version("1.7");
     let font = doc.add_object(dictionary! {
         "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
@@ -22,20 +33,29 @@ fn spread_pdf() -> Vec<u8> {
     let kids: Vec<Object> = [0, -400]
         .into_iter()
         .map(|shift| {
+            let (left, matrix, operations) = match cut {
+                Cut::FormMatrix => (-shift, shift, "/S Do".to_string()),
+                _ => (0, 0, format!("q 1 0 0 1 {shift} 0 cm /S Do Q")),
+            };
             let half = doc.add_object(Stream::new(
                 dictionary! {
                     "Type" => "XObject", "Subtype" => "Form",
-                    "BBox" => vec![0.into(), 0.into(), 400.into(), 600.into()],
+                    "BBox" => vec![left.into(), 0.into(), (left + 400).into(), 600.into()],
+                    "Matrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), matrix.into(), 0.into()],
                     "Resources" => dictionary! { "XObject" => dictionary! { "S" => spread } },
                 },
-                format!("q 1 0 0 1 {shift} 0 cm /S Do Q").into_bytes(),
+                operations.clone().into_bytes(),
             ));
-            let content = doc.add_object(Stream::new(dictionary! {}, b"q /H Do Q".to_vec()));
+            let (name, drawn, page_content) = match cut {
+                Cut::PageBox => ("S", spread, operations),
+                _ => ("H", half, "q /H Do Q".to_string()),
+            };
+            let content = doc.add_object(Stream::new(dictionary! {}, page_content.into_bytes()));
             doc.add_object(dictionary! {
                 "Type" => "Page", "Parent" => pages_id,
                 "MediaBox" => vec![0.into(), 0.into(), 400.into(), 600.into()],
                 "Contents" => content,
-                "Resources" => dictionary! { "XObject" => dictionary! { "H" => half } },
+                "Resources" => dictionary! { "XObject" => dictionary! { name => drawn } },
             })
             .into()
         })
@@ -51,9 +71,31 @@ fn spread_pdf() -> Vec<u8> {
     bytes
 }
 
+fn page_texts(cut: Cut) -> Vec<String> {
+    let book = PdfTextIngestion::from_bytes(Path::new("spread.pdf"), &spread_pdf(cut)).unwrap();
+    book.chapters.into_iter().map(|c| c.text).collect()
+}
+
 #[test]
 fn each_half_of_a_cut_spread_is_read_once() {
-    let book = PdfTextIngestion::from_bytes(Path::new("spread.pdf"), &spread_pdf()).unwrap();
-    let pages: Vec<&str> = book.chapters.iter().map(|c| c.text.as_str()).collect();
-    assert_eq!(pages, ["Leftsentence.", "Rightsentence."]);
+    assert_eq!(
+        page_texts(Cut::WrapperBBox),
+        ["Leftsentence.", "Rightsentence."]
+    );
+}
+
+#[test]
+fn the_page_box_hides_the_half_a_form_draws_outside_it() {
+    assert_eq!(
+        page_texts(Cut::PageBox),
+        ["Leftsentence.", "Rightsentence."]
+    );
+}
+
+#[test]
+fn a_form_matrix_places_the_visible_half() {
+    assert_eq!(
+        page_texts(Cut::FormMatrix),
+        ["Leftsentence.", "Rightsentence."]
+    );
 }
