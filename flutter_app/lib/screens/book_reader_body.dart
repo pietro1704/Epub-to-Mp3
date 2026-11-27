@@ -194,11 +194,6 @@ class _BookReaderBody extends ConsumerWidget {
     }
   }
 
-  static Uint8List? _decodeCover(String base64str) {
-    try {
-      return base64Decode(base64str);
-    } catch (_) {
-      return null;
-    }
-  }
+  static Uint8List? _decodeCover(String base64str) =>
+      CoverDecoder.decode(base64str);
 }
