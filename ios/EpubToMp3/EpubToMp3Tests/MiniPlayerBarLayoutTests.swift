@@ -311,6 +311,53 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testSystemAccessoryFitsTheTabAccessoryWithoutRequiredSizeConflicts() throws {
+        // iOS 26 lays UITabAccessory's content out at 0 x 0, then at 48 points,
+        // through autoresizing-mask constraints that are always required.
+        let accessory = UIView(frame: .zero)
+        let miniPlayer = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
+        miniPlayer.frame = accessory.bounds
+        miniPlayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        accessory.addSubview(miniPlayer)
+        accessory.layoutIfNeeded()
+        accessory.frame = CGRect(x: 0, y: 0, width: 370, height: 48)
+        accessory.layoutIfNeeded()
+
+        let material = try XCTUnwrap(pillMaterial(in: miniPlayer))
+        let required = miniPlayer.constraints.filter { $0.isActive && $0.priority == .required }
+        XCTAssertFalse(required.contains {
+            $0.firstItem === miniPlayer && $0.secondItem == nil
+                && $0.firstAttribute == .height && $0.relation == .greaterThanOrEqual
+        }, "The accessory, not a required 60-point minimum, owns the height")
+        XCTAssertLessThan(miniPlayer.contentCompressionResistancePriority(for: .vertical), .required)
+        XCTAssertFalse(required.contains {
+            $0.secondItem === material && [.top, .bottom].contains($0.secondAttribute) && $0.constant != 0
+        }, "44 + 3 + 3 points cannot fit a 48-point accessory")
+        XCTAssertFalse(required.contains {
+            $0.firstItem is UIStackView && $0.firstAttribute == .trailing && $0.secondItem is UILayoutGuide
+        }, "The transport row cannot fit a zero-width accessory")
+
+        let playPause = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.playPause"))
+        let frame = playPause.convert(playPause.bounds, to: miniPlayer)
+        XCTAssertEqual(frame.height, 44, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(frame.minY, -0.5)
+        XCTAssertLessThanOrEqual(frame.maxY, 48.5)
+        XCTAssertLessThanOrEqual(frame.maxX, miniPlayer.bounds.maxX)
+    }
+
+    @MainActor
+    func testOverlayKeepsItsRequiredMinimumHeight() {
+        let miniPlayer = MiniPlayerBarUIKitView()
+
+        XCTAssertEqual(MiniPlayerBarUIKitView.verticalSizePriority(usesSystemManagedBottomInset: false), .required)
+        XCTAssertEqual(miniPlayer.contentCompressionResistancePriority(for: .vertical), .required)
+        XCTAssertTrue(miniPlayer.constraints.contains {
+            $0.firstItem === miniPlayer && $0.secondItem == nil && $0.firstAttribute == .height
+                && $0.relation == .greaterThanOrEqual && $0.priority == .required
+        })
+    }
+
+    @MainActor
     func testActiveBookIDPrefersTheCurrentlyOpenReaderBook() throws {
         let suite = "mini-player.context.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
