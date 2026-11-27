@@ -5,7 +5,6 @@ import UIKit
 
 @MainActor
 final class ReaderPDFPresentation {
-    private struct SavedPosition: Codable { let page: Int; let x: Double; let y: Double }
     let view: ReaderPDFView
     let bookID: String
     private let location: ReaderLocation
@@ -29,7 +28,6 @@ final class ReaderPDFPresentation {
     var onToggleChrome: (() -> Void)?
     var onPlayFrom: ((PDFReadingAudioMap.Anchor) -> Void)?
     var onPositionChanged: ((PDFReadingAudioMap.Anchor?, Int, Int) -> Void)?
-    private var progressKey: String { ReaderProgressStore.pdfPositionKey(bookId: bookID) }
 
     init(view: ReaderPDFView, bookID: String, defaults: UserDefaults = .standard,
          settings: AppSettings? = nil, player: AudioPlayer? = nil) {
@@ -85,7 +83,7 @@ final class ReaderPDFPresentation {
                 pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
         }
         view.document = document
-        if let document, let saved = defaults.data(forKey: progressKey).flatMap({ try? JSONDecoder().decode(SavedPosition.self, from: $0) }),
+        if let document, let saved = ReaderProgressStore.savedPDFPosition(bookId: bookID, defaults: defaults),
            let page = document.page(at: saved.page) {
             view.layoutIfNeeded()
             if view.isUsingPageViewController { view.go(to: page) }
@@ -190,8 +188,7 @@ final class ReaderPDFPresentation {
         guard page != NSNotFound, x.isFinite, y.isFinite else { return }
         // currentDestination can describe a neighboring page in continuous
         // mode. Persist the page reported to the reader and a point in it.
-        let saved = SavedPosition(page: page, x: Double(x), y: Double(y))
-        if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: progressKey) }
+        ReaderProgressStore.savePDFPosition(.init(page: page, x: Double(x), y: Double(y)), bookId: bookID, defaults: defaults)
     }
 
     func refreshPosition() { publishPosition() }

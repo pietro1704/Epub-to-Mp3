@@ -66,11 +66,22 @@ enum ReaderProgressStore {
         load(defaults: defaults)[bookId]
     }
 
+    /// The PDF reader position, shared by iOS and macOS: a page and a point in page coordinates.
+    struct PDFPosition: Codable, Equatable { let page: Int; let x: Double; let y: Double }
+
+    static func savedPDFPosition(bookId: String, defaults: UserDefaults = .standard) -> PDFPosition? {
+        defaults.data(forKey: pdfPositionKey(bookId: bookId))
+            .flatMap { try? JSONDecoder().decode(PDFPosition.self, from: $0) }
+    }
+
+    static func savePDFPosition(_ position: PDFPosition, bookId: String, defaults: UserDefaults = .standard) {
+        guard let data = try? JSONEncoder().encode(position) else { return }
+        defaults.set(data, forKey: pdfPositionKey(bookId: bookId))
+    }
+
     /// Zero-based page the PDF reader last saved for this book.
     static func savedPDFPage(bookId: String, defaults: UserDefaults = .standard) -> Int? {
-        struct Position: Decodable { let page: Int }
-        return defaults.data(forKey: pdfPositionKey(bookId: bookId))
-            .flatMap { try? JSONDecoder().decode(Position.self, from: $0) }?.page
+        savedPDFPosition(bookId: bookId, defaults: defaults)?.page
     }
 
     static func pdfPositionKey(bookId: String) -> String { "reader.pdf.position.v1.\(bookId)" }

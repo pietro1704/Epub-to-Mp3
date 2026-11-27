@@ -107,6 +107,42 @@ final class MacReaderPDFViewportTests: XCTestCase {
         XCTAssertNil(window.attachedSheet, "The notice appears once per opened book")
     }
 
+    func testPDFPageIsSavedUnderTheSharedKeyAndRestoredOnReopen() async throws {
+        let source = try PdfFixture.createMultiPage(pages: (1...4).map {
+            (heading: "Page heading \($0)", body: "Readable passage \($0).")
+        })
+        defer { try? FileManager.default.removeItem(at: source) }
+        let harness = try NativeReaderTestHarness(chapters: [])
+        harness.installTeardown(in: self)
+        let bookID = "mac-pdf-position-\(UUID().uuidString)"
+        let key = ReaderProgressStore.pdfPositionKey(bookId: bookID)
+        defer { harness.player.location.defaults.removeObject(forKey: key) }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = harness.controller
+        window.orderFront(nil)
+        defer { window.contentViewController = nil; window.close() }
+        harness.controller.view.layoutSubtreeIfNeeded()
+        harness.document.currentBookId = bookID
+        harness.document.loadGeneration = UUID()
+        _ = await harness.text.showPDF(source)
+        let first = try XCTUnwrap(harness.composition.contentScrollView.documentView as? MacReaderPDFView)
+        first.layoutDocumentView()
+        first.go(to: try XCTUnwrap(first.document?.page(at: 2)))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(ReaderProgressStore.savedPDFPage(bookId: bookID, defaults: harness.player.location.defaults), 2)
+
+        harness.document.loadGeneration = UUID()
+        _ = await harness.text.showPDF(source)
+        let reopened = try XCTUnwrap(harness.composition.contentScrollView.documentView as? MacReaderPDFView)
+        XCTAssertFalse(reopened === first)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let page = try XCTUnwrap(reopened.currentPage)
+        XCTAssertEqual(reopened.document?.index(for: page), 2)
+        XCTAssertEqual(ReaderProgressStore.savedPDFPage(bookId: bookID, defaults: harness.player.location.defaults), 2)
+    }
+
     func testCancelledOpenDoesNotInstallDocument() async throws {
         let harness = try NativeReaderTestHarness(chapters: [])
         harness.installTeardown(in: self)

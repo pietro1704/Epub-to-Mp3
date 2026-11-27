@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 import PDFKit
 
 /// Translates PDFKit's visible or clicked text to the Rust narration axis.
@@ -30,6 +31,45 @@ final class MacReaderPDFView: PDFView {
             return (normalized, nil, true)
         }
         return (document, nil, false)
+    }
+
+    private var positionObservers: Set<AnyCancellable> = []
+
+    /// Reopens the saved position, then saves every later move. Call once, after the document is laid out:
+    /// PDFKit's moves while opening must not replace the saved position.
+    func keepPosition(bookID: String, defaults: UserDefaults) {
+        positionObservers.removeAll()
+        if let saved = ReaderProgressStore.savedPDFPosition(bookId: bookID, defaults: defaults),
+           let page = document?.page(at: saved.page) {
+            go(to: PDFDestination(page: page, at: CGPoint(x: saved.x, y: saved.y)))
+        }
+        var names = [Notification.Name.PDFViewPageChanged, .PDFViewVisiblePagesChanged]
+            .map { NotificationCenter.default.publisher(for: $0, object: self) }
+        // Scrolling within a page posts no PDFView notification.
+        if let clip = documentView?.enclosingScrollView?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            names.append(NotificationCenter.default.publisher(for: NSView.boundsDidChangeNotification, object: clip))
+        }
+        Publishers.MergeMany(names).sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.savePosition(bookID: bookID, defaults: defaults) }
+        }.store(in: &positionObservers)
+    }
+
+    private func savePosition(bookID: String, defaults: UserDefaults) {
+        guard window != nil, let document, let page = currentPage else { return }
+        let index = document.index(for: page)
+        // The reader chrome covers the top inset; a destination lands below it.
+        var readable = bounds
+        let covered = documentView?.enclosingScrollView?.contentInsets.top ?? 0
+        readable.size.height = max(1, readable.height - covered)
+        if isFlipped { readable.origin.y += covered }
+        let visible = convert(readable, to: page)
+        let box = page.bounds(for: displayBox)
+        let x = min(max(visible.minX, box.minX), box.maxX)
+        let y = min(max(visible.maxY, box.minY), box.maxY)
+        guard index != NSNotFound, x.isFinite, y.isFinite else { return }
+        ReaderProgressStore.savePDFPosition(.init(page: index, x: Double(x), y: Double(y)),
+                                            bookId: bookID, defaults: defaults)
     }
 
     @discardableResult

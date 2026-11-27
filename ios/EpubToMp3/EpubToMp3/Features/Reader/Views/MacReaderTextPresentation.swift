@@ -545,6 +545,7 @@ final class MacReaderTextPresentation {
         view.audioMap = prepared.audioMap
         view.document = prepared.document
         composition.protectPDFOpeningPosition(view)
+        if let bookID { view.keepPosition(bookID: bookID, defaults: location.defaults) }
         return prepared.wasNormalized
     }
 }
