@@ -68,8 +68,23 @@ pub fn verify_book_source(path: &Path, book: &Book) -> crate::structure::Structu
             .iter()
             .any(|item| item.href == path || mapped(&item.children, path))
     }
-    for chapter in &book.chapters {
+    let first_mapped = book
+        .chapters
+        .iter()
+        .position(|chapter| mapped(&book.toc, &chapter.source_path));
+    for (position, chapter) in book.chapters.iter().enumerate() {
         if !chapter.text.trim().is_empty() && !mapped(&book.toc, &chapter.source_path) {
+            // Pages before the first outline entry are front matter: reported, not a defect.
+            if first_mapped.is_some_and(|first| position < first) {
+                result.notes.push(StructureWarning {
+                    code: "PDF_FRONT_MATTER_OUTSIDE_TOC",
+                    message: format!(
+                        "Front matter at {} precedes the PDF outline",
+                        chapter.source_path
+                    ),
+                });
+                continue;
+            }
             result.warnings.push(StructureWarning {
                 code: "PDF_CONTENT_OUTSIDE_TOC",
                 message: format!(
