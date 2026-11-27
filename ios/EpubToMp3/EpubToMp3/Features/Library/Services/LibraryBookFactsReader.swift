@@ -48,7 +48,7 @@ struct LibraryBookFactsReader: @unchecked Sendable {
         // PDF audio chapters are not pages, so only the conversion can say how many there are.
         facts.audio = .init(ready: ready, total: audio?.sourceChaptersTotal ?? facts.chapterCount)
         let durations = playable.compactMap { chapter in
-            chapter.downloadUrl.flatMap(URL.init(string:)).flatMap(audioSeconds)
+            chapter.downloadUrl.flatMap { AudiobookChapterTransfer.resolve(path: $0, base: nil) }.flatMap(audioSeconds)
         }
         // A sum with a missing chapter would understate the book, so it is left out.
         if !playable.isEmpty, durations.count == playable.count { facts.audioSeconds = durations.reduce(0, +) }

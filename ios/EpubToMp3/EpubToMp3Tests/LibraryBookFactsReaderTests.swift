@@ -84,4 +84,27 @@ final class LibraryBookFactsReaderTests: XCTestCase {
         XCTAssertEqual(facts.audio, .partial(ready: 2, total: 5))
         XCTAssertEqual(facts.audioSeconds, 120)
     }
+
+    /// The Rust conversion records each chapter as a plain file path, not a URL.
+    func testCompleteConversionRecordedAsFilePathsKeepsItsDuration() async {
+        var reader = reader()
+        reader.audioSeconds = { $0.isFileURL ? 60 : nil }
+        reader.convertedSnapshot = { jobID in
+            let chapters = (0..<2).map { index in
+                JobSnapshot.Chapter(index: index, name: "c\(index)", status: "completed",
+                    downloadUrl: "/tmp/Synthetic Book/00\(index) - c.mp3", chars: nil, charsProcessed: nil,
+                    progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil, textOffset: nil)
+            }
+            return JobSnapshot(jobId: jobID, state: "finished", bookTitle: "Facts", bookAuthor: nil,
+                coverUrl: nil, coverMimeType: nil, engine: "", voice: "", language: nil,
+                progressPercent: 100, chaptersTotal: 2, chaptersCompleted: 2, chapterProgress: chapters,
+                outputs: nil, logUrl: nil, error: nil, lastActivityAt: 0,
+                chapterIndexBase: 0, sourceChaptersTotal: 2)
+        }
+
+        let facts = await reader.facts(for: book(.epub, jobID: "job"))
+
+        XCTAssertEqual(facts.audio, .complete)
+        XCTAssertEqual(facts.audioSeconds, 120)
+    }
 }
