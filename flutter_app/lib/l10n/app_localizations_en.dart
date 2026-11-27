@@ -1006,4 +1006,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get silenceTrimStrong => 'Strong';
+
+  @override
+  String get chapterRename => 'Rename chapter';
+
+  @override
+  String get chapterRenameReset => 'Use automatic name';
+
+  @override
+  String get chapterRenameSave => 'Save';
 }

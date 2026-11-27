@@ -1007,4 +1007,13 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get silenceTrimStrong => 'Forte';
+
+  @override
+  String get chapterRename => 'Renomear capítulo';
+
+  @override
+  String get chapterRenameReset => 'Usar o nome automático';
+
+  @override
+  String get chapterRenameSave => 'Salvar';
 }
