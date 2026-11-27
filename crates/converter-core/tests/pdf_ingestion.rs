@@ -723,3 +723,76 @@ fn pdf_page_break_after_a_finished_sentence_stays_a_paragraph_break() {
     assert_eq!(chapters[0].text, "The night ended.\n\nmorning came.");
     assert_eq!(chapters[1].text, "A heading\n\nBody text.");
 }
+
+/// PDF-IMAGE-PAGE-BLOCKS-BOOK: no kind of image-only page may reject a book that has text.
+fn texts_with_image_page(position: usize, content: &'static str) -> Vec<u8> {
+    let texts = [
+        "Primeira pagina com texto proprio e suficiente para narrar.",
+        "Segunda pagina com outro texto bem diferente do primeiro.",
+        "Terceira pagina fala de outra coisa totalmente distinta.",
+        "Quarta pagina continua a historia com mais algumas palavras.",
+        "Quinta pagina fecha o livro com um ultimo paragrafo longo.",
+        "",
+    ];
+    fixture::pdf_with(false, &texts, |objects| {
+        let page = 2 + position * 2;
+        objects[page + 1] = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+    })
+}
+
+fn assert_book_survives(source: Vec<u8>) {
+    let session = open_bytes(&source).expect("an image-only page must not reject the book");
+    let chapters = &session.metadata().chapters;
+    assert!(chapters.iter().any(|c| c.text.contains("Primeira pagina")));
+    assert!(chapters.iter().any(|c| c.text.contains("Quinta pagina")));
+}
+
+#[test]
+fn pdf_inline_image_page_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(
+        5,
+        "q 100 0 0 100 20 20 cm BI /W 2 /H 2 /CS /G /BPC 8 ID \u{1}\u{0}EI\u{ff}\u{fe} EI Q",
+    ));
+}
+
+#[test]
+fn pdf_page_with_unparseable_content_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(5, "q 100 0 0 [[[ /Im0 Do ((( Q"));
+}
+
+#[test]
+fn pdf_page_with_only_a_form_xobject_does_not_reject_the_book() {
+    assert_book_survives(texts_with_image_page(5, "/Fm0 Do"));
+}
+
+struct FakeOcr;
+impl converter_core::ingestion::pdf_text::PageOcr for FakeOcr {
+    fn recognize(&self, page_number: u32) -> Option<String> {
+        (page_number == 6).then(|| "Texto reconhecido pelo OCR do cliente na sexta pagina.".into())
+    }
+}
+
+#[test]
+fn pdf_image_page_is_read_by_the_client_ocr_hook_and_skipped_without_it() {
+    let source = texts_with_image_page(5, "/Fm0 Do");
+    let path = std::path::Path::new("book.pdf");
+    let with = converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes_with_ocr(
+        path,
+        &source,
+        &|| false,
+        Some(&FakeOcr),
+    )
+    .unwrap();
+    assert!(with
+        .chapters
+        .iter()
+        .any(|c| c.text.contains("reconhecido pelo OCR")));
+    assert_eq!(with.skipped_pages, 0);
+    let without =
+        converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(path, &source).unwrap();
+    assert!(!without.chapters.iter().any(|c| c.text.contains("OCR")));
+    assert_eq!(without.skipped_pages, 1);
+}
