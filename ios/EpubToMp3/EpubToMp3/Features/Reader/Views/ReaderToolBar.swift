@@ -10,7 +10,7 @@ final class ReaderToolBar: NSObject {
     }
     private let perform: (ReaderTool) -> Void
     private lazy var recent = UIBarButtonItem(title: "Aa", style: .plain, target: self, action: #selector(useRecent))
-    private lazy var more = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: makeMenu())
+    private lazy var more = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: nil)
 
     init(defaults: UserDefaults = .standard, perform: @escaping (ReaderTool) -> Void) {
         preference = ReaderToolPreference(defaults: defaults)
