@@ -6,6 +6,7 @@ require "fileutils"
 require "open3"
 require "rbconfig"
 require "timeout"
+require "stringio"
 require_relative "mac_build_budget"
 require_relative "native_job"
 
@@ -391,5 +392,181 @@ class MacBuildBudgetTest < Minitest::Test
     _, error, status = Open3.capture3(environment, "/bin/bash", "-euo", "pipefail", "-c", body, chdir: @dir)
     assert status.success?, "low space is a note, not a refusal: #{error}"
     assert File.file?(@marker)
+  end
+end
+
+# Automatic reclaim: synthetic trees only. Old diagnostic bundles go; anything
+# that is not one, or that sits under a retained, backup or bundle directory,
+# stays.
+class BuildStorageReclaimTest < Minitest::Test
+  def swap(target, name, implementation)
+    original = target.method(name)
+    target.define_singleton_method(name, &implementation)
+    yield
+  ensure
+    target.define_singleton_method(name, original)
+  end
+
+  DAY = 86_400
+
+  def setup
+    @dir = File.realpath(Dir.mktmpdir("build-storage-reclaim-"))
+    @now = Time.now
+  end
+
+  def teardown
+    FileUtils.remove_entry(@dir)
+  end
+
+  def with_stub(name, value)
+    original = MacBuildBudget.method(name)
+    MacBuildBudget.define_singleton_method(name) { |*, **| value.respond_to?(:call) ? value.call : value }
+    yield
+  ensure
+    MacBuildBudget.define_singleton_method(name, original)
+  end
+
+  def make(relative, days:, directory: true, content: "x")
+    path = File.join(@dir, relative)
+    if directory
+      FileUtils.mkdir_p(path)
+      File.write(File.join(path, "payload"), content)
+    else
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, content)
+    end
+    time = @now - days * DAY
+    File.utime(time, time, path)
+    path
+  end
+
+  def test_only_expired_diagnostic_bundles_are_candidates
+    logs = File.join(@dir, "logs")
+    expired = [make("logs/run-a/Test.xcresult", days: 9), make("logs/run-a/system.logarchive", days: 8),
+               make("logs/run-b/Fixture.app", days: 10), make("logs/run-b/Fixture.ipa", days: 10, directory: false),
+               make("logs/run-b/Fixture.app.dSYM", days: 30)]
+    kept = [make("logs/run-c/Recent.xcresult", days: 2),
+            make("logs/library-backup-fixture/Old.xcresult", days: 40),
+            make("logs/worktree-backup-fixture/Old.app", days: 40),
+            make("logs/run-d/Resources.bundle/Old.app", days: 40),
+            make("logs/run-e/notes.log", days: 40, directory: false),
+            make("logs/run-f/book.epub", days: 40, directory: false),
+            make("logs/run-f/book.pdf", days: 40, directory: false),
+            make("logs/pinned-run/Old.xcresult", days: 40)]
+    File.write(File.join(@dir, "logs/pinned-run", MacBuildBudget::RETAIN_MARKER), "")
+    with_epub = make("logs/run-g/Reader.app", days: 40)
+    File.write(File.join(with_epub, "fixture.epub"), "book")
+    kept << with_epub
+    outside = make("outside/Linked.app", days: 40)
+    File.symlink(outside, File.join(logs, "run-b/Linked.app"))
+    candidates = MacBuildBudget.expired_diagnostics([logs], now: @now)
+    assert_equal expired.sort, candidates.sort
+    kept.each { |path| refute_includes candidates, path }
+  end
+
+  def test_retained_root_is_never_walked
+    logs = File.join(@dir, "logs")
+    make("logs/Old.xcresult", days: 40)
+    File.write(File.join(logs, MacBuildBudget::RETAIN_MARKER), "")
+    assert_empty MacBuildBudget.expired_diagnostics([logs], now: @now)
+  end
+
+  def test_prune_removes_expired_diagnostics_only_when_asked_and_never_in_dry_run
+    logs = File.join(@dir, "logs")
+    old = make("logs/run/Test.xcresult", days: 9)
+    lock = File.join(@dir, "lease")
+    with_stub(:capture, "") do
+      with_stub(:legacy_caches, []) do
+        with_stub(:diagnostic_roots, [logs]) do
+          MacBuildBudget.prune(lock: lock, out: StringIO.new)
+          assert File.directory?(old), "plain prune keeps diagnostics"
+          out = StringIO.new
+          MacBuildBudget.prune(lock: lock, diagnostics: true, dry_run: true, out: out)
+          assert File.directory?(old)
+          assert_match(/plan: remove expired diagnostic: .*Test\.xcresult/, out.string)
+          MacBuildBudget.prune(lock: lock, diagnostics: true, out: StringIO.new)
+          refute File.exist?(old)
+        end
+      end
+    end
+  end
+
+  def test_prune_dry_run_keeps_derived_data
+    cache = File.join(@dir, "EpubToMp3-fixture")
+    Dir.mkdir(cache)
+    out = StringIO.new
+    with_stub(:capture, "") do
+      with_stub(:legacy_caches, [cache]) { MacBuildBudget.prune(lock: File.join(@dir, "lease"), dry_run: true, out: out) }
+    end
+    assert File.directory?(cache)
+    assert_match(/plan: remove superseded Xcode cache: .*EpubToMp3-fixture/, out.string)
+  end
+
+  def test_locked_and_dirty_worktrees_are_excluded_from_reclaim
+    records = [{ path: "/fixture/main", locked: false }, { path: "/fixture/pinned", locked: true },
+               { path: "/fixture/dirty", locked: false }, { path: "/fixture/idle", locked: false }]
+    with_stub(:worktree_records, records) do
+      swap(MacBuildBudget, :clean_checkout?, ->(path) { path != "/fixture/dirty" }) do
+        assert_equal %w[/fixture/main /fixture/idle], MacBuildBudget.reclaimable_worktrees
+      end
+      assert_equal %w[/fixture/main /fixture/dirty /fixture/idle], MacBuildBudget.unlocked_worktrees
+    end
+  end
+
+  def test_worktree_records_read_locked_entries
+    main, pinned, bare = %w[main pinned bare].map { |name| File.join(@dir, name).tap { |path| Dir.mkdir(path) } }
+    porcelain = "worktree #{main}\nHEAD abc\nbranch refs/heads/master\n\n" \
+                "worktree #{pinned}\nHEAD abc\nbranch refs/heads/pinned\nlocked pinned by owner\n\n" \
+                "worktree #{bare}\nHEAD abc\ndetached\nlocked\n\nworktree #{File.join(@dir, 'gone')}\nHEAD abc\n"
+    with_stub(:capture, porcelain) do
+      assert_equal [{ path: main, locked: false }, { path: pinned, locked: true }, { path: bare, locked: true }],
+                   MacBuildBudget.worktree_records
+    end
+  end
+
+  def test_diagnostic_roots_follow_the_given_checkouts
+    main = File.join(@dir, "repo")
+    dirty = File.join(@dir, "repo-dirty")
+    [File.join(@dir, "repo-logs"), File.join(main, ".reports"), File.join(dirty, ".reports")].each { |path| FileUtils.mkdir_p(path) }
+    with_stub(:worktrees, [main, dirty]) do
+      ENV.delete(MacBuildBudget::DIAGNOSTICS_ENV)
+      assert_equal [File.join(@dir, "repo-logs"), File.join(main, ".reports")], MacBuildBudget.diagnostic_roots([main])
+    end
+  end
+
+  # Run as `ruby scripts/mac_build_budget.rb reclaim`, the script is loaded by a
+  # relative path and then required again through clean_worktrees/native_job.
+  def test_loading_the_script_twice_is_silent
+    _out, err, status = Open3.capture3(RbConfig.ruby, "-e",
+                                       'load "scripts/mac_build_budget.rb"; require_relative "scripts/clean_worktrees"',
+                                       chdir: File.expand_path("..", __dir__))
+    assert status.success?, err
+    assert_empty err
+  end
+
+  def test_reclaim_if_low_runs_only_below_the_warning_floor
+    calls = []
+    with_stub(:policy, { "version" => 1, "warn_free_gib" => 15 }) do
+      with_stub(:reclaim, -> { calls << :reclaim }) do
+        with_stub(:metrics, { free_bytes: 40 * MacBuildBudget::GIB }) do
+          assert_equal 0, MacBuildBudget.main(["reclaim-if-low"]) if RUBY_PLATFORM.include?("darwin")
+        end
+        assert_empty calls
+        with_stub(:metrics, { free_bytes: 3 * MacBuildBudget::GIB }) do
+          assert_equal 0, MacBuildBudget.main(["reclaim-if-low"]) if RUBY_PLATFORM.include?("darwin")
+        end
+      end
+    end
+    assert_equal(RUBY_PLATFORM.include?("darwin") ? [:reclaim] : [], calls)
+  end
+
+  def test_reclaim_dry_run_reaches_every_step_without_removing
+    steps = []
+    swap(MacBuildBudget, :prune, ->(**options) { steps << [:prune, options.slice(:dry_run, :diagnostics)] }) do
+      swap(MacBuildBudget, :reclaim_worktree_builds, ->(**options) { steps << [:worktrees, options.slice(:dry_run)] }) do
+        with_stub(:reclaimable_worktrees, []) { MacBuildBudget.reclaim(dry_run: true, out: StringIO.new) }
+      end
+    end
+    assert_equal [[:prune, { dry_run: true, diagnostics: true }], [:worktrees, { dry_run: true }]], steps
   end
 end

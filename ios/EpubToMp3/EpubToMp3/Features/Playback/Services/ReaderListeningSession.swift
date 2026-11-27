@@ -161,7 +161,12 @@ final class ReaderListeningSession {
                     // A text suffix has no measured absolute audio-time origin.
                     // Resolve a timeline seek from chapter start, carrying its
                     // exact seconds and current pause intent into the new job.
-                    if self.requestedPDFPosition == nil,
+                    // A ±N s skip is relative to the audible clock: after the
+                    // suffix origin the running job already serves it. A target
+                    // in a previous chapter is still negative here.
+                    let origin = self.player.services.segments.startingPosition(for: navigation.chapterIndex)
+                    let servedBySuffix = request.relativeSkip && (request.position < 0 || request.position >= origin)
+                    if !servedBySuffix, self.requestedPDFPosition == nil,
                        self.requestedPage?.chapter == navigation.chapterIndex,
                        (self.requestedPage?.ratio ?? 0) > 0 {
                         self.restartListening?(navigation.chapterIndex, 0, request)

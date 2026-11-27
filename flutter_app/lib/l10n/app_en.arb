@@ -337,5 +337,14 @@
   "libraryMetaAdded": "Added {date}",
   "@libraryMetaAdded": {"placeholders": {"date": {"type": "String"}}},
   "libraryMetaLastRead": "Read {date}",
-  "@libraryMetaLastRead": {"placeholders": {"date": {"type": "String"}}}
+  "@libraryMetaLastRead": {"placeholders": {"date": {"type": "String"}}},
+  "silenceTrimLabel": "Silence trimming",
+  "silenceTrimDescription": "Shorter pauses in new audio. Existing audio changes only when converted again. Titles and chapter ends keep their pauses.",
+  "silenceTrimOff": "Off",
+  "silenceTrimLight": "Light",
+  "silenceTrimMedium": "Medium",
+  "silenceTrimStrong": "Strong",
+  "chapterRename": "Rename chapter",
+  "chapterRenameReset": "Use automatic name",
+  "chapterRenameSave": "Save"
 }

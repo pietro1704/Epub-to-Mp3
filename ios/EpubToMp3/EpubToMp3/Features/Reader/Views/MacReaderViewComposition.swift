@@ -246,13 +246,14 @@ final class MacReaderViewComposition {
         let chrome = chromeBackground.convert(chromeBackground.bounds, to: scroll)
         let coveredHeight = scroll.bounds.intersection(chrome).height
         var insets = scroll.contentInsets
-        guard coveredHeight > insets.top else { return }
-
-        // Give the first page clearance at the leading scroll boundary. Keep the inset
-        // fixed when chrome visibility changes so PDFKit preserves the exact reading offset.
-        scroll.automaticallyAdjustsContentInsets = false
-        insets.top = coveredHeight
-        scroll.contentInsets = insets
+        if coveredHeight > insets.top {
+            // Give the first page clearance at the leading scroll boundary. Keep the inset
+            // fixed when chrome visibility changes so PDFKit preserves the exact reading offset.
+            scroll.automaticallyAdjustsContentInsets = false
+            insets.top = coveredHeight
+            scroll.contentInsets = insets
+        }
+        // PDFKit does not always open at the top of the first page, with or without an inset.
         let clip = scroll.contentView
         var bounds = clip.bounds
         bounds.origin.y = clip.isFlipped

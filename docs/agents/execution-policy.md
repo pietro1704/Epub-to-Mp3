@@ -346,6 +346,20 @@ Worktrees and disk (Pietro, 2026-11-23, after the Mac fell to 3.8 GiB free):
   refuses while a compiler job holds the lease. Before removing a worktree with
   tracked changes, save `git diff HEAD --binary` and its untracked sources under
   `~/Developer/epubtomp3-logs/worktree-backup-<date>/`, and keep the branch.
+- Reclaim is the automatic upkeep. `scripts/native_job.rb` runs
+  `mac_build_budget.rb reclaim-if-low` after every host build or heavy job (not
+  Simulator, not nested; `EPUB_NATIVE_AUTO_RECLAIM=0` opts out), and it acts
+  only below `warn_free_gib`. `mise run clean:reclaim [-- --dry-run]` runs it
+  directly. It removes superseded DerivedData of clean worktrees, diagnostic
+  bundles (`.xcresult`, `.logarchive`, `.app`, `.ipa`, `.dSYM`) older than 7 days
+  under `~/Developer/epubtomp3-logs` and each worktree's `.reports`, and, through
+  `clean_worktrees.rb --auto`, `.build` and Rust debug profiles of worktrees idle
+  for 72 h. It never removes a worktree, release libraries or the prebuilt
+  runtimes under `target/`. It never touches a locked worktree (`git worktree
+  lock --reason ...` protects one entirely) or one with uncommitted files. It
+  also skips `library-backup-*`, `worktree-backup-*`, `*.bundle`, books, and any
+  directory holding a `.retain` file. Each step refuses while a job holds the
+  lease. `build:storage` reports the diagnostics' size.
 - The coordinator alerts below 10 GiB free, and `warn_free_gib` warns at 15.
 
 Never open or leave a PR in draft. Open every PR ready; work that is not ready to

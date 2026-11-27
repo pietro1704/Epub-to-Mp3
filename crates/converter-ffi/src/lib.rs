@@ -227,6 +227,8 @@ pub use conversion_options_boundary::*;
 mod job_control_boundary;
 pub use job_control_boundary::*;
 mod book_metadata_boundary;
+mod chapter_names_boundary;
+pub use chapter_names_boundary::*;
 mod session_boundary;
 pub use book_metadata_boundary::*;
 pub use session_boundary::*;

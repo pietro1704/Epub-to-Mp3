@@ -88,16 +88,31 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
         }
     }
 
-    override func mouseUp(with event: NSEvent) {
-        if selectedRange().length > 0 || event.clickCount > 1 {
-            super.mouseUp(with: event)
+    /// A selectable `NSTextView` tracks the whole press inside `mouseDown` and consumes the release,
+    /// so a `mouseUp` override never runs: clicks and finished selections are handled here.
+    override func mouseDown(with event: NSEvent) {
+        let hadSelection = selectedRange().length > 0
+        super.mouseDown(with: event)
+        let release = NSApp.currentEvent.flatMap { $0.type == .leftMouseUp ? $0 : nil } ?? event
+        let start = convert(event.locationInWindow, from: nil)
+        let end = convert(release.locationInWindow, from: nil)
+        let dragged = hypot(end.x - start.x, end.y - start.y) >= Self.dragThreshold
+        let held = release.timestamp - event.timestamp >= Self.holdDuration
+        if dragged || held {
+            if held, !dragged, selectedRange().length == 0 { selectWord(at: start) }
+            showSelectionActions(for: event)
             return
         }
-        let location = convert(event.locationInWindow, from: nil)
-        if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) {
-            super.mouseUp(with: event)
-            return
-        }
+        // A click that creates or dismisses a selection belongs to the text system.
+        guard event.clickCount == 1, !hadSelection, selectedRange().length == 0 else { return }
+        handlePageClick(at: start)
+    }
+
+    private static let dragThreshold: CGFloat = 4
+    private static let holdDuration: TimeInterval = 0.5
+
+    private func handlePageClick(at location: NSPoint) {
+        if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) { return }
         // Tap zones belong to the whole page, not to one column of it.
         let page = columnHost ?? self
         let pageLocation = page.convert(location, from: self)
@@ -106,8 +121,26 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
             onToggleChrome?()
             return
         }
-        let forward = pageLocation.x >= page.bounds.midX
-        if onPageTap?(forward) != true { super.mouseUp(with: event) }
+        _ = onPageTap?(pageLocation.x >= page.bounds.midX)
+    }
+
+    private func selectWord(at point: NSPoint) {
+        guard let index = characterIndex(at: point), index < string.utf16.count else { return }
+        let word = selectionRange(forProposedRange: NSRange(location: index, length: 0), granularity: .selectByWord)
+        guard !(string as NSString).substring(with: word)
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        setSelectedRange(word)
+    }
+
+    private func showSelectionActions(for event: NSEvent) {
+        let selection = selectedRange()
+        guard selection.length > 0, let items = onBuildSelectionMenu?(selection), !items.isEmpty else { return }
+        let menu = NSMenu()
+        items.forEach(menu.addItem)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.string("menu.copy"), action: #selector(copy(_:)), keyEquivalent: "")
+            .target = self
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

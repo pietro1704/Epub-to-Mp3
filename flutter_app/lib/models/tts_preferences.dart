@@ -102,6 +102,12 @@ class TtsSelection {
 /// `inline` reads each note at its reference; `skip` leaves the notes out.
 enum FootnoteNarration { inline, skip }
 
+/// How much silence the generated speech loses (decided by the shared Rust core).
+/// `light` is the historical default: a pause over 600 ms becomes 300 ms. `medium` cuts
+/// pauses over 400 ms to 200 ms; `strong` cuts pauses over 250 ms to 120 ms and treats
+/// near-silence as silence. Deliberate pauses (titles, chapter ends) are never cut.
+enum SilenceTrim { off, light, medium, strong }
+
 class TtsPreferences {
   /// Use supported app choices without rewriting a saved preference or job.
   TtsPreferences withSupportedPiperQuality() {
@@ -119,6 +125,7 @@ class TtsPreferences {
       allowOnlineFallback: allowOnlineFallback,
       policyVersion: policyVersion,
       footnoteNarration: footnoteNarration,
+      silenceTrim: silenceTrim,
     );
   }
 
@@ -130,6 +137,7 @@ class TtsPreferences {
     allowOnlineFallback: allowOnlineFallback,
     policyVersion: policyVersion,
     footnoteNarration: footnoteNarration,
+    silenceTrim: silenceTrim,
   );
 
   TtsPreferences withFootnoteNarration(FootnoteNarration value) =>
@@ -139,7 +147,17 @@ class TtsPreferences {
         allowOnlineFallback: allowOnlineFallback,
         policyVersion: policyVersion,
         footnoteNarration: value,
+        silenceTrim: silenceTrim,
       );
+
+  TtsPreferences withSilenceTrim(SilenceTrim value) => TtsPreferences(
+    primary: primary,
+    secondary: secondary,
+    allowOnlineFallback: allowOnlineFallback,
+    policyVersion: policyVersion,
+    footnoteNarration: footnoteNarration,
+    silenceTrim: value,
+  );
 
   /// Policy 2 continues with an installed system voice when the chosen voices
   /// fail; policy 3 continues natively but only with the chosen voices.
@@ -151,6 +169,7 @@ class TtsPreferences {
     allowOnlineFallback: allowOnlineFallback,
     policyVersion: allowed ? 2 : 3,
     footnoteNarration: footnoteNarration,
+    silenceTrim: silenceTrim,
   );
 
   const TtsPreferences({
@@ -159,6 +178,7 @@ class TtsPreferences {
     this.allowOnlineFallback = false,
     this.policyVersion = 1,
     this.footnoteNarration = FootnoteNarration.inline,
+    this.silenceTrim = SilenceTrim.light,
   });
 
   /// New app preferences only; legacy jobs retain their captured strict policy.
@@ -166,12 +186,14 @@ class TtsPreferences {
     : secondary = TtsSelection.system,
       allowOnlineFallback = false,
       policyVersion = 2,
-      footnoteNarration = FootnoteNarration.inline;
+      footnoteNarration = FootnoteNarration.inline,
+      silenceTrim = SilenceTrim.light;
   final TtsSelection primary;
   final TtsSelection? secondary;
   final bool allowOnlineFallback;
   final int policyVersion;
   final FootnoteNarration footnoteNarration;
+  final SilenceTrim silenceTrim;
   Map<String, dynamic> toJson({bool includeManualModel = true}) => {
     'primary': primary.toJson(includeManualModel: includeManualModel),
     'secondary': secondary?.toJson(includeManualModel: includeManualModel),
@@ -179,6 +201,7 @@ class TtsPreferences {
     if (policyVersion != 1) 'policy_version': policyVersion,
     if (footnoteNarration != FootnoteNarration.inline)
       'footnote_narration': footnoteNarration.name,
+    if (silenceTrim != SilenceTrim.light) 'silence_trim': silenceTrim.name,
   };
   factory TtsPreferences.fromJson(Map<String, dynamic> json) => TtsPreferences(
     primary: TtsSelection.fromJson(
@@ -194,6 +217,10 @@ class TtsPreferences {
     footnoteNarration: json['footnote_narration'] == 'skip'
         ? FootnoteNarration.skip
         : FootnoteNarration.inline,
+    silenceTrim: SilenceTrim.values.firstWhere(
+      (level) => level.name == json['silence_trim'],
+      orElse: () => SilenceTrim.light,
+    ),
   );
   String optionsJson({String? modelsRoot, String? language}) => jsonEncode({
     if (primary.session != null || secondary?.session != null)

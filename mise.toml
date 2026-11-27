@@ -431,7 +431,7 @@ run = "node scripts/pr_gate_policy.mjs"
 
 [tasks."build:storage:test"]
 description = "Verify the advisory free-space note and safe cleanup without compiling"
-run = "ruby scripts/test_mac_build_budget.rb"
+run = ["ruby scripts/test_mac_build_budget.rb", "ruby scripts/test_clean_worktrees.rb"]
 
 [tasks."clean:build"]
 description = "Prune superseded project Xcode caches under the native lease; preserve current artifacts"
@@ -444,6 +444,10 @@ run = "ruby scripts/clean_worktrees.rb"
 [tasks."clean:build:if-low"]
 description = "Prune superseded Xcode caches below the configured free-space floor, only without active jobs"
 run = "ruby scripts/mac_build_budget.rb prune-if-low"
+
+[tasks."clean:reclaim"]
+description = "Automatic upkeep: superseded DerivedData, diagnostics older than 7 days and build output of worktrees idle 72 h; skips locked or dirty worktrees (use -- --dry-run to preview)"
+run = "ruby scripts/mac_build_budget.rb reclaim"
 
 [tasks.test]
 description = "Run the Rails web suite"

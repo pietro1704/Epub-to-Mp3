@@ -37,6 +37,10 @@ struct PDFReadingAudioMap: Sendable {
     private let textlessPages: Set<Int>
     /// Text-less pages that Rust left out of the narration.
     let skippedPages: Int
+    /// Provisional chapter lengths for the playback timeline while narration is still streaming.
+    var chapterEstimates: [Int: TimeInterval] {
+        chapters.enumerated().reduce(into: [:]) { $0[$1.offset] = ChapterPlaybackTimeline.estimate(text: $1.element.text) }
+    }
     var skippedPagesNotice: String? {
         guard skippedPages > 0 else { return nil }
         return skippedPages == 1 ? L10n.string("convert.pdfPagesSkipped.one")

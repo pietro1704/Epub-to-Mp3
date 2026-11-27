@@ -11,6 +11,8 @@ final class MacReaderPlaybackSession {
     private let makePlaybackControl: (@MainActor () throws -> ConverterPlaybackControl)?
     private let recovery = ReaderListeningRecovery()
     private weak var owner: AnyObject?
+    /// Estimates owned by the open reader, for books without cached EPUB text such as PDFs.
+    var readerChapterEstimates: (String) -> [Int: TimeInterval] = { _ in [:] }
 
     private lazy var listening = ReaderListeningSession(
         player: player, playerPresentation: playerPresentation, conversionExecutor: conversionExecutor,
@@ -90,7 +92,8 @@ final class MacReaderPlaybackSession {
         observePlayback()
         listening.start(book: book, priority: chapter, pageRatio: pageRatio, catalog: [],
                         conversionOptions: options, presentsFullPlayer: showsPlayer,
-                        chapterEstimates: ChapterPlaybackTimeline.estimates(for: chapters),
+                        chapterEstimates: chapters.isEmpty ? readerChapterEstimates(bookID)
+                            : ChapterPlaybackTimeline.estimates(for: chapters),
                         voiceChange: voiceChange, pdfAnchor: pdfAnchor, owner: owner,
                         showsPlayerOnCompletion: showsPlayer)
     }

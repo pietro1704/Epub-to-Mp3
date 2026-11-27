@@ -12,9 +12,17 @@ require_relative "native_job"
 # merged or closed (and that carry no tracked changes); for the rest, deletes
 # only regenerable build directories once the worktree has been idle for 24 h.
 # An unknown PR state (gh offline, no PR, detached HEAD) never removes anything.
+#
+# --auto is the unattended mode used by build-storage reclaim: it never removes
+# a worktree or asks GitHub, skips worktrees with uncommitted files and, after
+# 72 h idle, also deletes Rust debug profiles. Release libraries and the
+# verified prebuilt runtimes under target/ are kept.
 module CleanWorktrees
   GIB = 1024.0**3
   IDLE_SECONDS = 24 * 3600
+  AUTO_IDLE_SECONDS = 72 * 3600
+  RUST_DEBUG_GLOBS = %w[target/debug target/*/debug].freeze
+  RUST_KEPT = %w[native-prebuilt onnxruntime-macos-prebuilt espeak-data].freeze
   BUILD_DIRS = %w[ios/EpubToMp3/.build tools/DeviceWorkflow/.build ios/EpubToMp3/tools/DeviceWorkflow/.build].freeze
   BUSY_PROGRAMS = %w[xcodebuild cargo rustc swift-build swift-frontend swift-package swift-test device-workflow DeviceWorkflow].freeze
   COMPILER_PHASES = %w[build heavy].freeze
@@ -126,18 +134,40 @@ module CleanWorktrees
     0
   end
 
-  def self.build_dirs(wt)
-    BUILD_DIRS.map { |d| File.join(wt.path, d) }.select { |d| File.directory?(d) && !File.symlink?(d) }
+  def self.build_dirs(wt, rust_debug: false)
+    dirs = BUILD_DIRS.map { |d| File.join(wt.path, d) }
+    if rust_debug
+      dirs += RUST_DEBUG_GLOBS.flat_map { |pattern| Dir.glob(pattern, base: wt.path) }
+                              .reject { |relative| RUST_KEPT.include?(relative.split("/")[1]) && relative != "target/debug" }
+                              .map { |relative| File.join(wt.path, relative) }
+    end
+    dirs.uniq.select { |d| File.directory?(d) && !File.symlink?(d) && !File.symlink?(File.dirname(d)) }
+  end
+
+  def self.auto_plan(wt, base, now)
+    tracked, other = status(wt)
+    return base.merge(action: :skip, reason: "git status failed") unless tracked
+    return base.merge(action: :skip, reason: "uncommitted files") unless tracked.empty? && other.empty?
+
+    idle = last_activity(wt)
+    dirs = build_dirs(wt, rust_debug: true)
+    unless idle && now - idle > AUTO_IDLE_SECONDS && !dirs.empty?
+      return base.merge(action: :skip, reason: "active within 72 h or no build output")
+    end
+
+    base.merge(action: :clean_build, reason: "idle #{((now - idle) / 3600).floor} h", dirs: dirs,
+               bytes: dirs.sum { |d| size(d) })
   end
 
   # Returns an array of action hashes: { worktree:, action:, reason:, bytes: }.
-  def self.plan(root, pr_state:, processes:, holder: nil, now: Time.now)
+  def self.plan(root, pr_state:, processes:, holder: nil, now: Time.now, auto: false)
     list(root).map do |wt|
       base = { worktree: wt.path, branch: wt.branch }
       next base.merge(action: :skip, reason: "locked worktree") if wt.locked
       next base.merge(action: :skip, reason: "named by the lease holder record") if holder && holder.to_s != "" && File.basename(wt.path) == holder
       next base.merge(action: :skip, reason: "build process running inside") if busy?(wt, processes)
       next base.merge(action: :skip, reason: "directory missing (run git worktree prune)") unless File.directory?(wt.path)
+      next auto_plan(wt, base, now) if auto
 
       tracked, other = status(wt)
       next base.merge(action: :skip, reason: "git status failed") unless tracked
@@ -179,7 +209,7 @@ module CleanWorktrees
   # Refuses while any job holds the native lease, like clean:build. The lease is
   # kept for the whole cleanup so no job starts in the middle.
   def self.run(root:, lock: NativeJob::LOCK_PATH, dry_run: false, pr_state: method(:gh_pr_state),
-               processes: nil, out: $stdout)
+               processes: nil, out: $stdout, auto: false)
     File.open(lock, File::RDWR | File::CREAT, 0o600) do |lease|
       unless lease.flock(File::LOCK_EX | File::LOCK_NB)
         record = NativeJob.holder(lock)
@@ -189,7 +219,7 @@ module CleanWorktrees
       if procs.any? { |p| p[:args].to_s.split.any? { |part| %w[xcodebuild cargo rustc swift-frontend].include?(File.basename(part)) } }
         raise Refused, "A compiler is active; cleanup refused"
       end
-      items = plan(root, pr_state: pr_state, processes: procs, holder: holder_name(lock))
+      items = plan(root, pr_state: pr_state, processes: procs, holder: holder_name(lock), auto: auto)
       freed = 0
       items.each do |item|
         verb = { remove: "remove worktree", clean_build: "delete build dirs", report: "REPORT", skip: "skip" }.fetch(item[:action])
@@ -212,12 +242,16 @@ module CleanWorktrees
 
   def self.main(arguments, **options)
     dry = false
-    OptionParser.new { |o| o.on("--dry-run") { dry = true } }.parse!(arguments)
+    auto = false
+    OptionParser.new do |o|
+      o.on("--dry-run") { dry = true }
+      o.on("--auto") { auto = true }
+    end.parse!(arguments)
     root = options.delete(:root) || File.expand_path("..", __dir__)
     # Resolve the main checkout so running from a linked worktree still works.
     common, ok = git("rev-parse", "--path-format=absolute", "--git-common-dir", chdir: root)
     root = File.dirname(common.strip) if ok && File.basename(common.strip) == ".git"
-    run(root: root, dry_run: dry, **options)
+    run(root: root, dry_run: dry, auto: auto, **options)
   rescue Refused => error
     warn "clean_worktrees: #{error.message}"
     75

@@ -10,6 +10,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('landscape fills the width; portrait keeps the whole page', () {
+    expect(initialPdfZoom(landscape: true, fitZoom: 0.4, coverZoom: 1.0), 1.0);
+    expect(initialPdfZoom(landscape: false, fitZoom: 0.4, coverZoom: 1.0), 0.4);
+  });
 
   group('PDF reader routing', () {
     test('recognizes PDF extension case-insensitively', () {

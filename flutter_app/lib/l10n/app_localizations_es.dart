@@ -989,4 +989,32 @@ class AppLocalizationsEs extends AppLocalizations {
   String libraryMetaLastRead(String date) {
     return 'Leído $date';
   }
+
+  @override
+  String get silenceTrimLabel => 'Recorte de silencio';
+
+  @override
+  String get silenceTrimDescription =>
+      'Pausas más cortas en el audio nuevo. El audio existente solo cambia al convertir de nuevo. Los títulos y finales de capítulo conservan sus pausas.';
+
+  @override
+  String get silenceTrimOff => 'Desactivado';
+
+  @override
+  String get silenceTrimLight => 'Suave';
+
+  @override
+  String get silenceTrimMedium => 'Medio';
+
+  @override
+  String get silenceTrimStrong => 'Fuerte';
+
+  @override
+  String get chapterRename => 'Renombrar capítulo';
+
+  @override
+  String get chapterRenameReset => 'Usar el nombre automático';
+
+  @override
+  String get chapterRenameSave => 'Guardar';
 }
