@@ -536,14 +536,17 @@ try {
   # The Add a book dialog animates in, and a click landing mid-animation can miss, so wait a
   # moment before clicking and retry the import control a few times.
   $dialog = $null
-  for ($attempt = 1; $attempt -le 3 -and $null -eq $dialog; $attempt++) {
+  for ($attempt = 1; $attempt -le 5 -and $null -eq $dialog; $attempt++) {
     $importFile = Wait-ForReaderUi 'the local EPUB or PDF import control' { Find-AppText '^Import an EPUB or PDF file$' }
-    Start-Sleep -Milliseconds 800
+    # A cold first launch can swallow an early click; wait longer on every retry.
+    Start-Sleep -Milliseconds (800 * $attempt)
     try {
       Click-FlutterElement $importFile
       $dialog = Wait-ForReaderUi 'the native file picker' $pickerLookup -TimeoutSeconds 12
     } catch {
       Write-Host "The native file picker did not open on attempt ${attempt}: $($_.Exception.Message)"
+      # Evidence for the next failure: every top-level window the app owns right now.
+      foreach ($row in [ReaderTestDesktop]::ProcessWindows($application.Id)) { Write-Host "  window: $row" }
     }
   }
   if ($null -eq $dialog) { throw 'Timed out waiting for the native file picker.' }
