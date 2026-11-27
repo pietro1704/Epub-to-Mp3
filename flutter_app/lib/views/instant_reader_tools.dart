@@ -54,9 +54,9 @@ extension _InstantReaderTools on _InstantReaderViewState {
       ReaderTool.voiceModels => (
         icon: Icons.record_voice_over,
         label: t.modelsTitle,
-        run: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const ModelsScreen()),
-        ),
+        run: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const ModelsScreen())),
       ),
     };
   }
@@ -127,9 +127,8 @@ extension _InstantReaderTools on _InstantReaderViewState {
     final seconds = player.positionSeconds;
     if (measured == null && audio != null) {
       try {
-        measured = (await MeasuredSpeechAlignment.read(
-          audio,
-        )).rangeAt(seconds, chapter.text);
+        measured = (await MeasuredSpeechAlignment.read(audio))
+            .rangeAt(seconds, chapter.text);
       } on Object {
         measured = null; // Missing metadata keeps sentence-only resume.
       }
@@ -157,7 +156,11 @@ extension _InstantReaderTools on _InstantReaderViewState {
     try {
       unawaited(
         widget.onListenFrom!(
-          ReaderListeningPosition.fromUtf16(position, chapter.text, utf16Offset),
+          ReaderListeningPosition.fromUtf16(
+            position,
+            chapter.text,
+            utf16Offset,
+          ),
         ),
       );
     } on FormatException {
@@ -204,11 +207,23 @@ extension _InstantReaderTools on _InstantReaderViewState {
 
   Future<void> _showContents() async {
     final t = AppLocalizations.of(context)!;
-    final rows = readerTocRows(widget.fulltext);
     final bookId = widget.bookId;
+    final nameStore = ref.read(chapterNameStoreProvider);
+    // Overrides arrive after the panel opens, so a slow disk never delays the contents list.
+    final names = ValueNotifier<Map<int, String>>(const {});
+    if (bookId != null && nameStore != null) {
+      nameStore
+          .load(bookId)
+          .then(
+            (loaded) => names.value = loaded,
+            onError: (_) => names.value = const <int, String>{},
+          );
+    }
     final job = bookId == null
         ? null
-        : await ref.read(localConversionJobStoreProvider).load(bookId, 'local-$bookId');
+        : await ref
+              .read(localConversionJobStoreProvider)
+              .load(bookId, 'local-$bookId');
     if (!mounted) return;
     final audio = chapterAudioStates(job);
     _showPanel(
@@ -221,8 +236,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (widget.downloadActions != null)
-                      _downloadMenu(audio),
+                    if (widget.downloadActions != null) _downloadMenu(audio),
                     if (audio.isNotEmpty && bookId != null)
                       IconButton(
                         tooltip: t.tocRemoveDownloads,
@@ -230,7 +244,8 @@ extension _InstantReaderTools on _InstantReaderViewState {
                         onPressed: () => _confirmRemoveAudio(bookId),
                       ),
                     IconButton(
-                      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                      tooltip: MaterialLocalizations.of(context)
+                          .closeButtonTooltip,
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -238,44 +253,78 @@ extension _InstantReaderTools on _InstantReaderViewState {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  itemCount: rows.length,
-                  itemBuilder: (context, position) {
-                    final row = rows[position];
-                    final index = row.chapterIndex;
-                    return ListTile(
-                      contentPadding: EdgeInsetsDirectional.only(
-                        start: 16.0 + 16 * row.level,
-                        end: 16,
-                      ),
-                      selected: index == _currentChapterIndex,
-                      enabled: index != null,
-                      title: Text(row.title),
-                      trailing: switch (index == null ? null : audio[index]) {
-                        ChapterAudioState.ready => Icon(
-                          Icons.check_circle,
-                          semanticLabel: t.tocAudioReady,
-                        ),
-                        ChapterAudioState.converting => Icon(
-                          Icons.hourglass_empty,
-                          semanticLabel: t.tocAudioConverting,
-                        ),
-                        ChapterAudioState.failed => Icon(
-                          Icons.error_outline,
-                          semanticLabel: t.tocAudioFailed,
-                        ),
-                        null => null,
+                child: ValueListenableBuilder<Map<int, String>>(
+                  valueListenable: names,
+                  builder: (context, overrides, _) {
+                    final rows = readerTocRows(
+                      widget.fulltext,
+                      names: overrides,
+                    );
+                    return ListView.builder(
+                      itemCount: rows.length,
+                      itemBuilder: (context, position) {
+                        final row = rows[position];
+                        final index = row.chapterIndex;
+                        return ListTile(
+                          onLongPress:
+                              index == null ||
+                                  row.anchorOffset != null ||
+                                  bookId == null ||
+                                  nameStore == null
+                              ? null
+                              : () async {
+                                  final chapter =
+                                      widget.fulltext.chapters[index].index;
+                                  final result = await _askChapterName(
+                                    row.title,
+                                    overrides.containsKey(chapter),
+                                  );
+                                  if (result == null || !mounted) return;
+                                  final updated = await nameStore.set(
+                                    bookId,
+                                    chapter,
+                                    result.isEmpty ? null : result,
+                                  );
+                                  names.value = updated;
+                                },
+                          contentPadding: EdgeInsetsDirectional.only(
+                            start: 16.0 + 16 * row.level,
+                            end: 16,
+                          ),
+                          selected: index == _currentChapterIndex,
+                          enabled: index != null,
+                          title: Text(row.title),
+                          trailing: switch (index == null
+                              ? null
+                              : audio[index]) {
+                            ChapterAudioState.ready => Icon(
+                              Icons.check_circle,
+                              semanticLabel: t.tocAudioReady,
+                            ),
+                            ChapterAudioState.converting => Icon(
+                              Icons.hourglass_empty,
+                              semanticLabel: t.tocAudioConverting,
+                            ),
+                            ChapterAudioState.failed => Icon(
+                              Icons.error_outline,
+                              semanticLabel: t.tocAudioFailed,
+                            ),
+                            null => null,
+                          },
+                          onTap: index == null
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  _jumpToChapter(index);
+                                  final offset = row.anchorOffset;
+                                  if (offset != null) {
+                                    _update(
+                                      () => _requestedSourceOffset = offset,
+                                    );
+                                  }
+                                },
+                        );
                       },
-                      onTap: index == null
-                          ? null
-                          : () {
-                              Navigator.pop(context);
-                              _jumpToChapter(index);
-                              final offset = row.anchorOffset;
-                              if (offset != null) {
-                                _update(() => _requestedSourceOffset = offset);
-                              }
-                            },
                     );
                   },
                 ),
@@ -287,9 +336,48 @@ extension _InstantReaderTools on _InstantReaderViewState {
     );
   }
 
+  /// Null when cancelled, an empty string to restore the automatic name, else the new name.
+  Future<String?> _askChapterName(String current, bool renamed) {
+    final t = AppLocalizations.of(context)!;
+    final controller = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(t.chapterRename),
+        content: TextField(
+          key: const ValueKey('chapter-rename-field'),
+          controller: controller,
+          autofocus: true,
+          maxLength: 200,
+          onSubmitted: (value) => Navigator.pop(dialog, value.trim()),
+        ),
+        actions: [
+          if (renamed)
+            TextButton(
+              key: const ValueKey('chapter-rename-reset'),
+              onPressed: () => Navigator.pop(dialog, ''),
+              child: Text(t.chapterRenameReset),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: Text(MaterialLocalizations.of(dialog).cancelButtonLabel),
+          ),
+          TextButton(
+            key: const ValueKey('chapter-rename-save'),
+            onPressed: () => Navigator.pop(dialog, controller.text.trim()),
+            child: Text(t.chapterRenameSave),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
   Widget _downloadMenu(Map<int, ChapterAudioState> audio) {
     final t = AppLocalizations.of(context)!;
-    final actions = contentsDownloadActions(audio, widget.fulltext.chapters.length);
+    final actions = contentsDownloadActions(
+      audio,
+      widget.fulltext.chapters.length,
+    );
     if (actions.isEmpty) return const SizedBox.shrink();
     final bulk = widget.downloadActions!;
     return PopupMenuButton<ContentsDownloadAction>(
@@ -332,8 +420,14 @@ extension _InstantReaderTools on _InstantReaderViewState {
         title: Text(t.tocRemoveDownloads),
         content: Text(t.tocRemoveDownloadsMessage),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(t.cancel)),
-          TextButton(onPressed: () => Navigator.pop(dialog, true), child: Text(t.remove)),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(t.remove),
+          ),
         ],
       ),
     );

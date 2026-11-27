@@ -27,6 +27,7 @@ part '../playback/desktop_positioned_chapter.dart';
 part 'desktop_conversion_worker.dart';
 part '../playback/desktop_platform_speech.dart';
 part 'desktop_library_metadata.dart';
+part 'desktop_chapter_names.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
 final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter

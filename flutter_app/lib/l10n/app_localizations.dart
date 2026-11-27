@@ -1833,6 +1833,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Strong'**
   String get silenceTrimStrong;
+
+  /// No description provided for @chapterRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename chapter'**
+  String get chapterRename;
+
+  /// No description provided for @chapterRenameReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Use automatic name'**
+  String get chapterRenameReset;
+
+  /// No description provided for @chapterRenameSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get chapterRenameSave;
 }
 
 class _AppLocalizationsDelegate

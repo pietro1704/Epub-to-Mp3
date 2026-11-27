@@ -1008,4 +1008,13 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get silenceTrimStrong => 'Fuerte';
+
+  @override
+  String get chapterRename => 'Renombrar capítulo';
+
+  @override
+  String get chapterRenameReset => 'Usar el nombre automático';
+
+  @override
+  String get chapterRenameSave => 'Guardar';
 }
