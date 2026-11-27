@@ -410,11 +410,17 @@ final class ReaderPDFPresentation {
             let position = ReaderAudioHighlightPresentation.projected(latestAudio,
                 age: ProcessInfo.processInfo.systemUptime - audioObservedAt, rate: Double(player.rate.rawValue))
             chapterIndex = position.chapterIndex
-            if let measured = position.alignment?.spokenWord(at: position.itemSeconds) {
-                let text = map.chapters[chapterIndex].text
+            let text = map.chapters[chapterIndex].text
+            if let measured = position.alignment?.spokenWord(at: position.itemSeconds),
+               let word = ReaderSpokenTextResolver.word(measured.word, passage: measured.passage, chapterText: text,
+                                                        renderedText: text),
+               map.displayRange(chapter: chapterIndex, range: word) != nil {
                 measuredWord = true
-                range = ReaderSpokenTextResolver.word(measured.word, passage: measured.passage, chapterText: text, renderedText: text)
-            } else { range = approximateSentence(position, map: map) }
+                range = word
+            } else {
+                // As in the EPUB reader, a word that cannot be located falls back to its sentence.
+                range = approximateSentence(position, map: map)
+            }
         } else { paintPausedPassage(); return }
         guard let range, let match = map.displayRange(chapter: chapterIndex, range: range),
               let page = view.document?.page(at: match.page), let selection = page.selection(for: match.range) else {
