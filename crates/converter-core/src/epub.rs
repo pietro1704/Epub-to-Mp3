@@ -251,7 +251,9 @@ fn parse_epub_document<R: Read + Seek>(
         let continues = !indices.is_empty()
             && !indices.contains_key(key)
             && !text.trim().is_empty()
-            && !chapters.is_empty();
+            && chapters
+                .last()
+                .is_some_and(|previous: &Chapter| !previous.text.trim().is_empty());
         let level = levels.get(key).copied().unwrap_or(1);
         let toc_title = toc_title_for(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
