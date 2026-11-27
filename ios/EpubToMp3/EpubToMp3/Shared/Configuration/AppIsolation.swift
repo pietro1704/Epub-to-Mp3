@@ -8,6 +8,8 @@ import ObjectiveC
 /// threading a flag through every store, the process is redirected once, before anything touches disk:
 ///  - macOS: `HOME`/`CFFIXED_USER_HOME` point at a throwaway directory (deleted at every launch), so
 ///    Application Support, Caches, Documents and the Rust conversion roots all land there;
+///  - iOS keeps the sandbox home: only imported book files are redirected (`LibraryImportFiles`), and stores that
+///    resolve Application Support or Caches themselves still use the real folders;
 ///  - `UserDefaults.standard` returns a throwaway suite, so every present and future call site is covered;
 ///  - the App Group defaults suite and container are replaced by throwaway ones (widgets never see test data).
 /// Normal launches never touch any of this.
