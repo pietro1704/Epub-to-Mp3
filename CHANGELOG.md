@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0] — 2026-11-27
+
+### Bug Fixes
+
+- TOC merge regressions (numeric labels, unrelated files, dividers, skipped pages) (#1672) ([aa891c5](https://github.com/pietro1704/Epub-to-Mp3/commit/aa891c5013090e19b117086d2d0cee23cec056b9))
+- Keep footnote labels apart from the previous word (#1671) ([cbb76d9](https://github.com/pietro1704/Epub-to-Mp3/commit/cbb76d94466712204ab8267f5702c52d0454352d))
+- Ignore a single-entry outline (#1670) ([626e3fc](https://github.com/pietro1704/Epub-to-Mp3/commit/626e3fc790fd9643823491c9e1adca9f1ffada6d))
+- Save and restore the PDF reader position under the shared iOS key (#1669) ([e3e76e4](https://github.com/pietro1704/Epub-to-Mp3/commit/e3e76e4017f47830830ec8955a68777ea1e25237))
+- Prepare the iOS Rust library inside the outer device-build lease (#1667) ([6d5985a](https://github.com/pietro1704/Epub-to-Mp3/commit/6d5985a260e6d5c04a7aa70d1208d43da5495aa6))
+
+### Chores
+
+- Bump version to 0.14.0 ([38bd6dd](https://github.com/pietro1704/Epub-to-Mp3/commit/38bd6dd0098b2aec50273deeebf4272cef536ca0))
+
+### Features
+
+- TOC entries jump to their fragment anchor (converter, FFI, Flutter) (#1668) ([8bf0c3b](https://github.com/pietro1704/Epub-to-Mp3/commit/8bf0c3b12ab090b856d413efd571536be6fc03c2))
+
 ## [0.13.0] — 2026-11-27
 
 ### Bug Fixes
@@ -46,10 +64,11 @@
 
 ### Chores
 
-- Bump version to 0.13.0 ([4469eeb](https://github.com/pietro1704/Epub-to-Mp3/commit/4469eebba12168311ffbb5e0557bbd36c15713d1))
+- V0.13.0 (#1665) ([2372974](https://github.com/pietro1704/Epub-to-Mp3/commit/23729745ba4f7b89a6a5aaa7d9ecb94bcd80dc9b))
 
 ### Features
 
+- Expose TOC fragment anchors on the reader text axis (#1666) ([cb7aa41](https://github.com/pietro1704/Epub-to-Mp3/commit/cb7aa419bd625193d658b4f92609849cf0a82297))
 - Show per-book facts on Library cards (#1664) ([8d2b703](https://github.com/pietro1704/Epub-to-Mp3/commit/8d2b70395398fd2360ec17ba925328105d7b908e))
 - Split outline-less PDFs at repeated chapter heading lines (#1661) ([5a0e9ed](https://github.com/pietro1704/Epub-to-Mp3/commit/5a0e9edd8ca85b72e4334a655d40d5d2a614f553))
 - Library cards show format, size, progress, audio state and date (#1655) ([a4ed2dc](https://github.com/pietro1704/Epub-to-Mp3/commit/a4ed2dc6e5923f0019db251cb2c11f0154d005fb))
