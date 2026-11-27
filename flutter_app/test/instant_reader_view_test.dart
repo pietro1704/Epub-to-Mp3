@@ -43,10 +43,14 @@ Widget _wrap(SharedPreferences prefs, Widget child) {
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: SizedBox(
-        width: 400,
-        height: 800,
-        child: Scaffold(body: child),
+      // A phone-sized window: the tablet bar shows every tool and is tested elsewhere.
+      home: MediaQuery(
+        data: const MediaQueryData(size: Size(400, 800)),
+        child: SizedBox(
+          width: 400,
+          height: 800,
+          child: Scaffold(body: child),
+        ),
       ),
     ),
   );
