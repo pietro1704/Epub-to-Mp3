@@ -1,22 +1,59 @@
 # Changelog
 
+## [0.14.1] — 2026-11-27
+
+### Bug Fixes
+
+- Keep sentences cut by a page break in one paragraph (#1691) ([c90c4e6](https://github.com/pietro1704/Epub-to-Mp3/commit/c90c4e6be268c7b7af8d9904a1a022621e2dc7fc))
+
+### CI
+
+- Use the runner's Ruby in the macOS release jobs (#1692) ([3eff67e](https://github.com/pietro1704/Epub-to-Mp3/commit/3eff67ebed2f372a7ab629961d73665bccbf1623))
+
+### Chores
+
+- Bump version to 0.14.1 ([c5ff5d0](https://github.com/pietro1704/Epub-to-Mp3/commit/c5ff5d025ad30465706415bf5670808098c8c9cd))
+
 ## [0.14.0] — 2026-11-27
 
 ### Bug Fixes
 
+- Untitled spine regression (generic names, chapter explosion) (#1690) ([e1c1980](https://github.com/pietro1704/Epub-to-Mp3/commit/e1c198094260441c00245619f264184d4f487712))
+- Deliver every progress and chapter event before convert returns (#1687) ([ba421cb](https://github.com/pietro1704/Epub-to-Mp3/commit/ba421cb1fd7dde8ae900754f7585d5b990cb6d16))
+- Preview and render the upright face for Times New Roman on iOS (#1688) ([78beda1](https://github.com/pietro1704/Epub-to-Mp3/commit/78beda13850d255a3542a185b1f8cbbe7710237e))
+- A remote jump keeps the text following the audio (#1685) ([8707781](https://github.com/pietro1704/Epub-to-Mp3/commit/8707781de1463e6f9c8f016da9723d4701c1fdfe))
+- The Windows reader GUI check retries the native picker longer and logs the app windows when it misses (#1683) ([426a61b](https://github.com/pietro1704/Epub-to-Mp3/commit/426a61b3f899c64186b850c0768469f847cd370f))
+- Ignore outlines that only cover the front of a long document (#1680) ([b390e8e](https://github.com/pietro1704/Epub-to-Mp3/commit/b390e8e2dd4c05320b0f76aab6f31a0ea86f5c5a))
+- Count audio duration for conversions recorded as file paths (#1681) ([8c1048a](https://github.com/pietro1704/Epub-to-Mp3/commit/8c1048a192aabbb0f3d5efe79ffc3c7f7d7a97c4))
+- Drop layout slug lines; front matter before the outline is a note, not a warning (#1679) ([58fb429](https://github.com/pietro1704/Epub-to-Mp3/commit/58fb429726e4564d1aaf176aa4256ae7a71f8d37))
+- Fixed-size sections titled from the first line; split oversized heuristic chapters (#1673) ([bf3b787](https://github.com/pietro1704/Epub-to-Mp3/commit/bf3b78709c6ad8abfaef28dee7da3c77becaa287))
+- Detect undeclared book language and normalise to BCP 47 (#1678) ([d793532](https://github.com/pietro1704/Epub-to-Mp3/commit/d7935324a5dc7cd4b56b74676f8590c485f071b8))
+- Qualify duplicate numeric titles with the parent title; keep nesting depth on level jumps (#1675) ([97b561d](https://github.com/pietro1704/Epub-to-Mp3/commit/97b561d33999dd392097e42f1b58eba092e8bd78))
+- Publish Intel and Apple Silicon Mac zips with app entitlements (#1677) ([713949e](https://github.com/pietro1704/Epub-to-Mp3/commit/713949ea13235333918fe2feaa9ff5132438da91))
 - TOC merge regressions (numeric labels, unrelated files, dividers, skipped pages) (#1672) ([aa891c5](https://github.com/pietro1704/Epub-to-Mp3/commit/aa891c5013090e19b117086d2d0cee23cec056b9))
 - Keep footnote labels apart from the previous word (#1671) ([cbb76d9](https://github.com/pietro1704/Epub-to-Mp3/commit/cbb76d94466712204ab8267f5702c52d0454352d))
 - Ignore a single-entry outline (#1670) ([626e3fc](https://github.com/pietro1704/Epub-to-Mp3/commit/626e3fc790fd9643823491c9e1adca9f1ffada6d))
 - Save and restore the PDF reader position under the shared iOS key (#1669) ([e3e76e4](https://github.com/pietro1704/Epub-to-Mp3/commit/e3e76e4017f47830830ec8955a68777ea1e25237))
 - Prepare the iOS Rust library inside the outer device-build lease (#1667) ([6d5985a](https://github.com/pietro1704/Epub-to-Mp3/commit/6d5985a260e6d5c04a7aa70d1208d43da5495aa6))
 
+### CI
+
+- Run the player test classes in the default Simulator list (#1689) ([3f1a323](https://github.com/pietro1704/Epub-to-Mp3/commit/3f1a323b9c78fec4f78466474ba59c6ca9e53164))
+- Retry the APK build once after a transient Gradle download failure (#1684) ([c2ab845](https://github.com/pietro1704/Epub-to-Mp3/commit/c2ab845286d78f4e931f13139c99e3a9f5fe923f))
+- Stop the Simulator job from reinstalling Rust inside mise tasks (#1682) ([783f164](https://github.com/pietro1704/Epub-to-Mp3/commit/783f16419e724c77e9c2bad0ecc4e80e15ae822c))
+
 ### Chores
 
-- Bump version to 0.14.0 ([38bd6dd](https://github.com/pietro1704/Epub-to-Mp3/commit/38bd6dd0098b2aec50273deeebf4272cef536ca0))
+- V0.14.0 (#1676) ([8619fff](https://github.com/pietro1704/Epub-to-Mp3/commit/8619fffc866143369a86a7e54a8f6a81c532ee25))
 
 ### Features
 
 - TOC entries jump to their fragment anchor (converter, FFI, Flutter) (#1668) ([8bf0c3b](https://github.com/pietro1704/Epub-to-Mp3/commit/8bf0c3b12ab090b856d413efd571536be6fc03c2))
+
+### Tests
+
+- Whole-line pages hold with tight line heights and descenders (#1686) ([e38e5fb](https://github.com/pietro1704/Epub-to-Mp3/commit/e38e5fb376fe4bd748b5edc1e5a9d708ce0aefbe))
+- Fix stale player tests (#1674) ([6b1c348](https://github.com/pietro1704/Epub-to-Mp3/commit/6b1c34809566abcd1e4a1dbec11d24e7dc447788))
 
 ## [0.13.0] — 2026-11-27
 
