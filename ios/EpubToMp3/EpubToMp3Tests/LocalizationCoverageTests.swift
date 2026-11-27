@@ -28,4 +28,16 @@ final class LocalizationCoverageTests: XCTestCase {
             }
         }
     }
+
+    /// JOBS-EMPTY-COPY: the empty history points to the app's own Convert screen, not to other clients.
+    func testEmptyJobHistoryPointsToTheConvertScreen() throws {
+        defer { L10n.bundleOverrideForTesting = nil }
+        for locale in ["en", "pt-BR", "es"] {
+            L10n.bundleOverrideForTesting = try XCTUnwrap(L10n.localizationBundle(locale), "\(locale).lproj missing")
+            let copy = L10n.string("jobs.noConversionsDescription")
+            XCTAssertTrue(copy.contains(L10n.string("convert.title")), "\(locale): \(copy)")
+            XCTAssertFalse(copy.contains("CLI"), "\(locale): \(copy)")
+            XCTAssertFalse(copy.lowercased().contains("web"), "\(locale): \(copy)")
+        }
+    }
 }
