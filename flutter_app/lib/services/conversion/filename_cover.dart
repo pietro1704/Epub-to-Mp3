@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'dart:ui' show Color;
+
+import 'package:flutter/services.dart';
 
 import 'desktop_embedded_converter.dart';
 
@@ -34,15 +35,21 @@ FilenameCover? parseFilenameCover(String? json) {
 
 typedef FilenameCoverCall = Future<String?> Function(String fileName);
 
-/// Resolves and memoises filename covers; null where no Rust binding exists (mobile until
-/// its channel lands), so the tile keeps its icon placeholder.
+Future<String?> _androidCover(String fileName) =>
+    const MethodChannel('epub_to_mp3/embedded_converter')
+        .invokeMethod<String>('filenameCover', {'fileName': fileName});
+
+/// Resolves and memoises filename covers; null where no Rust binding exists (iOS until its
+/// channel lands), so the tile keeps its icon placeholder.
 class FilenameCoverResolver {
   FilenameCoverResolver({FilenameCoverCall? call})
     : _call = call ?? desktopFilenameCoverJson;
 
   static final instance = FilenameCoverResolver(
-    call: Platform.isAndroid || Platform.isIOS
+    call: Platform.isIOS
         ? (String _) async => null
+        : Platform.isAndroid
+        ? _androidCover
         : desktopFilenameCoverJson,
   );
 

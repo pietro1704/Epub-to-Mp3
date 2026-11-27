@@ -121,3 +121,65 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
         },
     )
 }
+
+/// Reads or updates the chapter name overrides file; a null `index` only reads and a null or
+/// blank `name` resets. Null with the error available through `nativeLastError`.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeChapterNames(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    path: JString<'_>,
+    index: JString<'_>,
+    name: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeChapterNames",
+        std::ptr::null_mut(),
+        || {
+            let mut optional = |value: JString<'_>| -> Result<Option<String>, String> {
+                if value.as_raw().is_null() {
+                    Ok(None)
+                } else {
+                    read_string(&mut env, value).map(Some)
+                }
+            };
+            let result = (|| {
+                let path = optional(path)?.ok_or("path is required")?;
+                let index = optional(index)?;
+                let name = optional(name)?;
+                super::chapter_names_boundary::chapter_names_update_json(
+                    Path::new(&path),
+                    index.as_deref(),
+                    name.as_deref(),
+                )
+            })();
+            match result {
+                Ok(value) => env
+                    .new_string(value)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw()),
+                Err(error) => fail(error),
+            }
+        },
+    )
+}
+
+/// Filename cover contract JSON (`label`, `backgroundRgb`) for a book file name.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeFilenameCover(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    file_name: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeFilenameCover",
+        std::ptr::null_mut(),
+        || match read_string(&mut env, file_name) {
+            Ok(name) => env
+                .new_string(super::chapter_names_boundary::filename_cover_json(&name))
+                .map_or(std::ptr::null_mut(), |value| value.into_raw()),
+            Err(error) => fail(error),
+        },
+    )
+}

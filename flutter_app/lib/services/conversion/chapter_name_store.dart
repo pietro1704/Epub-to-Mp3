@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Directory, Platform;
 
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'desktop_embedded_converter.dart';
@@ -41,7 +42,7 @@ class RustChapterNameStore implements ChapterNameStore {
   }) : _call =
            call ??
            ((path, {index, name}) =>
-               desktopChapterNamesJson(path, index: index, name: name)),
+               _platformChapterNames(path, index: index, name: name)),
        _directory = directory ?? _supportDirectory;
 
   final ChapterNamesCall _call;
@@ -70,6 +71,23 @@ class RustChapterNameStore implements ChapterNameStore {
   );
 }
 
-/// Null where no Rust binding exists yet (Android until its channel lands): no rename UI.
+const _channel = MethodChannel('epub_to_mp3/embedded_converter');
+
+Future<String?> _platformChapterNames(
+  String path, {
+  String? index,
+  String? name,
+}) {
+  if (Platform.isAndroid) {
+    return _channel.invokeMethod<String>('chapterNames', {
+      'path': path,
+      'index': index,
+      'name': name,
+    });
+  }
+  return desktopChapterNamesJson(path, index: index, name: name);
+}
+
+/// Null where no Rust binding exists yet (iOS): no rename UI.
 ChapterNameStore? defaultChapterNameStore() =>
-    Platform.isAndroid || Platform.isIOS ? null : RustChapterNameStore();
+    Platform.isIOS ? null : RustChapterNameStore();

@@ -64,6 +64,15 @@ pub unsafe extern "C" fn converter_chapter_names_update_json_v1(
     )
 }
 
+pub(super) fn filename_cover_json(file_name: &str) -> String {
+    let cover = filename_cover(file_name);
+    json!({
+        "label": cover.label,
+        "backgroundRgb": cover.background_rgb,
+    })
+    .to_string()
+}
+
 /// Returns `{"label", "backgroundRgb": [r, g, b]}` for a book file name, the cover clients
 /// draw when the book has none. Free the result with `converter_string_free`.
 #[no_mangle]
@@ -77,12 +86,7 @@ pub unsafe extern "C" fn converter_filename_cover_json_v1(file_name: *const c_ch
                 Ok(value) => value,
                 Err(error) => return fail(error),
             };
-            let cover = filename_cover(&file_name);
-            json_result(Ok(json!({
-                "label": cover.label,
-                "backgroundRgb": cover.background_rgb,
-            })
-            .to_string()))
+            json_result(Ok(filename_cover_json(&file_name)))
         },
     )
 }
