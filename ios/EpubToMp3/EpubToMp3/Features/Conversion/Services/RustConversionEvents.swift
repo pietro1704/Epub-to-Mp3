@@ -59,8 +59,9 @@ extension RustConversionCoordinator {
         var modelId: String? = nil
         var voice: String? = nil
 
+        /// Capped below 100: only the final result establishes completion.
         var progressPercent: Double {
-            Double(chaptersCompleted) / Double(max(chaptersTotal, 1)) * 100
+            min(99, Double(chaptersCompleted) / Double(max(chaptersTotal, 1)) * 100)
         }
 
         var playableChapter: JobSnapshot.Chapter {
