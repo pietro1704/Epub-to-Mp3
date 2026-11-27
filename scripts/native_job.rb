@@ -412,6 +412,21 @@ module NativeJob
     75
   end
 
+  # Disk upkeep once a host job has released the lease: below the warning
+  # floor, build-storage reclaim removes regenerable output. It never changes
+  # the job's result. Skipped inside another job, for the Simulator phase, on
+  # fixture leases and with EPUB_NATIVE_AUTO_RECLAIM=0.
+  def self.reclaim_after(path, phase)
+    return if phase == "simulator" || ENV[FD_ENV] || ENV[PATH_ENV] || ENV["EPUB_NATIVE_AUTO_RECLAIM"] == "0"
+    return unless host_services?(path)
+
+    MacBuildBudget.main(["reclaim-if-low"])
+    nil
+  rescue StandardError => error
+    warn "native_job: reclaim skipped: #{error.message}"
+    nil
+  end
+
   def self.main(arguments)
     options = { path: LOCK_PATH, build_dir: [], wait: nil }
     parser = OptionParser.new do |opts|
@@ -431,7 +446,9 @@ module NativeJob
       warn parser
       return 2
     end
-    run(phase: phase, command: arguments, **options)
+    code = run(phase: phase, command: arguments, **options)
+    reclaim_after(options[:path], phase)
+    code
   rescue OptionParser::ParseError => error
     warn error.message
     2
