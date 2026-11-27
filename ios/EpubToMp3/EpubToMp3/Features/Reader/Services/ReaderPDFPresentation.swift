@@ -29,7 +29,7 @@ final class ReaderPDFPresentation {
     var onToggleChrome: (() -> Void)?
     var onPlayFrom: ((PDFReadingAudioMap.Anchor) -> Void)?
     var onPositionChanged: ((PDFReadingAudioMap.Anchor?, Int, Int) -> Void)?
-    private var progressKey: String { "reader.pdf.position.v1.\(bookID)" }
+    private var progressKey: String { ReaderProgressStore.pdfPositionKey(bookId: bookID) }
 
     init(view: ReaderPDFView, bookID: String, defaults: UserDefaults = .standard,
          settings: AppSettings? = nil, player: AudioPlayer? = nil) {

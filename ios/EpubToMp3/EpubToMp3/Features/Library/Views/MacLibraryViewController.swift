@@ -79,6 +79,12 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         Task { [library] in await library.refreshLegacyPdfCovers() }
     }
 
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        // Reading progress changes while the reader covers the Library.
+        reload()
+    }
+
     override func viewDidLayout() {
         super.viewDidLayout()
         (collectionView.collectionViewLayout as? MacLibraryCollectionLayout)?.updateItemSize()
@@ -178,6 +184,10 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private func bindStore() {
         library.objectWillChange
             .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reload() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: LocalAudioArtifactStore.didChangeNotification)
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.reload() }
             .store(in: &cancellables)
     }
@@ -444,6 +454,8 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
     private let coverView = NSImageView()
     private let titleField = NSTextField(labelWithString: "")
     private let authorField = NSTextField(labelWithString: "")
+    private let factsField = NSTextField(wrappingLabelWithString: "")
+    private var factsTask: Task<Void, Never>?
     private let openButton = NSButton()
     private let convertButton = NSButton()
     private var onOpen: (() -> Void)?
@@ -457,13 +469,19 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         titleField.maximumNumberOfLines = 2
         authorField.textColor = .readableSecondaryLabel
         authorField.lineBreakMode = .byTruncatingTail
+        factsField.font = .preferredFont(forTextStyle: .caption1)
+        factsField.textColor = .readableSecondaryLabel
+        factsField.maximumNumberOfLines = 0
+        factsField.lineBreakMode = .byWordWrapping
+        factsField.isSelectable = false
+        factsField.setAccessibilityIdentifier("library.book.facts")
         convertButton.title = L10n.string("library.convertWholeBook")
         convertButton.bezelStyle = .rounded
         convertButton.setAccessibilityIdentifier("library.book.convert")
         convertButton.translatesAutoresizingMaskIntoConstraints = false
         convertButton.target = self
         convertButton.action = #selector(convertBook)
-        let stack = NSStackView(views: [coverView, titleField, authorField, convertButton])
+        let stack = NSStackView(views: [coverView, titleField, authorField, factsField, convertButton])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 5
@@ -481,6 +499,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             coverView.heightAnchor.constraint(equalTo: coverView.widthAnchor, multiplier: 1.5),
             titleField.widthAnchor.constraint(equalTo: root.widthAnchor),
             authorField.widthAnchor.constraint(equalTo: root.widthAnchor),
+            factsField.widthAnchor.constraint(equalTo: root.widthAnchor),
             convertButton.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor),
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -492,6 +511,13 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             openButton.bottomAnchor.constraint(equalTo: convertButton.topAnchor, constant: -5),
         ])
         view = root
+    }
+
+    private func showFacts(_ facts: LibraryBookFacts) {
+        let lines = facts.lines()
+        factsField.stringValue = lines.joined(separator: "\n")
+        factsField.toolTip = factsField.stringValue
+        openButton.setAccessibilityValue(lines.joined(separator: ", "))
     }
 
     func configure(with book: BookEntity, onOpen: @escaping () -> Void, onConvert: @escaping () -> Void) {
@@ -513,6 +539,13 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         titleField.stringValue = book.resolvedTitle
         authorField.stringValue = book.author ?? ""
         authorField.isHidden = book.author?.isEmpty ?? true
+        showFacts(LibraryBookFacts(book: book))
+        factsTask?.cancel()
+        factsTask = Task { [weak self] in
+            let facts = await Task.detached(priority: .utility) { await LibraryBookFactsReader().facts(for: book) }.value
+            guard !Task.isCancelled else { return }
+            self?.showFacts(facts)
+        }
         coverView.image = book.coverPNG.flatMap(NSImage.init(data:))
             ?? NSImage(systemSymbolName: book.fileType == .pdf ? "doc.richtext" : "book.closed",
                        accessibilityDescription: nil)

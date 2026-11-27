@@ -69,7 +69,9 @@ final class LibraryGridController: UICollectionViewController {
             // titles never fall outside an estimated collection item.
             let titleFont = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: environment.traitCollection)
             let authorFont = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: environment.traitCollection)
+            let factsFont = UIFont.preferredFont(forTextStyle: .caption2, compatibleWith: environment.traitCollection)
             let metadataHeight = max(70, titleFont.lineHeight * 2 + authorFont.lineHeight + 8)
+                + ceil(factsFont.lineHeight * CGFloat(LibraryBookFacts.maximumWrappedLines)) + 4
             let tileHeight = tileWidth * 1.5 + metadataHeight
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
@@ -149,6 +151,8 @@ final class LibraryGridController: UICollectionViewController {
         snapshot.appendItems(books.map(\.id), toSection: .main)
         // Data source may be nil if called before viewDidLoad.
         guard dataSource != nil else { return }
+        // Same ids with newer progress or audio must redraw their cards.
+        snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { dataSource.snapshot().indexOfItem($0) != nil })
         dataSource.apply(snapshot, animatingDifferences: animated)
     }
 
@@ -260,6 +264,8 @@ final class BookGridCell: UICollectionViewCell {
     private let cover = UIImageView()
     private let title = UILabel()
     private let author = UILabel()
+    private let facts = UILabel()
+    private var factsTask: Task<Void, Never>?
     private let labels = UIStackView()
     private let stack = UIStackView()
     private var coverWidth: NSLayoutConstraint?
@@ -288,10 +294,16 @@ final class BookGridCell: UICollectionViewCell {
         author.numberOfLines = 1
         author.setContentCompressionResistancePriority(.required, for: .vertical)
 
+        facts.adjustsFontForContentSizeCategory = true
+        facts.textColor = .secondaryLabel
+        facts.setContentCompressionResistancePriority(.required, for: .vertical)
+        facts.accessibilityIdentifier = "library.book.facts"
+
         labels.axis = .vertical
         labels.spacing = 4
         labels.addArrangedSubview(title)
         labels.addArrangedSubview(author)
+        labels.addArrangedSubview(facts)
         stack.addArrangedSubview(cover)
         stack.addArrangedSubview(labels)
         stack.axis = .vertical
@@ -322,6 +334,8 @@ final class BookGridCell: UICollectionViewCell {
         coverWidth?.isActive = accessible
         title.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
         author.font = .preferredFont(forTextStyle: .caption1, compatibleWith: traitCollection)
+        facts.font = .preferredFont(forTextStyle: .caption2, compatibleWith: traitCollection)
+        facts.numberOfLines = accessible ? 0 : LibraryBookFacts.maximumWrappedLines
         title.numberOfLines = accessible ? 0 : 2
         author.numberOfLines = accessible ? 0 : 1
     }
@@ -338,6 +352,13 @@ final class BookGridCell: UICollectionViewCell {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
+        showFacts(LibraryBookFacts(book: book))
+        factsTask?.cancel()
+        factsTask = Task { [weak self] in
+            let loaded = await Task.detached(priority: .utility) { await LibraryBookFactsReader().facts(for: book) }.value
+            guard !Task.isCancelled else { return }
+            self?.showFacts(loaded)
+        }
 
         let token = UUID()
         configurationToken = token
@@ -358,8 +379,16 @@ final class BookGridCell: UICollectionViewCell {
         }
     }
 
+    private func showFacts(_ value: LibraryBookFacts) {
+        let lines = value.lines()
+        facts.text = lines.joined(separator: "\n")
+        accessibilityValue = lines.joined(separator: ", ")
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        factsTask?.cancel()
+        facts.text = nil
         configurationToken = UUID()
         cover.image = nil
         title.text = nil

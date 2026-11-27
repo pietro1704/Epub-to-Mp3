@@ -81,6 +81,15 @@ enum LocalFulltextCache {
         memoryCache.removeObject(forKey: safe as NSString)
     }
 
+    /// Chapter count of already prepared content. It never parses the book and
+    /// never takes a warm-reader slot from the books the reader keeps hot.
+    static func storedChapterCount(bookId: String) -> Int? {
+        let payload = inMemoryPayload(bookId: bookId)
+            ?? readPayload(at: storageURL(bookId: bookId))
+            ?? readPayload(at: fileURL(bookId: bookId, in: directory))
+        return payload.flatMap { $0.chapters.isEmpty ? nil : $0.chapters.count }
+    }
+
     /// Returns prepared fulltext when it is available locally. A corrupt
     /// payload falls through to the regular parser; it is never fatal.
     static func read(bookId: String) -> EbookFulltext? {

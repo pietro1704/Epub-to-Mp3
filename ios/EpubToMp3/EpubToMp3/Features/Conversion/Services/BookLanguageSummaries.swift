@@ -21,6 +21,11 @@ struct BookLanguageSummaries {
         defaults.set(stored, forKey: Self.key)
     }
 
+    /// The user's correction of a book wins over its analysis. Nil for a book never analyzed or corrected.
+    func language(bookID: String, corrections: BookLanguageCorrections) -> String? {
+        (try? corrections.decision(bookID: bookID))?.bookLanguage ?? summaries[bookID]
+    }
+
     /// One entry per analyzed book, in a stable order; the user's correction of a book wins over its analysis.
     func languages(corrections: BookLanguageCorrections) -> [String] {
         summaries.sorted { $0.key < $1.key }.map { bookID, analyzed in

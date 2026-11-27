@@ -29,7 +29,7 @@ final class MacLibraryCollectionLayout: NSCollectionViewFlowLayout {
             requestedColumns: requestedColumns ?? max(2, Int(capped)))
         let columns = metrics.columnCount(forWidth: viewportWidth)
         let width = floor(metrics.tileWidth(forWidth: viewportWidth, columns: columns))
-        let size = NSSize(width: width, height: width * 1.5 + 110)
+        let size = NSSize(width: width, height: width * 1.5 + 190)
         let documentWidthChanged = collectionView.frame.width != viewportWidth
         guard itemSize != size || documentWidthChanged else { return }
         if documentWidthChanged {
