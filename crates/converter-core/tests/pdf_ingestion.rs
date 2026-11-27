@@ -526,6 +526,39 @@ fn pdf_without_outline_splits_chapters_at_repeated_heading_lines() {
 }
 
 #[test]
+fn pdf_without_outline_gets_an_automatic_contents_list_from_its_chapters() {
+    let book = ingest_pages(&[
+        "Prefacio do autor com texto longo o bastante.",
+        "Capitulo 1\nO primeiro capitulo comeca aqui com bastante texto.",
+        "Capitulo 2\nO segundo capitulo comeca aqui com bastante texto.",
+    ]);
+    let toc: Vec<(&str, &str)> = book
+        .toc
+        .iter()
+        .map(|t| (t.title.as_str(), t.href.as_str()))
+        .collect();
+    assert_eq!(
+        toc,
+        [
+            ("Front matter", "page-1"),
+            ("Capitulo 1", "page-2"),
+            ("Capitulo 2", "page-3")
+        ]
+    );
+}
+
+#[test]
+fn pdf_short_page_per_chapter_fallback_has_no_automatic_contents_list() {
+    let book = ingest_pages(&[
+        "Texto corrido da primeira pagina sem nenhum titulo.",
+        "Texto corrido da segunda pagina sem nenhum titulo.",
+        "Texto corrido da terceira pagina sem nenhum titulo.",
+    ]);
+    assert!(book.chapters.iter().all(|c| c.name.starts_with("Page ")));
+    assert!(book.toc.is_empty());
+}
+
+#[test]
 fn pdf_table_of_contents_page_never_becomes_chapters() {
     let book = ingest_pages(&[
         "Capitulo 1\nCapitulo 2\nCapitulo 3\nCapitulo 4",
@@ -578,9 +611,10 @@ fn pdf_single_entry_outline_is_treated_like_no_outline() {
     .unwrap();
     let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
-    assert!(
-        book.toc.is_empty(),
-        "the degenerate outline is not the contents list"
+    assert_eq!(
+        book.toc.len(),
+        names.len(),
+        "the degenerate outline is replaced by the automatic contents list"
     );
 }
 
@@ -673,7 +707,7 @@ fn pdf_outline_covering_only_the_first_pages_is_treated_like_no_outline() {
     let book = two_entry_outline_book(30);
     let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
-    assert!(book.toc.is_empty());
+    assert_eq!(book.toc.len(), names.len());
 }
 
 #[test]
