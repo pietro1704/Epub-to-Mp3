@@ -181,7 +181,9 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   def test_apple_release_builds_the_embedded_rust_library_before_xcode
     steps = @jobs.fetch("macos-native").fetch("steps")
     mise = index(steps) { |step| step.fetch("uses", "").start_with?("jdx/mise-action@") }
-    install = index(steps) { |step| step["run"] == "mise install rust ruby" }
+    install = index(steps) { |step| step["run"] == "mise install rust" }
+    # mise has no precompiled Ruby for macos-x64; the build scripts use the runner's Ruby.
+    assert_equal "rust", @jobs.fetch("macos-native").dig("env", "MISE_ENABLE_TOOLS")
     ffi = index(steps) { |step| step["run"] == "mise run converter-ffi:build" }
     app = index(steps) { |step| step["name"] == "Build macOS .app" }
     assert_operator mise, :<, install

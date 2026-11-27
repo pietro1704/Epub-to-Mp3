@@ -237,6 +237,9 @@ jobs:
             arch: x86_64
     env:
       MACOS_ARCH: ${{ matrix.arch }}
+      # mise has no precompiled Ruby for macos-x64 and compiling it is slow: only Rust
+      # comes from mise, and `mise exec -- ruby` falls through to the runner's Ruby.
+      MISE_ENABLE_TOOLS: rust
     steps:
       - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -265,7 +268,7 @@ jobs:
       - name: Install toolchain
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: mise install rust ruby
+        run: mise install rust
 
       - name: Build the embedded Rust library
         run: mise run converter-ffi:build
