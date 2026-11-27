@@ -7,7 +7,8 @@
 # contacted when none is missing. Otherwise the Azure mirror is normalized, then
 # update + install run up to CI_APT_ATTEMPTS (3) times, each bounded by
 # CI_APT_ATTEMPT_TIMEOUT seconds (150), so one hung mirror request costs one
-# attempt instead of the job. APT's signature validation is never weakened.
+# attempt instead of the job. A timed-out attempt also kills the orphaned apt process that
+# would keep the dpkg lock, and apt waits up to CI_APT_LOCK_TIMEOUT (120) for the lock. APT's signature validation is never weakened.
 #
 # CI_APT_ARCHIVES=<dir> (opt-in) points apt's package archive at a directory that
 # a workflow persists with actions/cache: .deb files already there are reused and
@@ -24,6 +25,8 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 attempts="${CI_APT_ATTEMPTS:-3}"
 limit="${CI_APT_ATTEMPT_TIMEOUT:-150}"
+kill_after="${CI_APT_KILL_AFTER:-10}"
+lock_wait="${CI_APT_LOCK_TIMEOUT:-120}"
 
 if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
   mkdir -p "$CI_APT_ARCHIVES/partial"
@@ -52,10 +55,10 @@ sudo "$ruby_bin" "$root/scripts/normalize_ubuntu_package_mirror.rb"
 for (( n = 1; n <= attempts; n++ )); do
   echo "apt: attempt $n/$attempts (limit ${limit}s): ${missing[*]}"
   status=0
-  timeout "$limit" bash -c '
+  timeout --kill-after="$kill_after" "$limit" bash -c '
     set -euo pipefail
-    flag=$1; shift
-    options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+    flag=$1; lock_wait=$2; shift 2
+    options=(-o "DPkg::Lock::Timeout=$lock_wait" -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
     if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
       options+=(-o "Dir::Cache::Archives=$CI_APT_ARCHIVES" -o APT::Keep-Downloaded-Packages=true)
       # The runner workspace is not traversable by the _apt user, which only
@@ -65,11 +68,16 @@ for (( n = 1; n <= attempts; n++ )); do
     fi
     sudo apt-get "${options[@]}" -o APT::Update::Error-Mode=any update
     sudo apt-get "${options[@]}" install -y ${flag:+"$flag"} "$@"
-  ' _ "${recommends[*]:-}" "${missing[@]}" || status=$?
+  ' _ "${recommends[*]:-}" "$lock_wait" "${missing[@]}" || status=$?
   if (( status == 0 )); then
     exit 0
   fi
   echo "apt: attempt $n failed with status $status" >&2
+  if (( status == 124 || status == 137 )); then
+    # timeout kills the bash wrapper, but a root apt-get child can outlive it and keep
+    # the dpkg lock, failing every later attempt at once. Stop it before retrying.
+    sudo pkill -KILL -x apt-get 2>/dev/null || true
+  fi
   if (( n < attempts )); then sleep "${CI_APT_RETRY_DELAY:-5}"; fi
 done
 echo "::error::apt install failed after $attempts attempts: ${missing[*]}" >&2

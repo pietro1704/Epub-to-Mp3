@@ -23,7 +23,7 @@ class CiAptInstallTest < Minitest::Test
     FileUtils.mkdir_p(@bin)
     shim('sudo', 'echo "sudo $*" >> "$LOG"; case "$*" in *normalize_ubuntu*) exit 0;; esac; exec "$@"')
     shim('apt-get', 'echo "apt-get $*" >> "$LOG"; case "$*" in *install*) n=$(cat "$COUNT" 2>/dev/null || echo 0); echo $((n+1)) > "$COUNT"; [ "$n" -lt "${FAIL_INSTALLS:-0}" ] && exit 100;; esac; exit 0')
-    shim('timeout', 'echo "timeout $1" >> "$LOG"; shift; exec "$@"')
+    shim('timeout', 'echo "timeout $1 $2" >> "$LOG"; while [[ "$1" == --* ]]; do shift; done; shift; n=$(cat "$TCOUNT" 2>/dev/null || echo 0); echo $((n+1)) > "$TCOUNT"; [ "$n" -lt "${TIMEOUT_FIRST:-0}" ] && exit 124; exec "$@"')
     shim('dpkg', 'for last; do :; done; case " $INSTALLED " in *" $last "*) exit 0;; esac; exit 1')
   end
 
@@ -36,7 +36,7 @@ class CiAptInstallTest < Minitest::Test
   end
 
   def run_script(*args, **env)
-    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'LOG' => @log, 'COUNT' => File.join(@dir, 'count'),
+    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'LOG' => @log, 'COUNT' => File.join(@dir, 'count'), 'TCOUNT' => File.join(@dir, 'tcount'),
                      'CI_APT_RETRY_DELAY' => '0' }.merge(env.transform_keys(&:to_s)), 'bash', SCRIPT, *args)
   end
 
@@ -45,7 +45,7 @@ class CiAptInstallTest < Minitest::Test
   def test_installs_only_missing_packages_with_the_hard_limit_and_validation_intact
     out, err, status = run_script('clang', 'cmake', INSTALLED: 'clang')
     assert status.success?, "#{out}#{err}"
-    assert_includes log, 'timeout 150'
+    assert_match(/^timeout --kill-after=\d+ 150$/, log)
     assert_includes log, 'install -y --no-install-recommends cmake'
     refute_includes log, 'install -y --no-install-recommends clang'
     assert_includes log, 'APT::Update::Error-Mode=any'
@@ -72,10 +72,24 @@ class CiAptInstallTest < Minitest::Test
     assert_includes err, 'failed after 3 attempts'
   end
 
+  def test_a_timed_out_attempt_kills_the_orphaned_apt_and_later_attempts_wait_for_the_lock
+    shim('pkill', 'echo "pkill $*" >> "$LOG"; exit 0')
+    out, err, status = run_script('cmake', TIMEOUT_FIRST: '1')
+    assert status.success?, "#{out}#{err}"
+    assert_match(/^sudo pkill .*apt-get/, log, 'the apt-get child that outlived the timeout is killed')
+    assert_includes log, 'DPkg::Lock::Timeout='
+  end
+
+  def test_no_kill_when_the_attempt_did_not_time_out
+    shim('pkill', 'echo "pkill $*" >> "$LOG"; exit 0')
+    run_script('cmake', FAIL_INSTALLS: '1')
+    refute_includes log, 'pkill'
+  end
+
   def test_recommends_flag_and_timeout_override
     _out, _err, status = run_script('--install-recommends', 'cmake', CI_APT_ATTEMPT_TIMEOUT: '240')
     assert status.success?
-    assert_includes log, 'timeout 240'
+    assert_match(/^timeout --kill-after=\d+ 240$/, log)
     refute_includes log, '--no-install-recommends'
   end
 
