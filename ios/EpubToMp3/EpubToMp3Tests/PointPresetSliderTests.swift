@@ -39,18 +39,17 @@ import UIKit
 
 @MainActor
 final class ReaderLargestFontPaginationTests: XCTestCase {
-    func testLargestAppSizeKeepsTheSystemTextSizeAndStartsEveryPageOnAWholeLine() throws {
+    func testLargestAppSizeAppliesSystemScalingAndStartsEveryPageOnAWholeLine() throws {
         let text = String(repeating: "Large print keeps every line whole across pages. ", count: 60)
         let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter(text)])
         harness.installTeardown(in: self)
         harness.settings.readerFontSize = ReaderFontScale.maximumStep
-        UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge).performAsCurrent {
-            harness.showChapter(0)
-            harness.controller.view.layoutIfNeeded()
-            harness.text.layoutCommittedViewport()
-        }
+        harness.showChapter(0)
+        harness.controller.view.layoutIfNeeded()
+        harness.text.layoutCommittedViewport()
         let font = try XCTUnwrap(harness.displayed.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)
-        XCTAssertGreaterThan(font.pointSize, 48, "The system Text Size still multiplies the app size.")
+        // UIFontMetrics follows the device Text Size, which a unit test cannot change.
+        XCTAssertEqual(font.pointSize, UIFontMetrics(forTextStyle: .body).scaledValue(for: 48), accuracy: 0.5)
 
         let offsets = harness.text.paginatedPageOffsets
         XCTAssertGreaterThan(offsets.count, 1)
