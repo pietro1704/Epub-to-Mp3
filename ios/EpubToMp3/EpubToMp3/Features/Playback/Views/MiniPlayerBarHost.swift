@@ -79,10 +79,14 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         // the reader owns the remaining space. Make this view's intrinsic
         // content height non-negotiable so the reader cannot compress the
         // 44-point controls below the screen edge.
-        setContentHuggingPriority(.required, for: .vertical)
-        setContentCompressionResistancePriority(.required, for: .vertical)
+        // UITabAccessory owns the height instead: iOS 26 lays it out at
+        // 0 x 0 and then at 48 points, so a required 60-point minimum would
+        // conflict with the system's own constraints.
+        let verticalSizePriority = Self.verticalSizePriority(usesSystemManagedBottomInset: usesSystemManagedBottomInset)
+        setContentHuggingPriority(verticalSizePriority, for: .vertical)
+        setContentCompressionResistancePriority(verticalSizePriority, for: .vertical)
         let minimumHeight = heightAnchor.constraint(greaterThanOrEqualToConstant: intrinsicContentSize.height)
-        minimumHeight.priority = .required
+        minimumHeight.priority = verticalSizePriority
         minimumHeight.isActive = true
         minimumHeightConstraint = minimumHeight
         bottomSafeAreaFill.accessibilityIdentifier = "miniPlayer.bottomSafeAreaFill"
@@ -200,12 +204,21 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         addSubview(playbackStack)
         bringSubviewToFront(playbackStack)
 
+        // The 44-point transport row keeps its size; the surrounding insets
+        // give way when a container is momentarily smaller than the row
+        // (UITabAccessory is 48 points tall and starts at 0 x 0).
+        let trailing = playbackStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor)
+        trailing.priority = .required - 1
+        let topInset = playbackStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 3)
+        let bottomInset = playbackStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -3)
+        topInset.priority = verticalSizePriority
+        bottomInset.priority = verticalSizePriority
         NSLayoutConstraint.activate([
             playbackStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-            playbackStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+            trailing,
             playbackStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
-            playbackStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 3),
-            playbackStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -3),
+            topInset,
+            bottomInset,
         ])
         updateTypographyForContentSizeCategory()
     }
@@ -213,6 +226,10 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    static func verticalSizePriority(usesSystemManagedBottomInset: Bool) -> UILayoutPriority {
+        usesSystemManagedBottomInset ? .required - 1 : .required
     }
 
     func configure(
