@@ -22,6 +22,8 @@ pub struct StructureVerification {
     pub warnings: Vec<StructureWarning>,
     pub mapped_toc_items: usize,
     pub total_toc_items: usize,
+    /// Spine documents left out of narration and why; informational, never a warning.
+    pub notes: Vec<StructureWarning>,
 }
 
 impl StructureVerification {
@@ -43,10 +45,9 @@ pub fn verify_epub_toc(book: &Book) -> StructureVerification {
     for item in &entries {
         let href = item.href.split('#').next().unwrap_or_default();
         let found = !href.is_empty()
-            && book.chapters.iter().any(|chapter| {
-                chapter.source_path.ends_with(href)
-                    || chapter.source_path.ends_with(href.trim_start_matches("./"))
-            });
+            && (book.chapters.iter().map(|c| c.source_path.as_str()))
+                .chain(book.skipped_documents.iter().map(|d| d.path.as_str()))
+                .any(|path| path.ends_with(href) || path.ends_with(href.trim_start_matches("./")));
         if found {
             mapped += 1;
         } else {
@@ -56,6 +57,15 @@ pub fn verify_epub_toc(book: &Book) -> StructureVerification {
             });
         }
     }
+
+    let notes = book
+        .skipped_documents
+        .iter()
+        .map(|d| StructureWarning {
+            code: d.reason,
+            message: format!("Document '{}' was left out of narration", d.path),
+        })
+        .collect();
 
     if entries.is_empty() {
         warnings.push(StructureWarning {
@@ -80,6 +90,7 @@ pub fn verify_epub_toc(book: &Book) -> StructureVerification {
         warnings,
         mapped_toc_items: mapped,
         total_toc_items: entries.len(),
+        notes,
     }
 }
 
@@ -105,6 +116,7 @@ mod tests {
             cover: None,
             cover_mime: None,
             skipped_pages: 0,
+            skipped_documents: Vec::new(),
         }
     }
 

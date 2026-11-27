@@ -150,6 +150,7 @@ impl PdfTextIngestion {
             toc,
             cover: None,
             cover_mime: None,
+            skipped_documents: Vec::new(),
             skipped_pages,
         })
     }

@@ -115,6 +115,16 @@ pub struct Book {
     pub cover_mime: Option<String>,
     /// Source pages left out of narration because they have no selectable text (PDF only).
     pub skipped_pages: usize,
+    /// Spine documents left out of narration, with the reason (never silent).
+    pub skipped_documents: Vec<SkippedDocument>,
+}
+
+/// A spine document the parser did not turn into a chapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkippedDocument {
+    pub path: String,
+    /// `TOC_DOCUMENT` (navigation or printed contents list) or `EMPTY_DOCUMENT` (no text).
+    pub reason: &'static str,
 }
 
 pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
@@ -214,6 +224,7 @@ fn parse_epub_document<R: Read + Seek>(
     let mut footnote_budget = EpubReadBudget::new(limits);
     let mut footnote_targets = epub_footnotes::FootnoteTargets::default();
     let mut markup_language = None;
+    let mut skipped_documents: Vec<SkippedDocument> = Vec::new();
     let mut orphan = indices
         .values()
         .filter_map(|v| v.parse::<u32>().ok())
@@ -228,6 +239,10 @@ fn parse_epub_document<R: Read + Seek>(
         let html = read_document(&mut archive, &path, &mut budget, reader_mode)?;
         // The navigation document lists the book; narrating it would read the contents aloud.
         if nav_path.as_deref() == Some(path.as_str()) || is_toc_document(&html) {
+            skipped_documents.push(SkippedDocument {
+                path: path.clone(),
+                reason: "TOC_DOCUMENT",
+            });
             continue;
         }
         let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
@@ -237,6 +252,10 @@ fn parse_epub_document<R: Read + Seek>(
             markup_language = crate::language::markup_language(&html);
         }
         if text.trim().is_empty() && !reader_mode {
+            skipped_documents.push(SkippedDocument {
+                path: path.clone(),
+                reason: "EMPTY_DOCUMENT",
+            });
             continue;
         }
         let key = href.split('#').next().unwrap_or(&href);
@@ -324,6 +343,7 @@ fn parse_epub_document<R: Read + Seek>(
         cover,
         cover_mime,
         skipped_pages: 0,
+        skipped_documents,
     })
 }
 
