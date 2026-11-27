@@ -103,6 +103,11 @@ impl PdfTextIngestion {
         let (toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
         let mut chapters = Vec::new();
         let starts = if starts.is_empty() {
+            heading_starts(&text)
+        } else {
+            starts
+        };
+        let starts = if starts.is_empty() {
             (0..text.len())
                 .map(|i| (i, format!("Page {}", labels[i]), 1))
                 .collect()
@@ -205,6 +210,55 @@ fn has_drawn_content(doc: &Document, page: pdf_extract::ObjectId) -> Result<bool
 
 /// Lines shorter than this share of the typical line width may end a paragraph.
 const SHORT_LINE_RATIO: f64 = 0.7;
+
+/// True for a line that is only a chapter marker: "Capítulo 3", "CHAPTER IV", "Parte 2" or a
+/// lone uppercase Roman numeral.
+fn is_heading_line(line: &str) -> bool {
+    let line = line.trim();
+    let numeral = |w: &str| {
+        !w.is_empty()
+            && (w.chars().all(|c| c.is_ascii_digit()) && w.len() <= 4
+                || w.len() <= 8 && w.chars().all(|c| "IVXLCDMivxlcdm".contains(c)))
+    };
+    let mut words = line.split_whitespace();
+    match (words.next(), words.next(), words.next()) {
+        (Some(w), None, None) => w.len() <= 8 && w.chars().all(|c| "IVXLCDM".contains(c)),
+        (Some(w), Some(n), None) => {
+            let w = w.to_lowercase();
+            matches!(
+                w.as_str(),
+                "capítulo" | "capitulo" | "chapter" | "parte" | "part" | "capítol" | "chapitre"
+            ) && numeral(n)
+        }
+        _ => false,
+    }
+}
+
+/// Without an outline, a page whose first line is a chapter marker starts a chapter. Needs at
+/// least two such pages, and a page packed with markers (a table of contents) never counts.
+/// Falls back to one chapter per page, which stays the navigation anchor.
+fn heading_starts(pages: &[String]) -> Vec<(usize, String, u32)> {
+    let heading = |page: &String| -> Option<String> {
+        let mut lines = page.lines().map(str::trim).filter(|l| !l.is_empty());
+        let first = lines.next().filter(|l| is_heading_line(l))?;
+        let markers = page.lines().filter(|l| is_heading_line(l)).count();
+        (markers < 3).then(|| first.to_string())
+    };
+    let found: Vec<(usize, String)> = pages
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| heading(p).map(|h| (i, h)))
+        .collect();
+    if found.len() < 2 {
+        return Vec::new();
+    }
+    let mut starts = Vec::new();
+    if found[0].0 > 0 {
+        starts.push((0, "Front matter".to_string(), 1));
+    }
+    starts.extend(found.into_iter().map(|(i, h)| (i, h, 1)));
+    starts
+}
 
 /// Maps typographic ligatures to letters, drops NULs and collapses runs of blanks (newlines stay).
 fn normalize_page(page: &str) -> String {
