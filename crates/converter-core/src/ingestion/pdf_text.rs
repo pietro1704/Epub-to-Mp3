@@ -1,6 +1,7 @@
 //! Text-layer PDF ingestion. OCR is a separate, explicit capability.
 use super::IngestionError;
 use crate::epub::{Book, Chapter};
+use crate::toc::TocItem;
 use pdf_extract::{decode_text_string, Document, Object, PlainTextOutput};
 use std::path::Path;
 
@@ -141,18 +142,31 @@ impl PdfTextIngestion {
             return Err(IngestionError::Cancelled);
         }
         strip_running_lines(&mut text);
-        let (toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
+        let (mut toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
         let mut chapters = Vec::new();
         let starts = if starts.is_empty() {
             split_oversized(heading_starts(&text), &text)
         } else {
             starts
         };
+        // One chapter per page is only a navigation anchor, not a contents list.
+        let per_page = starts.is_empty() && text.len() <= MIN_PAGES_FOR_SECTIONS;
         let starts = if starts.is_empty() {
             section_starts(&text, &labels)
         } else {
             starts
         };
+        if toc.is_empty() && starts.len() > 1 && !per_page {
+            toc = starts
+                .iter()
+                .map(|(page, title, level)| TocItem {
+                    title: title.clone(),
+                    href: format!("page-{}", page + 1),
+                    level: *level,
+                    children: Vec::new(),
+                })
+                .collect();
+        }
         for (position, (start, title, level)) in starts.iter().enumerate() {
             let end = starts.get(position + 1).map_or(text.len(), |next| next.0);
             let content = join_pages(&text[*start..end]);
