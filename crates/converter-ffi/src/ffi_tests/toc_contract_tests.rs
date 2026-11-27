@@ -12,7 +12,7 @@ fn fixture_nav_without_title_page() -> tempfile::NamedTempFile {
         item("one"),
         item("two")
     );
-    let page = |heading: &str| format!("<html><body><h1>{heading}</h1><p>Body text.</p></body></html>");
+    let page = |heading: &str| format!("<html><body><h1>{heading}</h1><p>Body text.</p><a id=\"start\"/><p>More.</p></body></html>");
     let entries = vec![
         ("META-INF/container.xml".to_owned(), r#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#.to_owned()),
         ("OEBPS/content.opf".to_owned(), package),
@@ -57,6 +57,12 @@ fn metadata_exposes_the_book_toc_additively() {
             }],
         }])
     );
+
+    // The anchor sits on the chapter's own text axis, so a client jumps to it by scalar offset;
+    // chapters whose file no TOC fragment points into keep the previous JSON shape.
+    let chapters = metadata["chapters"].as_array().unwrap();
+    assert_eq!(chapters[2]["anchors"], serde_json::json!({ "start": 23 }));
+    assert!(chapters[1].get("anchors").is_none());
 
     let without_nav = session_metadata_value(&fixture_chapters(1));
     assert!(

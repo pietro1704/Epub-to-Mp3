@@ -129,7 +129,7 @@ unsafe fn c_string(value: *const c_char, name: &str) -> Result<String, String> {
 }
 
 /// One chapter of the metadata payload. `footnotes` is additive: the key is
-/// omitted when a chapter has none, so existing consumers see unchanged JSON.
+/// omitted when a chapter has none, so existing consumers see unchanged JSON (`anchors` likewise).
 fn chapter_metadata_json(
     chapter: &converter_core::embedded::EmbeddedChapterMetadata,
 ) -> serde_json::Value {
@@ -147,6 +147,14 @@ fn chapter_metadata_json(
             .iter()
             .map(|note| json!({ "number": note.number, "text": note.text }))
             .collect();
+    }
+    if !chapter.anchors.is_empty() {
+        value["anchors"] = chapter
+            .anchors
+            .iter()
+            .map(|(id, offset)| (id.clone(), json!(offset)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
     }
     value
 }
