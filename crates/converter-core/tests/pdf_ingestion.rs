@@ -581,3 +581,46 @@ fn pdf_single_entry_outline_is_treated_like_no_outline() {
         "the degenerate outline is not the contents list"
     );
 }
+
+// Parse audit 2026-11-27: Word PDFs without an outline produced one "Page N" chapter per page.
+#[test]
+fn long_pdf_without_outline_gets_fixed_size_sections_titled_from_the_first_line() {
+    let pages: Vec<String> = (1..=25)
+        .map(|n| {
+            let word: String = (0..4)
+                .map(|k| (b'a' + ((n * 7 + k * 3) % 26) as u8) as char)
+                .collect();
+            format!("{word}{n}x\nTexto corrido da pagina {word} com frases para narrar.")
+        })
+        .collect();
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    let book = ingest_pages(&refs);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names.len(), 3, "{names:?}");
+    assert!(names.iter().all(|n| n.ends_with('x')), "{names:?}");
+    assert_eq!(book.chapters[1].source_path, "page-11");
+    assert!(book.chapters[1]
+        .text
+        .contains(&format!("pagina {}", &pages[19][..4])));
+}
+
+#[test]
+fn oversized_heuristic_chapter_is_split_at_page_boundaries() {
+    let body = "Frase de teste para o capitulo gigante. ".repeat(300);
+    let mut pages = vec![format!("Capitulo 1\n{body}")];
+    pages.extend((0..40).map(|n| format!("{}{n}\n{body}", "p".repeat(n % 7 + 1))));
+    pages.push(format!("Capitulo 2\n{body}"));
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    let book = ingest_pages(&refs);
+    assert!(
+        book.chapters
+            .iter()
+            .all(|c| c.text.chars().count() < 336_000),
+        "{:?}",
+        book.chapters
+            .iter()
+            .map(|c| c.text.chars().count())
+            .collect::<Vec<_>>()
+    );
+    assert!(book.chapters.len() > 2);
+}

@@ -103,14 +103,12 @@ impl PdfTextIngestion {
         let (toc, starts) = super::pdf_outline::structure(&doc, &pages)?;
         let mut chapters = Vec::new();
         let starts = if starts.is_empty() {
-            heading_starts(&text)
+            split_oversized(heading_starts(&text), &text)
         } else {
             starts
         };
         let starts = if starts.is_empty() {
-            (0..text.len())
-                .map(|i| (i, format!("Page {}", labels[i]), 1))
-                .collect()
+            section_starts(&text, &labels)
         } else {
             starts
         };
@@ -260,6 +258,59 @@ fn heading_starts(pages: &[String]) -> Vec<(usize, String, u32)> {
     }
     starts.extend(found.into_iter().map(|(i, h)| (i, h, 1)));
     starts
+}
+
+const MAX_HEURISTIC_CHARS: usize = 300_000;
+
+/// A heuristic chapter far longer than a book chapter is cut at page boundaries.
+fn split_oversized(
+    starts: Vec<(usize, String, u32)>,
+    pages: &[String],
+) -> Vec<(usize, String, u32)> {
+    let mut out = Vec::new();
+    for (i, (start, title, level)) in starts.iter().enumerate() {
+        let end = starts.get(i + 1).map_or(pages.len(), |next| next.0);
+        let (mut part, mut size) = (1, 0);
+        out.push((*start, title.clone(), *level));
+        for page in *start..end {
+            let len = pages[page].chars().count();
+            if size > 0 && size + len > MAX_HEURISTIC_CHARS {
+                part += 1;
+                out.push((page, format!("{title} ({part})"), *level));
+                size = 0;
+            }
+            size += len;
+        }
+    }
+    out
+}
+
+const SECTION_PAGES: usize = 10;
+/// Short documents keep one chapter per page, which stays the navigation anchor.
+const MIN_PAGES_FOR_SECTIONS: usize = 12;
+
+/// No outline and no chapter markers: fixed-size sections titled from their first text line.
+fn section_starts(pages: &[String], labels: &[String]) -> Vec<(usize, String, u32)> {
+    let per_page = |i: usize| (i, format!("Page {}", labels[i]), 1);
+    if pages.len() <= MIN_PAGES_FOR_SECTIONS {
+        return (0..pages.len()).map(per_page).collect();
+    }
+    (0..pages.len())
+        .step_by(SECTION_PAGES)
+        .map(|start| {
+            let end = (start + SECTION_PAGES).min(pages.len());
+            let title = pages[start..end]
+                .iter()
+                .flat_map(|p| p.lines())
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .map(|l| l.chars().take(60).collect::<String>());
+            match title {
+                Some(title) => (start, title, 1),
+                None => per_page(start),
+            }
+        })
+        .collect()
 }
 
 /// Maps typographic ligatures to letters, drops NULs and collapses runs of blanks (newlines stay).
