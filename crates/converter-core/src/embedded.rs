@@ -55,6 +55,9 @@ pub struct EmbeddedTocEntry {
     pub title: String,
     pub level: u32,
     pub chapter_index: Option<usize>,
+    /// The `#fragment` the entry points at inside that chapter's file, decoded; clients jump to
+    /// the matching anchor offset of the reader chapter.
+    pub fragment: Option<String>,
     pub children: Vec<EmbeddedTocEntry>,
 }
 
@@ -79,6 +82,15 @@ fn toc_entries(
                 title: item.title.clone(),
                 level: item.level,
                 chapter_index,
+                fragment: item
+                    .href
+                    .split_once('#')
+                    .map(|(_, fragment)| {
+                        percent_encoding::percent_decode_str(fragment)
+                            .decode_utf8_lossy()
+                            .into_owned()
+                    })
+                    .filter(|fragment| !fragment.is_empty()),
                 children: toc_entries(&item.children, chapters),
             }
         })
@@ -369,6 +381,39 @@ mod tests {
             .chapters
             .iter()
             .all(|chapter| chapter.text_chars > 0));
+    }
+
+    #[test]
+    fn toc_entries_carry_their_fragment_without_changing_the_chapter() {
+        let item = |href: &str| crate::toc::TocItem {
+            title: "T".into(),
+            href: href.into(),
+            level: 1,
+            children: Vec::new(),
+        };
+        let chapter = crate::epub::Chapter {
+            index: "1".into(),
+            name: "C".into(),
+            source_path: "OPS/c.xhtml".into(),
+            text: String::new(),
+            paragraph_ends: Vec::new(),
+            heading_ends: Vec::new(),
+            level: 1,
+            footnotes: Vec::new(),
+            note_marks: Vec::new(),
+        };
+        let entries = toc_entries(
+            &[item("c.xhtml"), item("c.xhtml#caf%C3%A9"), item("c.xhtml#")],
+            &[chapter],
+        );
+        let got: Vec<_> = entries
+            .iter()
+            .map(|e| (e.chapter_index, e.fragment.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [(Some(1), None), (Some(1), Some("café")), (Some(1), None)]
+        );
     }
 
     #[test]

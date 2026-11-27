@@ -343,6 +343,39 @@ pub(super) fn text(nodes: &[Node], output: &mut String) {
     }
 }
 
+/// Scalar offset on the `text` axis where each wanted `id` element starts (first one wins).
+pub(super) fn anchors(
+    nodes: &[Node],
+    wanted: &std::collections::HashSet<String>,
+) -> Vec<(String, usize)> {
+    fn walk(
+        nodes: &[Node],
+        wanted: &std::collections::HashSet<String>,
+        offset: &mut usize,
+        out: &mut Vec<(String, usize)>,
+    ) {
+        for node in nodes {
+            match node {
+                Node::Separator => *offset += 1,
+                Node::Text(value) => *offset += value.chars().count(),
+                Node::Element {
+                    attrs, children, ..
+                } => {
+                    if let Some(id) = attrs.get("id").filter(|id| wanted.contains(*id)) {
+                        if !out.iter().any(|(seen, _)| seen == id) {
+                            out.push((id.clone(), *offset));
+                        }
+                    }
+                    walk(children, wanted, offset, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(nodes, wanted, &mut 0, &mut out);
+    out
+}
+
 fn remove_entirely(tag: &str) -> bool {
     matches!(
         tag,

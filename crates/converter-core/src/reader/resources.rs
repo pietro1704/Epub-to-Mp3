@@ -2,8 +2,8 @@
 //! second bounded budget. Each half is 32 MiB, so total decompression is 64 MiB.
 mod raster;
 use super::{
-    bounded, css, markup, ReaderBook, ReaderError, Result, SourceChapter, MAX_CHAPTER_BYTES,
-    MAX_CSS_BYTES, MAX_EPUB_BYTES, MAX_OUTPUT_BYTES,
+    bounded, css, markup, ChapterAnchor, ReaderBook, ReaderError, Result, SourceChapter,
+    MAX_CHAPTER_BYTES, MAX_CSS_BYTES, MAX_EPUB_BYTES, MAX_OUTPUT_BYTES,
 };
 use crate::epub::{parse_epub_for_reader, EpubReadLimits};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -110,6 +110,11 @@ pub(super) fn inspect(bytes: &[u8]) -> Result<ReaderBook> {
         let html = markup::serialize(&nodes);
         let mut text = String::new();
         markup::text(&nodes, &mut text);
+        let wanted = toc_fragments(&book.toc, &chapter.source_path);
+        let anchors = markup::anchors(&nodes, &wanted)
+            .into_iter()
+            .map(|(id, offset)| ChapterAnchor { id, offset })
+            .collect();
         bounded(
             html.len(),
             MAX_CHAPTER_BYTES,
@@ -125,6 +130,7 @@ pub(super) fn inspect(bytes: &[u8]) -> Result<ReaderBook> {
             text,
             html,
             css: stylesheet,
+            anchors,
         });
     }
     Ok(ReaderBook {
@@ -275,4 +281,26 @@ pub(super) fn resolve_local(source: &str, href: &str) -> Option<(String, String)
         })?
     };
     Some((path, fragment))
+}
+
+/// Fragments the TOC links into this chapter's file, percent-decoded.
+fn toc_fragments(toc: &[crate::toc::TocItem], source_path: &str) -> HashSet<String> {
+    let mut found = HashSet::new();
+    for item in toc {
+        if let Some((file, fragment)) = item.href.split_once('#') {
+            let file = percent_encoding::percent_decode_str(file).decode_utf8_lossy();
+            if !file.is_empty()
+                && !fragment.is_empty()
+                && (source_path == file || source_path.ends_with(&format!("/{file}")))
+            {
+                found.insert(
+                    percent_encoding::percent_decode_str(fragment)
+                        .decode_utf8_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+        found.extend(toc_fragments(&item.children, source_path));
+    }
+    found
 }

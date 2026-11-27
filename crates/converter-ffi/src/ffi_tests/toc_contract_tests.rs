@@ -52,6 +52,7 @@ fn metadata_exposes_the_book_toc_additively() {
                 "title": "Chapter Two",
                 "level": 2,
                 "chapterIndex": 3,
+                "fragment": "start",
                 "children": [],
             }],
         }])

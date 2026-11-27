@@ -152,12 +152,17 @@ fn chapter_metadata_json(
 }
 
 fn toc_entry_json(entry: &converter_core::embedded::EmbeddedTocEntry) -> serde_json::Value {
-    json!({
+    let mut value = json!({
         "title": entry.title,
         "level": entry.level,
         "chapterIndex": entry.chapter_index,
         "children": entry.children.iter().map(toc_entry_json).collect::<Vec<_>>(),
-    })
+    });
+    // Additive: only an entry that points inside its file carries a fragment.
+    if let Some(fragment) = &entry.fragment {
+        value["fragment"] = fragment.clone().into();
+    }
+    value
 }
 
 fn metadata_json(

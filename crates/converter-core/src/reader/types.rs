@@ -19,6 +19,15 @@ pub struct SourceChapter {
     pub text: String,
     pub html: String,
     pub css: String,
+    /// Where each TOC fragment of this file sits on `text`, in scalars; the file stays one chapter.
+    pub anchors: Vec<ChapterAnchor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterAnchor {
+    pub id: String,
+    pub offset: usize,
 }
 
 #[derive(Debug, Deserialize)]
