@@ -41,6 +41,8 @@ ReaderProgressiveListeningTests
 ReaderSelectionWiringTests
 ReaderSettingsScopeHeaderTests
 ReaderThemeContrastTests
+ReaderToolBarTests
+ReaderToolbarAdaptiveTests
 SettingsStorageActionTests
 TocDownloadRefreshTests
 TocScreenControllerTests

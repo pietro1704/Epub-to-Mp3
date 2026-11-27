@@ -193,10 +193,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
                 guard let ordinal = row.chapterIndex, fulltext.chapters.indices.contains(ordinal) else { return false }
                 return fulltext.chapters[ordinal].zeroBasedEpubIndex == nextReaderChapter
             })
-            let contents = try XCTUnwrap(descendants(root.view).compactMap { $0 as? NSButton }
-                .first { $0.accessibilityIdentifier() == "reader.more" })
-            let command = try XCTUnwrap(contents.menu?.items.first { ($0.representedObject as? String) == ReaderTool.contents.rawValue })
-            NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
+            XCTAssertTrue(try XCTUnwrap(MacReaderToolControl.find(.contents, in: root.view)).send())
             let table = try XCTUnwrap(NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
                 .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == rows.count })
             table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)

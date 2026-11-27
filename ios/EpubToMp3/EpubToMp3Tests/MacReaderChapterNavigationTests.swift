@@ -71,15 +71,8 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         }
         let text = try XCTUnwrap(findText(in: controller.view))
         let scroll = try XCTUnwrap(text.enclosingScrollView)
-        func findButton(_ identifier: String, in view: NSView) -> NSButton? {
-            if let button = view as? NSButton, button.accessibilityIdentifier() == identifier { return button }
-            return view.subviews.lazy.compactMap { findButton(identifier, in: $0) }.first
-        }
-        // Since #1151 Contents is chosen from the native reader More menu.
         func openContents() throws {
-            let more = try XCTUnwrap(findButton("reader.more", in: controller.view)?.menu)
-            let contents = try XCTUnwrap(more.items.first { $0.representedObject as? String == ReaderTool.contents.rawValue })
-            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(contents.action), to: contents.target, from: contents))
+            XCTAssertTrue(try XCTUnwrap(MacReaderToolControl.find(.contents, in: controller.view)).send())
         }
         if openTableOfContents { try openContents() }
         XCTAssertEqual(text.string, currentText)

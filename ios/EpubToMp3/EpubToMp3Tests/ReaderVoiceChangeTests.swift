@@ -242,12 +242,7 @@ final class ReaderVoiceChangeTests: XCTestCase {
         window.setContentSize(NSSize(width: 900, height: 650))
         window.makeKeyAndOrderFront(nil)
         root.showReader(bookID: book.id)
-        func moreButton(in view: NSView) -> NSButton? {
-            if let button = view as? NSButton, button.accessibilityIdentifier() == "reader.more" { return button }
-            return view.subviews.lazy.compactMap { moreButton(in: $0) }.first
-        }
-        let more = try XCTUnwrap(moreButton(in: root.view))
-        let command = try XCTUnwrap(more.menu?.items.first { $0.representedObject as? String == "voiceModels" })
+        let command = try XCTUnwrap(MacReaderToolControl.find(.voiceModels, in: root.view))
         let visible = expectation(description: "The reader voice choices menu begins tracking")
         let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
             object: nil, queue: .main) { notification in
@@ -269,7 +264,7 @@ final class ReaderVoiceChangeTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command))
+        XCTAssertTrue(command.send())
         await fulfillment(of: [visible], timeout: 15)
 
         XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
@@ -282,6 +277,7 @@ final class ReaderVoiceChangeTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         var selected: [ReaderTool] = []
         let toolbar = MacReaderToolBar(defaults: defaults) { tool, _ in selected.append(tool) }
+        toolbar.adapt(width: 0)
         let menu = try XCTUnwrap(toolbar.more.menu)
         let index = try XCTUnwrap(menu.items.firstIndex { $0.representedObject as? String == "voiceModels" })
 

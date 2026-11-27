@@ -137,3 +137,27 @@ final class NativeReaderTestHarness {
 @MainActor
 private final class NativeReaderNoopDelegates: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {}
 #endif
+
+#if os(macOS)
+/// A reader tool is a toolbar button when it fits the window, otherwise an item of the "more" menu.
+@MainActor
+struct MacReaderToolControl {
+    let identifier: String
+    private let target: AnyObject?
+    private let action: Selector?
+    private let sender: AnyObject
+
+    static func find(_ tool: ReaderTool, in view: NSView) -> MacReaderToolControl? {
+        func buttons(_ view: NSView) -> [NSButton] { [view].compactMap { $0 as? NSButton } + view.subviews.flatMap(buttons) }
+        let all = buttons(view)
+        if let button = all.first(where: { $0.accessibilityIdentifier() == tool.accessibilityIdentifier && !$0.isHidden }) {
+            return .init(identifier: button.accessibilityIdentifier(), target: button.target, action: button.action, sender: button)
+        }
+        let more = all.first { $0.accessibilityIdentifier() == "reader.more" && !$0.isHidden }
+        guard let item = more?.menu?.items.first(where: { $0.representedObject as? String == tool.rawValue }) else { return nil }
+        return .init(identifier: item.accessibilityIdentifier(), target: item.target, action: item.action, sender: item)
+    }
+
+    func send() -> Bool { action.map { NSApp.sendAction($0, to: target, from: sender) } ?? false }
+}
+#endif

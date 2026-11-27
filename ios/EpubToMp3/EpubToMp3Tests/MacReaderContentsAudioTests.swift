@@ -45,10 +45,8 @@ final class MacReaderContentsAudioTests: XCTestCase {
         for _ in 0..<50 where textView.string.isEmpty {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        let more = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "reader.more" }?.menu)
-        let contents = try XCTUnwrap(more.items.first { $0.representedObject as? String == ReaderTool.contents.rawValue })
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(contents.action), to: contents.target, from: contents))
+        let contents = try XCTUnwrap(MacReaderToolControl.find(.contents, in: controller.view))
+        XCTAssertTrue(contents.send())
         try await Task.sleep(nanoseconds: 500_000_000)
 
         let list = try XCTUnwrap(NSApp.windows.lazy.compactMap { candidate in

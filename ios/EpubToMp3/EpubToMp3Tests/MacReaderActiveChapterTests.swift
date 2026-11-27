@@ -95,17 +95,13 @@ final class MacReaderActiveChapterTests: XCTestCase {
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let text = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderTextView }.first)
         let scroll = try XCTUnwrap(text.enclosingScrollView)
-        let more = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "reader.more" })
-        func footnotesMenuItem() -> NSMenuItem? {
-            more.menu?.items.first { $0.representedObject as? String == ReaderTool.footnotes.rawValue }
-        }
+        func footnotesControl() -> MacReaderToolControl? { MacReaderToolControl.find(.footnotes, in: controller.view) }
         func footnotesShortcutIsVisible() -> Bool {
             descendants(controller.view).contains {
                 $0.accessibilityIdentifier() == ReaderTool.footnotes.accessibilityIdentifier && !$0.isHidden
             }
         }
-        XCTAssertNil(footnotesMenuItem())
+        XCTAssertNil(footnotesControl())
         XCTAssertFalse(footnotesShortcutIsVisible())
         func observed(_ transition: LatencyObservation.Transition) -> Bool {
             LatencyObservationStore.shared.snapshot().contains {
@@ -133,7 +129,7 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertTrue(observed(.controlsUsable),
                            "A source-bound complete chapter index and active chapter make audio controls usable during body hydration")
             XCTAssertEqual(text.string, active)
-            XCTAssertNotNil(footnotesMenuItem(), "The prepared chapter already owns its footnotes")
+            XCTAssertNotNil(footnotesControl(), "The prepared chapter already owns its footnotes")
             XCTAssertTrue(footnotesShortcutIsVisible())
             XCTAssertEqual(UserDefaults.standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey), 6)
             let distance = text.frame.height - scroll.contentView.bounds.height
@@ -173,7 +169,7 @@ final class MacReaderActiveChapterTests: XCTestCase {
         XCTAssertTrue(observed(.controlsUsable))
         XCTAssertEqual(text.string, expected.chapters[1].text)
         if invalidateProjection || mismatchWithQueuedRestore {
-            XCTAssertNil(footnotesMenuItem(), "The replacement chapter has no footnotes")
+            XCTAssertNil(footnotesControl(), "The replacement chapter has no footnotes")
             XCTAssertFalse(footnotesShortcutIsVisible())
         }
         if !invalidateProjection && !mismatchWithQueuedRestore {
@@ -184,24 +180,23 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertEqual(controller.numberOfRows(in: NSTableView()), expected.chapters.count,
                            "Chapter navigation waits until the complete catalog hydrates")
             XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 2)
-            let previouslyAvailable = try XCTUnwrap(footnotesMenuItem())
-            XCTAssertEqual(previouslyAvailable.accessibilityIdentifier(), ReaderTool.footnotes.accessibilityIdentifier)
+            let previouslyAvailable = try XCTUnwrap(footnotesControl())
+            XCTAssertEqual(previouslyAvailable.identifier, ReaderTool.footnotes.accessibilityIdentifier)
             XCTAssertTrue(footnotesShortcutIsVisible())
             XCTAssertEqual(text.onPageTap?(false), true)
             // Move explicitly to the previous chapter only after the complete catalog exists.
             scroll.contentView.scroll(to: .zero)
             XCTAssertEqual(text.onPageTap?(false), true)
             XCTAssertEqual(text.string, expected.chapters[0].text)
-            XCTAssertNil(footnotesMenuItem())
+            XCTAssertNil(footnotesControl())
             XCTAssertFalse(footnotesShortcutIsVisible())
             XCTAssertEqual(toolPreference.recent, .footnotes)
             // A menu retained across a chapter change must not present stale notes.
-            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(previouslyAvailable.action),
-                                           to: previouslyAvailable.target, from: previouslyAvailable))
+            XCTAssertTrue(previouslyAvailable.send())
             scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, text.frame.height - scroll.contentView.bounds.height)))
             XCTAssertEqual(text.onPageTap?(true), true)
             XCTAssertEqual(text.string, expected.chapters[1].text)
-            XCTAssertNotNil(footnotesMenuItem())
+            XCTAssertNotNil(footnotesControl())
             XCTAssertTrue(footnotesShortcutIsVisible())
         }
         XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
