@@ -336,7 +336,7 @@ void main() {
           );
           expect(find.byKey(const Key('conversion-job-id')), findsNothing);
           expect(find.byType(LinearProgressIndicator), findsNothing);
-          expect(find.text('Start conversion'), findsOneWidget);
+          expect(find.text('Start conversion', skipOffstage: false), findsOneWidget);
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump();
