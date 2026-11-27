@@ -295,3 +295,39 @@ fn shipped_sample_uses_the_additive_inspector() {
     assert!(book.chapters[0].text.contains("experimento"));
     assert!(book.chapters[0].text.contains('\n'));
 }
+
+#[test]
+fn toc_fragments_become_anchors_on_the_reader_text_axis_without_splitting_the_file() {
+    let chapter = r#"<html><body><h2 id="a">Primeiro</h2><p>Texto do primeiro.</p><h2 id="b">Segundo</h2><p>Texto do segundo.</p><a id="c"/><p>Terceiro e ultimo.</p><h2 id="unused">Fora</h2></body></html>"#;
+    let nav = r##"<html><body><nav epub:type="toc"><ol><li><a href="c.xhtml#a">A</a></li><li><a href="c.xhtml#b">B</a></li><li><a href="c.xhtml#c">C</a></li></ol></nav></body></html>"##;
+    let bytes = book(&[("c.xhtml", chapter)], Some(nav), &[]);
+    let reader = resources::inspect(&bytes).unwrap();
+    // One file stays one chapter, so identities and saved positions are unchanged.
+    assert_eq!(reader.chapters.len(), 1);
+    let chapter = &reader.chapters[0];
+    let rest = |id: &str| {
+        let anchor = chapter
+            .anchors
+            .iter()
+            .find(|a| a.id == id)
+            .unwrap_or_else(|| panic!("{id}: {:?}", chapter.anchors));
+        chapter.text.chars().skip(anchor.offset).collect::<String>()
+    };
+    assert!(
+        rest("a").trim_start().starts_with("Primeiro"),
+        "{:?}",
+        rest("a")
+    );
+    assert!(
+        rest("b").trim_start().starts_with("Segundo"),
+        "{:?}",
+        rest("b")
+    );
+    assert!(
+        rest("c").trim_start().starts_with("Terceiro"),
+        "{:?}",
+        rest("c")
+    );
+    // Only ids the TOC points at are exposed.
+    assert!(chapter.anchors.iter().all(|a| a.id != "unused"));
+}
