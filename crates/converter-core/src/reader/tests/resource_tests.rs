@@ -288,8 +288,8 @@ fn shipped_sample_uses_the_additive_inspector() {
     let book = resources::inspect(bytes).unwrap();
     assert_eq!(book.book_title, "Test Multi Feature Book");
     assert_eq!(book.chapters.len(), 2);
-    // The shared NCX parser resolves this spine resource to its first section.
-    assert_eq!(book.chapters[0].index, "1.1");
+    // The NCX parent keeps its own href, so the spine resource maps to the parent chapter.
+    assert_eq!(book.chapters[0].index, "1");
     let legacy = crate::epub::parse_epub(Cursor::new(bytes)).unwrap();
     assert_eq!(book.chapters[0].index, legacy.chapters[0].index);
     assert!(book.chapters[0].text.contains("experimento"));

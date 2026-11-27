@@ -14,8 +14,6 @@ pub fn parse_ncx(xml: &str) -> Result<Vec<TocItem>, quick_xml::Error> {
     reader.config_mut().trim_text(true);
     let mut roots: Vec<(TocItem, usize)> = Vec::new();
     let mut current: Vec<TocItem> = Vec::new();
-    let mut title: Option<String> = None;
-    let mut href: Option<String> = None;
     let mut depth = 0u32;
     loop {
         match reader.read_event()? {
@@ -29,27 +27,33 @@ pub fn parse_ncx(xml: &str) -> Result<Vec<TocItem>, quick_xml::Error> {
                 });
             }
             Event::Start(e) if e.name().as_ref() == b"text" => {
+                // The label belongs to the innermost open navPoint, not to the next one closed.
                 if let Event::Text(t) = reader.read_event()? {
-                    title = Some(String::from_utf8_lossy(t.as_ref()).trim().into());
+                    if let Some(open) = current.last_mut() {
+                        open.title = String::from_utf8_lossy(t.as_ref()).trim().into();
+                    }
                 }
             }
-            Event::Empty(e) if e.name().as_ref() == b"content" => {
-                href = e
-                    .attributes()
-                    .flatten()
-                    .find(|a| a.key.as_ref() == b"src")
-                    .and_then(|a| String::from_utf8(a.value.into_owned()).ok());
+            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == b"content" => {
+                if let Some(open) = current.last_mut() {
+                    open.href = e
+                        .attributes()
+                        .flatten()
+                        .find(|a| a.key.as_ref() == b"src")
+                        .and_then(|a| String::from_utf8(a.value.into_owned()).ok())
+                        .unwrap_or_default();
+                }
             }
             Event::End(e) if e.name().as_ref() == b"navPoint" => {
-                let mut item = current.pop().unwrap();
-                item.title = title.take().unwrap_or_default();
-                item.href = href.take().unwrap_or_default();
+                let Some(item) = current.pop() else {
+                    continue;
+                };
                 if let Some(parent) = current.last_mut() {
                     parent.children.push(item)
                 } else {
                     roots.push((item, 0));
                 }
-                depth -= 1;
+                depth = depth.saturating_sub(1);
             }
             Event::Eof => break,
             _ => {}
@@ -122,5 +126,49 @@ mod tests {
         .unwrap();
         assert_eq!(items[0].href, "chapter.xhtml");
         assert_eq!(items[0].title, "Chapter");
+    }
+
+    fn point(id: &str, title: &str, href: Option<&str>, inner: &str) -> String {
+        let content = href.map_or(String::new(), |h| format!(r#"<content src="{h}"/>"#));
+        format!(
+            r#"<navPoint id="{id}"><navLabel><text>{title}</text></navLabel>{content}{inner}</navPoint>"#
+        )
+    }
+
+    #[test]
+    fn ncx_parents_keep_their_own_title_href_and_level_at_depth_three() {
+        let deep = point("c", "Section", Some("s.xhtml#a"), "");
+        let chapter = point("b", "Chapter", Some("c1.xhtml"), &deep);
+        let part = point("a", "Part One", Some("p1.xhtml"), &chapter);
+        let hrefless = point(
+            "d",
+            "Part Two",
+            None,
+            &point("e", "Chapter Two", Some("c2.xhtml"), ""),
+        );
+        let xml = format!(
+            r#"<ncx><docTitle><text>Book</text></docTitle><navMap>{part}{hrefless}</navMap></ncx>"#
+        );
+        let toc = parse_ncx(&xml).unwrap();
+        assert_eq!(toc.len(), 2);
+        assert_eq!(
+            (toc[0].title.as_str(), toc[0].href.as_str(), toc[0].level),
+            ("Part One", "p1.xhtml", 1)
+        );
+        let chapter = &toc[0].children[0];
+        assert_eq!(
+            (chapter.title.as_str(), chapter.href.as_str(), chapter.level),
+            ("Chapter", "c1.xhtml", 2)
+        );
+        let section = &chapter.children[0];
+        assert_eq!(
+            (section.title.as_str(), section.href.as_str(), section.level),
+            ("Section", "s.xhtml#a", 3)
+        );
+        assert_eq!(
+            (toc[1].title.as_str(), toc[1].href.as_str()),
+            ("Part Two", "")
+        );
+        assert_eq!(toc[1].children[0].href, "c2.xhtml");
     }
 }
