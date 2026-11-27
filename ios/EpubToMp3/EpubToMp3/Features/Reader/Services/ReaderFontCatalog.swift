@@ -30,12 +30,19 @@ enum ReaderFontCatalog {
             : family.displayName + " — " + L10n.string("font.unavailable")
     }
 
+    /// The upright, regular-weight face among one family's sorted PostScript names.
+    nonisolated static func regularFace(in names: [String]) -> String? {
+        let regular = names.first { $0.hasSuffix("Regular") || $0.hasSuffix("Roman") || $0.hasSuffix("Book") }
+        // Names such as "TimesNewRomanPSMT" carry no weight word, and the styled faces sort first.
+        let upright = names.first { name in !["Bold", "Italic", "Oblique"].contains { name.contains($0) } }
+        return regular ?? upright ?? names.first
+    }
+
     static func font(for family: ReaderFontFamily, size: CGFloat) -> ReaderCatalogFont {
         if let name = family.namedFamily, availableFamilies.contains(name) {
             #if canImport(UIKit)
             let names = UIFont.fontNames(forFamilyName: name).sorted()
-            let regular = names.first { $0.hasSuffix("Regular") || $0.hasSuffix("Roman") || $0.hasSuffix("Book") }
-            if let font = UIFont(name: regular ?? names.first ?? name, size: size) { return font }
+            if let font = UIFont(name: regularFace(in: names) ?? name, size: size) { return font }
             #else
             if let font = NSFont(name: name, size: size) { return font }
             #endif
