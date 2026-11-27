@@ -12,6 +12,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
@@ -59,13 +60,21 @@ class LocalFulltextCache {
       final f = await _fileFor(bookId);
       if (f == null || !await f.exists()) return null;
       final txt = await f.readAsString();
-      await _touch(f);
-      final map = jsonDecode(txt) as Map<String, dynamic>;
-      if (map['readerContentVersion'] != _contentVersion) return null;
-      return EbookFulltext.fromJson(map);
+      // A large book takes hundreds of ms to parse; that must not freeze the UI.
+      final parsed = await Isolate.run(() => _parse(txt));
+      if (parsed == null) return null;
+      // Access tracking is best effort and must not delay the book.
+      unawaited(_touch(f));
+      return parsed;
     } catch (_) {
       return null;
     }
+  }
+
+  static EbookFulltext? _parse(String txt) {
+    final map = jsonDecode(txt) as Map<String, dynamic>;
+    if (map['readerContentVersion'] != _contentVersion) return null;
+    return EbookFulltext.fromJson(map);
   }
 
   /// Best-effort save. Atomic so a crash mid-write can't corrupt.
