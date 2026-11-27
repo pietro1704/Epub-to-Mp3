@@ -47,6 +47,11 @@ pub(super) fn structure(
         previous_page: None,
     };
     let toc = parser.walk(first, 1)?;
+    // A lone entry (usually the cover) is no table of contents: it would make the whole
+    // book one chapter. An outline with more entries stays, even if only one is usable.
+    if parser.seen.len() == 1 {
+        return Ok((Vec::new(), Vec::new()));
+    }
     if let Some((&page, _)) = parser.starts.first_key_value() {
         if page > 0 {
             parser.starts.insert(0, ("Front matter".into(), 1));

@@ -547,3 +547,37 @@ fn pdf_single_heading_like_line_keeps_page_chapters() {
     ]);
     assert!(book.chapters.iter().all(|c| c.name.starts_with("Page ")));
 }
+
+#[test]
+fn pdf_single_entry_outline_is_treated_like_no_outline() {
+    let source = fixture::pdf_with(
+        true,
+        &[
+            "Capa do livro sintetico.",
+            "Capitulo 1\nO primeiro capitulo comeca aqui com bastante texto.",
+            "Mais texto do primeiro capitulo, continuando a historia.",
+            "Capitulo 2\nO segundo capitulo comeca aqui com bastante texto.",
+        ],
+        |objects| {
+            let only = objects
+                .iter_mut()
+                .find(|o| o.contains("/Title (First section)"))
+                .unwrap();
+            let next = only.find("/Next ").unwrap();
+            let dest = only.find("/Dest ").unwrap();
+            only.replace_range(next..dest, "");
+            *only = only.replace("First section", "Capa");
+        },
+    );
+    let book = converter_core::ingestion::pdf_text::PdfTextIngestion::from_bytes(
+        std::path::Path::new("capa.pdf"),
+        &source,
+    )
+    .unwrap();
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Front matter", "Capitulo 1", "Capitulo 2"]);
+    assert!(
+        book.toc.is_empty(),
+        "the degenerate outline is not the contents list"
+    );
+}
