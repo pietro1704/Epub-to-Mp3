@@ -5,7 +5,7 @@ mod epub_package;
 mod epub_resources;
 pub mod footnote_narration;
 use epub_chapter_content::{
-    first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_title_for,
+    first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_qualified_title,
 };
 pub use epub_footnotes::Footnote;
 pub use epub_library_metadata::{read_library_metadata, LibraryMetadata};
@@ -277,7 +277,7 @@ fn parse_epub_document<R: Read + Seek>(
                 !previous.text.trim().is_empty() && same_logical_file(&previous.source_path, &path)
             });
         let level = levels.get(key).copied().unwrap_or(1);
-        let toc_title = toc_title_for(&toc, key);
+        let toc_title = toc_qualified_title(&toc, key);
         let found = epub_footnotes::chapter_footnotes_with_targets(
             &html,
             &path,
@@ -327,6 +327,11 @@ fn parse_epub_document<R: Read + Seek>(
             note_marks,
             anchors,
         });
+    }
+    let mut compacted: Vec<u32> = chapters.iter().map(|c| c.level).collect();
+    epub_chapter_content::compact_levels(&mut compacted);
+    for (chapter, level) in chapters.iter_mut().zip(compacted) {
+        chapter.level = level;
     }
     let (cover, cover_mime) =
         epub_library_metadata::cover_image(&mut archive, &opf, opf_dir, &mut budget)?;

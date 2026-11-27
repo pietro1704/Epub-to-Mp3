@@ -37,6 +37,61 @@ pub(super) fn toc_title_for(toc: &[TocItem], key: &str) -> Option<String> {
         .map(|title| (*title).to_owned())
 }
 
+/// Like `toc_title_for`, but a label ("1") that other files also use is prefixed with the
+/// title of its closest titled parent ("Part I - 1").
+pub(super) fn toc_qualified_title(toc: &[TocItem], key: &str) -> Option<String> {
+    let title = toc_title_for(toc, key)?;
+    if !is_label_title(&title) {
+        return Some(title);
+    }
+    // (file, parent title) of every entry carrying this exact label.
+    fn walk<'a>(
+        items: &'a [TocItem],
+        parent: &'a str,
+        label: &str,
+        out: &mut Vec<(&'a str, &'a str)>,
+    ) {
+        for item in items {
+            if item.title == label {
+                out.push((item.href.split('#').next().unwrap_or_default(), parent));
+            }
+            walk(&item.children, &item.title, label, out);
+        }
+    }
+    let mut same = Vec::new();
+    walk(toc, "", &title, &mut same);
+    let files: std::collections::HashSet<&str> = same.iter().map(|(file, _)| *file).collect();
+    if files.len() < 2 {
+        return Some(title);
+    }
+    match same.iter().find(|(file, _)| *file == key) {
+        Some((_, parent)) if !parent.is_empty() => Some(format!("{parent} - {title}")),
+        _ => Some(title),
+    }
+}
+
+/// Caps each chapter's level at one below the deepest level seen so far, so a jump from level 1
+/// to level 4 keeps the nesting depth instead of the number of skipped wrappers.
+pub(super) fn compact_levels(levels: &mut [u32]) {
+    // (original level, compacted level) of the open ancestors.
+    let mut open: Vec<(u32, u32)> = Vec::new();
+    for level in levels.iter_mut() {
+        while open.last().is_some_and(|(original, _)| *original > *level) {
+            open.pop();
+        }
+        let top = open.last().copied();
+        let compacted = match top {
+            Some((original, compacted)) if original == *level => compacted,
+            Some((_, compacted)) => compacted + 1,
+            None => 1,
+        };
+        if top.map_or(true, |(original, _)| original != *level) {
+            open.push((*level, compacted));
+        }
+        *level = compacted;
+    }
+}
+
 pub(super) fn hierarchy_indices(toc: &[TocItem]) -> HashMap<String, String> {
     let mut m = HashMap::new();
     for (i, x) in toc.iter().enumerate() {
@@ -591,6 +646,49 @@ mod note_position_tests {
         assert_eq!(toc_title_for(&toc, "ca.xhtml").as_deref(), Some("Apendice"));
         // Nothing better is available, so the label stays.
         assert_eq!(toc_title_for(&toc, "c6.xhtml").as_deref(), Some("VI"));
+    }
+
+    fn node(title: &str, href: &str, children: Vec<TocItem>) -> TocItem {
+        TocItem {
+            title: title.into(),
+            href: href.into(),
+            level: 1,
+            children,
+        }
+    }
+
+    #[test]
+    fn duplicate_numeric_titles_take_the_parent_title_as_prefix() {
+        let toc = vec![
+            node(
+                "Parte I",
+                "p1.xhtml",
+                vec![node("1", "a.xhtml", vec![]), node("2", "b.xhtml", vec![])],
+            ),
+            node(
+                "Parte II",
+                "p2.xhtml",
+                vec![
+                    node("1", "c.xhtml", vec![]),
+                    node("Final", "d.xhtml", vec![]),
+                ],
+            ),
+            node("7", "e.xhtml", vec![]),
+        ];
+        let name = |key| toc_qualified_title(&toc, key).unwrap();
+        assert_eq!(name("a.xhtml"), "Parte I - 1");
+        assert_eq!(name("c.xhtml"), "Parte II - 1");
+        // Unique labels, real titles and root entries stay as they are.
+        assert_eq!(name("b.xhtml"), "2");
+        assert_eq!(name("d.xhtml"), "Final");
+        assert_eq!(name("e.xhtml"), "7");
+    }
+
+    #[test]
+    fn a_level_jump_keeps_the_nesting_depth() {
+        let mut levels = [1, 4, 4, 2, 6, 1];
+        compact_levels(&mut levels);
+        assert_eq!(levels, [1, 2, 2, 2, 3, 1]);
     }
 
     #[test]
