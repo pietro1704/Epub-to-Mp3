@@ -552,7 +552,9 @@ fn pdf_short_page_per_chapter_fallback_has_no_automatic_contents_list() {
     let book = ingest_pages(&[
         "Texto corrido da primeira pagina sem nenhum titulo.",
         "Texto corrido da segunda pagina sem nenhum titulo.",
+        "Texto corrido da terceira pagina sem nenhum titulo.",
     ]);
+    assert!(book.chapters.iter().all(|c| c.name.starts_with("Page ")));
     assert!(book.toc.is_empty());
 }
 
