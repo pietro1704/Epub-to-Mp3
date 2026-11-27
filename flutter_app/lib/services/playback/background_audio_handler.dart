@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../models/app_settings.dart' show RemoteButtonMode;
+import '../reader/narration_switch_policy.dart' show kSpeechScalarsPerSecond;
 import 'audio_player_service.dart';
 import 'widget_playback_snapshot.dart';
 
@@ -74,7 +75,6 @@ class BackgroundAudioHandler extends BaseAudioHandler {
   final WidgetPlaybackSnapshotStore? _snapshotStore;
   late final StreamSubscription<void> _changes;
   bool _disposed = false;
-  String? _lastMetadataId;
   BackgroundAudioMetadata? _metadata;
 
   RemoteButtonMode _remoteButtonMode = RemoteButtonMode.chapter;
@@ -89,11 +89,20 @@ class BackgroundAudioHandler extends BaseAudioHandler {
 
   Future<void> setMetadata(BackgroundAudioMetadata metadata) async {
     _metadata = metadata;
-    final item = BackgroundAudioMetadataMapper.toMediaItem(metadata);
-    if (_lastMetadataId == item.id && mediaItem.value == item) return;
-    _lastMetadataId = item.id;
+    final item = BackgroundAudioMetadataMapper.toMediaItem(metadata)
+        .copyWith(duration: _chapterDuration(metadata));
+    // MediaItem equality only checks the ID. A chapter can finish or acquire
+    // its real title while the system player still has the same track selected.
+    final previous = mediaItem.value;
+    if (previous?.id == item.id &&
+        previous?.title == item.title &&
+        previous?.album == item.album &&
+        previous?.artist == item.artist &&
+        previous?.artUri == item.artUri &&
+        previous?.duration == item.duration)
+      return;
     mediaItem.add(item);
-    _publishState(duration: metadata.duration);
+    _publishState();
   }
 
   /// Starts the narration of the current book when nothing is queued yet, like the mini
@@ -191,13 +200,44 @@ class BackgroundAudioHandler extends BaseAudioHandler {
     );
   }
 
-  void _publishState({Duration? duration}) {
+  Duration? _chapterDuration(BackgroundAudioMetadata metadata) {
+    if (player.currentBookId != null &&
+        player.currentBookId != metadata.bookId) {
+      return metadata.duration;
+    }
+    final playerIndex = player.currentIndexValue;
+    final index = playerIndex == null
+        ? -1
+        : player.chapterIndexForPlayerIndex(playerIndex);
+    final chapters = player.chapters;
+    final chapter = index >= 0 && index < chapters.length
+        ? chapters[index]
+        : null;
+    if (metadata.chapterIndex != null &&
+        chapter?.index != metadata.chapterIndex) {
+      return metadata.duration;
+    }
+    var seconds = player.durationSeconds;
+    if (!seconds.isFinite || seconds < 0) seconds = 0;
+    if (chapter != null && chapter.status == 'running') {
+      // The decoder can only measure the part synthesized so far. Estimate
+      // the remaining source span when playback started inside the chapter.
+      final chars = (chapter.chars ?? 0) - (chapter.textOffset ?? 0);
+      final estimate = chars / kSpeechScalarsPerSecond;
+      if (estimate > seconds) seconds = estimate;
+    }
+    if (seconds <= 0) seconds = chapter?.durationSeconds ?? 0;
+    return seconds.isFinite && seconds > 0
+        ? Duration(milliseconds: (seconds * 1000).round())
+        : metadata.duration;
+  }
+
+  void _publishState() {
     if (_disposed) return;
-    final currentDuration =
-        duration ??
-        (player.durationSeconds > 0
-            ? Duration(milliseconds: (player.durationSeconds * 1000).round())
-            : mediaItem.value?.duration);
+    final metadata = _metadata;
+    final currentDuration = metadata == null
+        ? null
+        : _chapterDuration(metadata);
     final state = PlaybackState(
       controls: [
         if (_remoteButtonMode == RemoteButtonMode.seconds)
@@ -235,10 +275,10 @@ class BackgroundAudioHandler extends BaseAudioHandler {
       queueIndex: player.currentIndexValue,
     );
     playbackState.add(state);
-    if (currentDuration != null && mediaItem.value != null) {
-      mediaItem.add(mediaItem.value!.copyWith(duration: currentDuration));
+    final currentItem = mediaItem.value;
+    if (currentItem != null && currentItem.duration != currentDuration) {
+      mediaItem.add(currentItem.copyWith(duration: currentDuration));
     }
-    final metadata = _metadata;
     final store = _snapshotStore;
     if (metadata != null && store != null) {
       final totalMilliseconds = currentDuration?.inMilliseconds ?? 0;

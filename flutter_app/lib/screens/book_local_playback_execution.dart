@@ -1,6 +1,7 @@
 part of 'book_open_screen.dart';
 
-mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSession, BookPlaybackSession {
+mixin BookLocalPlaybackExecution
+    on ConsumerState<BookOpenScreen>, BookContentSession, BookPlaybackSession {
   @override
   Future<void> _runLocalPlaybackConversion({
     required int playbackChapterIndex,
@@ -24,7 +25,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     final coordinator = ConversionJobCoordinator(
       LocalConversionJobStore(ref.read(sharedPrefsProvider)),
     );
-    final jobId = readerPosition == null ? 'local-${widget.bookId}'
+    final jobId = readerPosition == null
+        ? 'local-${widget.bookId}'
         : 'listen-${widget.bookId}-$generation-${DateTime.now().microsecondsSinceEpoch}';
     try {
       final library = ref.read(libraryStoreProvider);
@@ -37,7 +39,9 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       final docsDir = await getApplicationDocumentsDirectory();
       if (!_isCurrentConversion(generation)) return;
       final outputBase = '${docsDir.path}/audiobooks/${widget.bookId}';
-      final outDir = Directory(readerPosition == null ? outputBase : '$outputBase/$jobId');
+      final outDir = Directory(
+        readerPosition == null ? outputBase : '$outputBase/$jobId',
+      );
       if (!await outDir.exists()) await outDir.create(recursive: true);
       if (!_isCurrentConversion(generation)) return;
       debugPrint('BookOpenScreen: local output ready path=${outDir.path}');
@@ -50,7 +54,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       final settings = ref.read(settingsProvider);
       var ttsSnapshot = settings.ttsPreferences;
       final converter = ref.read(embeddedConverterProvider);
-      final isNewJob = existingJob == null ||
+      final isNewJob =
+          existingJob == null ||
           existingJob.status == LocalConversionJobStatus.cancelled ||
           existingJob.needsFreshVoiceSnapshot;
       if (isNewJob) {
@@ -71,7 +76,9 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             return;
           }
           if (narration is ResolvedNarration) base = narration.preferences;
-          unawaited(_warnAboutMissingLanguageModels(converter, inputPath, base));
+          unawaited(
+            _warnAboutMissingLanguageModels(converter, inputPath, base),
+          );
           ttsSnapshot = catalog.captureNewPreferences(base);
         } else if (converter is AndroidEmbeddedConverter) {
           TtsCatalog? catalog;
@@ -95,13 +102,16 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             await _offerModelsFor(narration, generation);
             return;
           }
-          if (narration is ResolvedNarration) ttsSnapshot = narration.preferences;
-          unawaited(_warnAboutMissingLanguageModels(
-            converter,
-            inputPath,
-            ttsSnapshot,
-            androidApi: catalog?.androidApi,
-          ));
+          if (narration is ResolvedNarration)
+            ttsSnapshot = narration.preferences;
+          unawaited(
+            _warnAboutMissingLanguageModels(
+              converter,
+              inputPath,
+              ttsSnapshot,
+              androidApi: catalog?.androidApi,
+            ),
+          );
         }
       }
       final ttsSupport = await getApplicationSupportDirectory();
@@ -178,7 +188,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             name: source?.name ?? saved.name,
             status: 'completed',
             downloadUrl: Uri.file(path).toString(),
-            chars: source?.text.length,
+            chars: source?.text.runes.length,
             progressRatio: 1.0,
             textOffset: saved.textOffset,
           ),
@@ -258,7 +268,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                     scheme: 'growing',
                     path: source.requestId,
                   ).toString(),
-                  chars: chapter.text.length,
+                  chars: chapter.text.runes.length,
                   progressRatio: 0.0,
                   textOffset: startOffsetOf(chapter.index),
                 );
@@ -285,7 +295,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             name: chapter.name,
             status: 'completed',
             downloadUrl: Uri.file(path).toString(),
-            chars: chapter.text.length,
+            chars: chapter.text.runes.length,
             progressRatio: 1.0,
             textOffset: startOffsetOf(chapter.index),
           );
@@ -313,7 +323,10 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       );
       if (!_isCurrentConversion(generation)) return;
       _localJob = job;
-      if (job.coversFullSource(conversionChapters.map((chapter) => chapter.index))) _markBookOffline();
+      if (job.coversFullSource(
+        conversionChapters.map((chapter) => chapter.index),
+      ))
+        _markBookOffline();
       setState(() => _isConverting = false);
     } catch (e) {
       if (!_isCurrentConversion(generation)) return;
@@ -348,7 +361,6 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       }
     }
   }
-
 
   /// Asks which language the undetectable passage (or book) is in and stores
   /// the answer; true when the conversion should run again with it.
@@ -386,7 +398,10 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     bookPath: inputPath,
     configured: base,
     choices: ref.read(languageModelChoicesProvider),
-    correctedLanguage: ref.read(bookLanguageCorrectionsProvider).decision(widget.bookId).bookLanguage,
+    correctedLanguage: ref
+        .read(bookLanguageCorrectionsProvider)
+        .decision(widget.bookId)
+        .bookLanguage,
     // The voice the listener chose for this book reads its main language (Rust: source book_voice).
     bookVoice: ref.read(bookVoiceProvider(widget.bookId)),
     // Fresh at each job start: the cached list may predate an install.
@@ -421,8 +436,12 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       bookPath: inputPath,
       configured: base,
       choices: ref.read(languageModelChoicesProvider),
-      correctedLanguage: ref.read(bookLanguageCorrectionsProvider).decision(widget.bookId).bookLanguage,
-      installedModelIds: () => ref.read(installedNarrationModelIdsProvider.future),
+      correctedLanguage: ref
+          .read(bookLanguageCorrectionsProvider)
+          .decision(widget.bookId)
+          .bookLanguage,
+      installedModelIds: () =>
+          ref.read(installedNarrationModelIdsProvider.future),
       systemVoices: () => ref.read(systemVoiceLanguagesProvider.future),
       platform: switch (defaultTargetPlatform) {
         TargetPlatform.android => 'Android',
@@ -434,7 +453,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       androidApi: androidApi,
     );
     // Once per book and language: the notice is not repeated at every playback start.
-    final unseen = await BookLanguageNotices(ref.read(sharedPrefsProvider)).unseen(widget.bookId, missing);
+    final unseen = await BookLanguageNotices(ref.read(sharedPrefsProvider))
+        .unseen(widget.bookId, missing);
     if (mounted && unseen.isNotEmpty) {
       showMissingProfileModelsNotice(context, unseen);
     }

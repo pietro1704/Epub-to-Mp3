@@ -1,16 +1,21 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
 import 'dart:io';
 import 'dart:convert';
+
 import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/screens/book_open_screen.dart';
 import 'package:flutter_app/services/playback/audio_player_service.dart';
+
 import 'support/fake_audio_player_service.dart';
+
 import 'package:flutter_app/services/storage/local_fulltext_cache.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,9 +135,7 @@ void main() {
       displayFilename: 'desktop.epub',
       addedAt: DateTime(2025),
     );
-    final prefs = await _mockPrefs({
-      'library.books.v1': '[${book.encode()}]',
-    });
+    final prefs = await _mockPrefs({'library.books.v1': '[${book.encode()}]'});
     final converter = _DesktopFakeConverter();
     final player = FakeAudioPlayerService();
     Future<void>? pendingPlayback;
@@ -160,13 +163,25 @@ void main() {
       );
       final listen = container.read(playbackRequestProvider);
       expect(listen, isNotNull);
-      await tester.runAsync(() async { pendingPlayback = listen!(); });
+      await tester.runAsync(() async {
+        pendingPlayback = listen!();
+      });
       // Advance fake-zone store futures and real filesystem I/O independently.
-      for (var attempt = 0; attempt < 200 && !enteredSupport.isCompleted; attempt++) {
+      for (
+        var attempt = 0;
+        attempt < 200 && !enteredSupport.isCompleted;
+        attempt++
+      ) {
         await tester.pump();
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        );
       }
-      expect(enteredSupport.isCompleted, true, reason: 'Model-root lookup was not reached');
+      expect(
+        enteredSupport.isCompleted,
+        true,
+        reason: 'Model-root lookup was not reached',
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(() async {
         releaseSupport.complete(directory.path);
@@ -192,9 +207,13 @@ void main() {
     }
   });
 
-  for (final platform in [TargetPlatform.linux, TargetPlatform.windows]) {
+  for (final (platform, extension) in [
+    (TargetPlatform.linux, 'epub'),
+    (TargetPlatform.windows, 'epub'),
+    (TargetPlatform.linux, 'pdf'),
+  ]) {
     testWidgets(
-      '$platform parses and listens through local Rust adapter without HTTP',
+      '$platform $extension parses and listens through local Rust adapter without HTTP',
       (t) async {
         debugDefaultTargetPlatformOverride = platform;
         const channel = MethodChannel('plugins.flutter.io/path_provider');
@@ -209,8 +228,8 @@ void main() {
         final book = BookEntity(
           id: 'desktop',
           title: 'Desktop book',
-          filePath: '/tmp/desktop.epub',
-          displayFilename: 'desktop.epub',
+          filePath: '/tmp/desktop.$extension',
+          displayFilename: 'desktop.$extension',
           addedAt: DateTime(2025),
         );
         final prefs = await _mockPrefs({
@@ -229,7 +248,7 @@ void main() {
             ),
           );
           await t.pumpAndSettle();
-          expect(converter.parses, 1);
+          expect(converter.parses, extension == 'pdf' ? 0 : 1);
           final container = ProviderScope.containerOf(
             t.element(find.byType(BookOpenScreen)),
           );
@@ -239,6 +258,7 @@ void main() {
             await listen!();
           });
           await t.pumpAndSettle();
+          expect(converter.parses, 1);
           expect(converter.options, hasLength(1));
           expect(
             jsonDecode(
@@ -284,8 +304,7 @@ void main() {
           {
             'index': 0,
             'name': 'Chapter 1',
-            'text':
-                'This is the content of chapter one with enough text to be displayed properly.',
+            'text': 'This is the content of chapter one with enough text to be displayed properly.',
           },
         ],
       });
@@ -349,12 +368,7 @@ void main() {
       final fakePlayer = FakeAudioPlayerService();
 
       await t.pumpWidget(
-        _wrap(
-          prefs,
-          'play-book',
-          cache: cache,
-          player: fakePlayer,
-        ),
+        _wrap(prefs, 'play-book', cache: cache, player: fakePlayer),
       );
       await t.pump();
       await t.pump();
@@ -363,9 +377,7 @@ void main() {
       expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
 
-    testWidgets('cached book leaves conversion to the global shell', (
-      t,
-    ) async {
+    testWidgets('cached book leaves conversion to the global shell', (t) async {
       final book = BookEntity(
         id: 'fallback-book',
         title: 'Fallback Book',
@@ -392,12 +404,7 @@ void main() {
       final fakePlayer = FakeAudioPlayerService();
 
       await t.pumpWidget(
-        _wrap(
-          prefs,
-          'fallback-book',
-          cache: cache,
-          player: fakePlayer,
-        ),
+        _wrap(prefs, 'fallback-book', cache: cache, player: fakePlayer),
       );
       await t.pump();
       await t.pump();
