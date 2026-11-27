@@ -225,8 +225,18 @@ jobs:
   macos-native:
     needs: [gate, native-notices]
     name: macOS native
-    runs-on: macos-15
-    timeout-minutes: 40
+    runs-on: ${{ matrix.os }}
+    # Release builds are uncached; the Intel image compiles Rust much slower.
+    timeout-minutes: 180
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    env:
+      MACOS_ARCH: ${{ matrix.arch }}
     steps:
       - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -300,8 +310,16 @@ jobs:
         working-directory: ios/EpubToMp3
         run: |
           APP_PATH="build/Build/Products/Release/EpubToMp3.app"
+          # Intel linkers leave dylibs unsigned; sign only those that carry no signature.
+          for library in "$APP_PATH"/Contents/Frameworks/*.dylib; do
+            if [[ -f "$library" ]] && ! codesign --display "$library" 2>/dev/null; then
+              codesign --force --sign - --timestamp=none "$library"
+            fi
+          done
           # Seal the outer bundle after embedding. Verify the existing nested signatures.
-          codesign --force --sign - --timestamp=none "$APP_PATH"
+          # Without the app entitlements the app runs unsandboxed and misses its container.
+          codesign --force --sign - --timestamp=none \
+            --entitlements EpubToMp3/Resources/EpubToMp3.entitlements "$APP_PATH"
           codesign --verify --deep --strict --all-architectures "$APP_PATH"
 
       - name: Package macOS .app into .zip
@@ -319,12 +337,12 @@ jobs:
             echo "::error::Expected macOS app version $expected_bundle_version, got $bundle_version" >&2
             exit 1
           fi
-          ditto -c -k --keepParent "$APP_PATH" "EpubToMp3-macos-${RELEASE_TAG}.zip"
+          ditto -c -k --keepParent "$APP_PATH" "EpubToMp3-macos-${RELEASE_TAG}-${MACOS_ARCH}.zip"
 
       - name: Retain macOS package for publication after all builds succeed
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-apple
+          name: release-apple-${{ matrix.arch }}
           path: ios/EpubToMp3/EpubToMp3-macos-*.zip
           if-no-files-found: error
           retention-days: 7

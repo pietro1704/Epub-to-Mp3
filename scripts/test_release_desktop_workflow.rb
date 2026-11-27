@@ -197,7 +197,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     job = @jobs.fetch("macos-native")
     assert_equal "macOS native", job.fetch("name")
     refute_match(/generic\/platform=iOS|\.xcarchive|\.ipa\b/, runs(job.fetch("steps")).join("\n"))
-    package = job.fetch("steps").find { |step| step.dig("with", "name") == "release-apple" }
+    package = job.fetch("steps").find { |step| step.dig("with", "name").to_s.start_with?("release-apple") }
     refute_nil package
     assert_equal "ios/EpubToMp3/EpubToMp3-macos-*.zip", package.dig("with", "path")
   end
@@ -238,9 +238,14 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
       assert status.success?, error
       assert_equal signed_nested, File.binread(nested)
       assert File.file?(File.join(app, "Contents/_CodeSignature/CodeResources"))
+      entitlements, error, status = Open3.capture3("/usr/bin/codesign", "-d", "--entitlements", "-", "--xml", app)
+      assert status.success?, error
+      %w[app-sandbox network.client files.user-selected.read-write files.bookmarks.app-scope].each do |key|
+        assert_includes entitlements, "com.apple.security.#{key}"
+      end
       _, error, status = run_macos_release_step(steps[package], directory)
       assert status.success?, error
-      archive = File.join(directory, "EpubToMp3-macos-v1.2.3.zip")
+      archive = File.join(directory, "EpubToMp3-macos-v1.2.3-arm64.zip")
       extracted = File.join(directory, "extracted")
       _, error, status = Open3.capture3("/usr/bin/ditto", "-x", "-k", archive, extracted)
       assert status.success?, error
@@ -256,8 +261,22 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     end
   end
 
+  # v0.13.0 shipped an arm64-only zip that an Intel Mac cannot run.
+  def test_macos_release_publishes_intel_and_apple_silicon_packages
+    job = @jobs.fetch("macos-native")
+    assert_equal %w[macos-15 macos-15-intel], job.dig("strategy", "matrix", "include").map { |entry| entry.fetch("os") }
+    assert_equal "${{ matrix.os }}", job.fetch("runs-on")
+    package = job.fetch("steps").find { |step| step.dig("with", "path").to_s.end_with?("EpubToMp3-macos-*.zip") }
+    assert_equal "release-apple-${{ matrix.arch }}", package.dig("with", "name")
+  end
+
   def run_macos_release_step(step, directory)
-    Open3.capture3({ "RELEASE_TAG" => "v1.2.3" }, "/bin/bash", "-eo", "pipefail",
+    entitlements = "Resources/EpubToMp3.entitlements"
+    source = File.join(ROOT, "ios/EpubToMp3/EpubToMp3", entitlements)
+    target = File.join(directory, "EpubToMp3", entitlements)
+    FileUtils.mkdir_p(File.dirname(target))
+    FileUtils.cp(source, target)
+    Open3.capture3({ "RELEASE_TAG" => "v1.2.3", "MACOS_ARCH" => "arm64" }, "/bin/bash", "-eo", "pipefail",
       "-c", step.fetch("run"), chdir: directory)
   end
 
@@ -279,7 +298,8 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   def test_apple_release_runs_on_the_validated_macos_image
     codeql = workflow("codeql.yml").fetch("jobs").values.map { |job| job["runs-on"] }.grep(/\Amacos-/).uniq
     assert_equal 1, codeql.size, "one CodeQL macOS image"
-    assert_equal codeql.first, @jobs.fetch("macos-native").fetch("runs-on")
+    images = @jobs.fetch("macos-native").dig("strategy", "matrix", "include").map { |entry| entry.fetch("os") }
+    assert_includes images, codeql.first
   end
 
   def test_macos_build_targets_the_embedded_library_architecture
@@ -329,7 +349,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   def test_macos_package_checks_the_app_version_before_creating_the_zip
     output, error, status = run_macos_package("1.2.3")
     assert status.success?, error
-    assert_includes output, "EpubToMp3-macos-v1.2.3.zip"
+    assert_includes output, "EpubToMp3-macos-v1.2.3-arm64.zip"
 
     output, error, status = run_macos_package("0.3.0")
     refute status.success?
@@ -341,7 +361,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     %w[v1.2.3-rc.1 v1.2.3+build.1].each do |release_tag|
       output, error, status = run_macos_package("1.2.3", release_tag: release_tag)
       assert status.success?, error
-      assert_includes output.lines.map(&:chomp), "EpubToMp3-macos-#{release_tag}.zip"
+      assert_includes output.lines.map(&:chomp), "EpubToMp3-macos-#{release_tag}-arm64.zip"
 
       output, error, status = run_macos_package(release_tag.delete_prefix("v"), release_tag: release_tag)
       refute status.success?
@@ -364,7 +384,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
       File.write(File.join(directory, "ditto"), "#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
       %w[plutil ditto].each { |tool| File.chmod(0o700, File.join(directory, tool)) }
       Open3.capture3(
-        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "RELEASE_TAG" => release_tag,
+        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "RELEASE_TAG" => release_tag, "MACOS_ARCH" => "arm64",
           "FIXTURE_BUNDLE_VERSION" => bundle_version },
         "bash", "-eo", "pipefail", "-c", command, chdir: directory
       )

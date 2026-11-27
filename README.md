@@ -22,7 +22,7 @@ Pre-built apps (updated on every release tag):
 
 | Platform | Download |
 |---|---|
-| **macOS** (Apple Silicon · Intel) | `EpubToMp3-macos-*.zip` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) — unzip and drop into `/Applications` |
+| **macOS** (Apple Silicon · Intel) | `EpubToMp3-macos-*-arm64.zip` or `-x86_64.zip` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) — unzip and drop into `/Applications` |
 | **Linux** (x64) | `EpubToMp3-flutter-linux-*.tar.gz` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
 | **Windows** (x64) | `EpubToMp3-flutter-windows-*.zip` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
 | **Android** | `EpubToMp3_android.apk` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
