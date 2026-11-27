@@ -27,19 +27,46 @@ final class IOSRootContainerController: UIViewController {
     private var reservesShellMiniPlayer = false
     /// The reader keeps room for the mini player while its book has playback, even when the chrome fades it.
     private var reservesReaderMiniPlayer = false
+    /// Top safe-area inset measured while the status bar was still visible.
+    private var readerReservedTopInset: CGFloat = 0
     private lazy var miniPlayerPresentation = IOSMiniPlayerPresentation(view: miniPlayerController.view)
 
     override var prefersStatusBarHidden: Bool {
-        // Keep system safe-area geometry stable for the whole reading session.
-        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationCoordinator.state.isReaderActive)
+        Self.shouldHideStatusBar(readerPresentationCoordinator.state)
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
-    static func shouldHideStatusBar(immersiveReaderMode: Bool) -> Bool {
-        // The reader still respects the physical safe area when the system
-        // status bar is hidden. Its viewport transition owns offset restoration.
-        immersiveReaderMode
+    /// The status bar comes and goes with the reader chrome.
+    static func shouldHideStatusBar(_ state: ReaderPresentationState) -> Bool {
+        state.hidesBottomChrome
+    }
+
+    /// Hiding the status bar shrinks the safe area on iPhones without a sensor housing. The reader gets the
+    /// difference back, so its top inset stays fixed and the page never moves.
+    static func readerTopCompensation(reservedTop: CGFloat, safeTop: CGFloat) -> CGFloat {
+        max(0, reservedTop - safeTop)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        applyReaderTopInset()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        // The reserved inset belongs to the previous orientation.
+        readerReservedTopInset = 0
+        applyReaderTopInset()
+        super.viewWillTransition(to: size, with: coordinator)
+    }
+
+    private func applyReaderTopInset() {
+        let top = readerPresentationCoordinator.state.isReaderActive
+            ? Self.readerTopCompensation(reservedTop: readerReservedTopInset, safeTop: view.safeAreaInsets.top)
+            : 0
+        if readerController.additionalSafeAreaInsets.top != top {
+            readerController.additionalSafeAreaInsets.top = top
+        }
     }
 
     init(
@@ -217,7 +244,9 @@ final class IOSRootContainerController: UIViewController {
             to: isHidden,
             captureViewport: { [weak self] in self?.readerController.captureReaderViewportTransition() }
         ) else { return }
+        if isHidden { readerReservedTopInset = view.safeAreaInsets.top }
         setNeedsStatusBarAppearanceUpdate()
+        applyReaderTopInset()
         refreshOverlayState(viewportTransition: token)
     }
 
@@ -369,7 +398,10 @@ final class IOSRootContainerController: UIViewController {
         let wasImmersive = readerPresentationCoordinator.state.isChromeHidden
         let wasReaderActive = readerPresentationCoordinator.state.isReaderActive
         readerPresentationCoordinator.setReaderActive(readerActive)
-        if wasReaderActive != readerActive { setNeedsStatusBarAppearanceUpdate() }
+        if wasReaderActive != readerActive {
+            setNeedsStatusBarAppearanceUpdate()
+            applyReaderTopInset()
+        }
         readerController.view.isHidden = !readerActive
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.

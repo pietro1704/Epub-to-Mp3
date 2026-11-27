@@ -13,11 +13,11 @@ final class ReaderStatusBarUITests: XCTestCase {
         app = nil
     }
 
-    func testPaginatedReaderKeepsStatusBarHiddenUntilReturningToLibrary() throws {
+    func testPaginatedReaderStatusBarFollowsChromeWithoutMovingText() throws {
         try verifyStatusBarPreservesReaderSafeArea(layout: "paginated")
     }
 
-    func testScrollingReaderKeepsStatusBarHiddenUntilReturningToLibrary() throws {
+    func testScrollingReaderStatusBarFollowsChromeWithoutMovingText() throws {
         try verifyStatusBarPreservesReaderSafeArea(layout: "scrolling")
     }
 
@@ -63,7 +63,7 @@ final class ReaderStatusBarUITests: XCTestCase {
             .firstMatch.waitForExistence(timeout: 20), "The staged LOTR EPUB must be available.")
         try harness.openBook(titleContaining: "lord")
         XCTAssertTrue(harness.chromeIsVisible)
-        assertStatusBar(visible: false, in: application, scenario: "reader with chrome")
+        assertStatusBar(visible: true, in: application, scenario: "reader with chrome")
 
         let viewport = application.scrollViews["reader.viewport"].firstMatch
         XCTAssertTrue(viewport.waitForExistence(timeout: 5))
@@ -90,7 +90,7 @@ final class ReaderStatusBarUITests: XCTestCase {
                 harness.assertNoClippedLines(scenario: "immersive status bar \(iteration)")
             }
             toggleChrome(harness, layout: layout, visible: true)
-            assertStatusBar(visible: false, in: application, scenario: "restored \(iteration)")
+            assertStatusBar(visible: true, in: application, scenario: "restored \(iteration)")
             XCTAssertEqual(viewport.frame, originalFrame)
             XCTAssertEqual(harness.paginationMetrics?.values["offset"], originalOffset)
             XCTAssertEqual(harness.paginationMetrics?.values["first"], originalAnchor)
@@ -102,7 +102,7 @@ final class ReaderStatusBarUITests: XCTestCase {
         // A later show request must win when toggles arrive in quick succession.
         tapChrome(harness, layout: layout)
         tapChrome(harness, layout: layout)
-        assertStatusBar(visible: false, in: application, scenario: "consecutive toggles")
+        assertStatusBar(visible: true, in: application, scenario: "consecutive toggles")
         XCTAssertTrue(harness.chromeIsVisible)
         XCTAssertEqual(harness.paginationMetrics?.values["offset"], originalOffset)
 
