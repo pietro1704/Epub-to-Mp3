@@ -128,6 +128,7 @@ impl PdfTextIngestion {
                 level: *level,
                 footnotes: Vec::new(),
                 note_marks: Vec::new(),
+                anchors: Vec::new(),
             });
         }
         Ok(Book {

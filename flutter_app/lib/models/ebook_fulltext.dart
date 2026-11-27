@@ -53,6 +53,9 @@ abstract class FulltextChapter with _$FulltextChapter {
     int? charCount,
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
+
+    /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
+    Map<String, int>? anchors,
   }) = _FulltextChapter;
 
   factory FulltextChapter.fromJson(Map<String, dynamic> json) =>
@@ -147,6 +150,9 @@ abstract class FulltextTocEntry with _$FulltextTocEntry {
     required String title,
     @Default(1) int level,
     int? chapterIndex,
+
+    /// The `#fragment` the entry points at inside its chapter's file, when it has one.
+    String? fragment,
     @Default(<FulltextTocEntry>[]) List<FulltextTocEntry> children,
   }) = _FulltextTocEntry;
 

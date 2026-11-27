@@ -271,6 +271,10 @@ extension _InstantReaderTools on _InstantReaderViewState {
                           : () {
                               Navigator.pop(context);
                               _jumpToChapter(index);
+                              final offset = row.anchorOffset;
+                              if (offset != null) {
+                                _update(() => _requestedSourceOffset = offset);
+                              }
                             },
                     );
                   },

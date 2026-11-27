@@ -224,6 +224,9 @@ fn project_raw(html: &str) -> RawProjection {
             Ok(Event::Empty(event)) if skip_depth == 0 => {
                 let name = event.name();
                 let name = local_name(name.as_ref());
+                if let Some(id) = attribute(&event, b"id") {
+                    id_ranges.entry(id).or_insert((out.len(), out.len()));
+                }
                 if is_block_element(name) {
                     paragraph_boundaries.push(out.len());
                     out.push(' ');
@@ -325,6 +328,47 @@ pub(super) fn note_positions(html: &str) -> Vec<NoteRef> {
         });
     }
     refs
+}
+
+/// Scalar offsets (normalized text axis) of the wanted fragment ids, in document order.
+pub(super) fn anchor_positions(
+    html: &str,
+    wanted: &std::collections::HashSet<String>,
+) -> Vec<(String, usize)> {
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    let raw = project_raw(html);
+    let mut found: Vec<(usize, &String)> = raw
+        .id_ranges
+        .iter()
+        .filter(|(id, _)| wanted.contains(*id))
+        .map(|(id, (start, _))| (*start, id))
+        .collect();
+    found.sort();
+    // Scalar offset of the first normalized word at or after each raw start.
+    let mut cursor = 0;
+    let mut scalars = 0;
+    let mut tokens = Vec::new();
+    for token in raw.out.split_whitespace() {
+        let start = cursor + raw.out[cursor..].find(token).expect("source token");
+        if scalars > 0 {
+            scalars += 1;
+        }
+        tokens.push((start, scalars));
+        scalars += token.chars().count();
+        cursor = start + token.len();
+    }
+    found
+        .into_iter()
+        .map(|(start, id)| {
+            let offset = tokens
+                .iter()
+                .find(|token| token.0 >= start)
+                .map_or(scalars, |token| token.1);
+            (id.clone(), offset)
+        })
+        .collect()
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -478,6 +522,19 @@ mod heading_tests {
 #[cfg(test)]
 mod note_position_tests {
     use super::*;
+
+    #[test]
+    fn anchor_positions_cover_empty_and_wrapping_id_elements() {
+        let html = r#"<body><p>Alpha beta</p><a id="mark"/><p>Gamma <span id="in">delta</span></p><h2 id="h">Head</h2><p id="other">x</p></body>"#;
+        let wanted = ["mark", "in", "h", "missing"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            anchor_positions(html, &wanted),
+            [("mark".into(), 11), ("in".into(), 17), ("h".into(), 23)]
+        );
+    }
 
     #[test]
     fn note_references_and_same_document_bodies_are_positioned_on_the_text_axis() {
