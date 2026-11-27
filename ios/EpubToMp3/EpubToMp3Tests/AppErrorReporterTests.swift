@@ -15,6 +15,14 @@ final class AppErrorReporterTests: XCTestCase {
         XCTAssertEqual(diagnostic, "[App][Error] Reader listening [FixtureProvider:17]: Primary voice failed\n")
     }
 
+    /// iPhone 16e, 2026-11-27: stderr returned an I/O error and the report of a
+    /// failed conversion killed the app with NSFileHandleOperationException.
+    func testUnwritableDiagnosticStreamDoesNotCrashTheApp() throws {
+        let readOnly = try XCTUnwrap(FileHandle(forReadingAtPath: "/dev/null"))
+        XCTAssertEqual(AppErrorReporter.message("Primary voice failed", context: "Manual conversion",
+                                               destination: readOnly), "Primary voice failed")
+    }
+
     func testStringFailureRetainsLocalizedAlertAndPrefixesEveryDiagnosticLine() throws {
         let pipe = Pipe()
         let message = "Voz indisponível\nProvider timeout"

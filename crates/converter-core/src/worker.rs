@@ -295,6 +295,13 @@ impl ConversionWorker {
         self.cancel.cancel();
     }
     fn emit(&self, mut event: ProgressEvent) {
+        // Synthesis call sites do not own the chapter counter.
+        event.chapters_completed = event.chapters_completed.max(
+            self.render_progress
+                .lock()
+                .expect("render progress lock")
+                .completed_chapters(),
+        );
         if event.state == "running"
             && self
                 .control

@@ -1,5 +1,14 @@
 //! Domain types for the conversion pipeline.
 
+/// `eprintln!` panics when stderr fails; diagnostics are best effort.
+macro_rules! diagnostic {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+pub(crate) use diagnostic;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod book_input;
 

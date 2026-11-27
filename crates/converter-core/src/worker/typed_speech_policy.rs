@@ -152,7 +152,7 @@ impl ConversionWorker {
             ) {
                 Some(passage_language)
             } else {
-                eprintln!(
+                crate::diagnostic!(
                     "no voice for {passage_language}: reading this passage with the book's main voice ({})",
                     language.unwrap_or("default")
                 );

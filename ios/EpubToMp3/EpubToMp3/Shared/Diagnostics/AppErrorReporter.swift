@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Keeps user-visible failures observable in LLDB and attached device consoles.
 enum AppErrorReporter {
@@ -21,6 +22,12 @@ enum AppErrorReporter {
     private static func write(_ message: String, context: String, destination: FileHandle) {
         let diagnostic = message.components(separatedBy: .newlines)
             .map { "[App][Error] \(context): \($0)" }.joined(separator: "\n") + "\n"
-        destination.write(Data(diagnostic.utf8))
+        // `write(_:)` raises an uncatchable ObjC exception on I/O errors (detached device console).
+        do {
+            try destination.write(contentsOf: Data(diagnostic.utf8))
+        } catch {
+            Logger(subsystem: "com.pietrocode.epubtomp3", category: "errors")
+                .error("\(diagnostic, privacy: .private)")
+        }
     }
 }

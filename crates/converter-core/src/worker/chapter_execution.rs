@@ -294,7 +294,7 @@ impl ConversionWorker {
             generation,
             Some(source_index),
             |pending| {
-                eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                crate::diagnostic!("synthesizing chapter {}/{}", position + 1, total);
                 let synthesis = self.synthesize_preferences_at_generation(
                     request,
                     preferences,
