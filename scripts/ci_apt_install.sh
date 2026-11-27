@@ -7,7 +7,7 @@
 # contacted when none is missing. Otherwise the Azure mirror is normalized, then
 # update + install run up to CI_APT_ATTEMPTS (3) times, each bounded by
 # CI_APT_ATTEMPT_TIMEOUT seconds (150), so one hung mirror request costs one
-# attempt instead of the job. A timed-out attempt also kills the orphaned apt-get that
+# attempt instead of the job. A timed-out attempt also kills the orphaned apt process that
 # would keep the dpkg lock, and apt waits up to CI_APT_LOCK_TIMEOUT (120) for the lock. APT's signature validation is never weakened.
 #
 # CI_APT_ARCHIVES=<dir> (opt-in) points apt's package archive at a directory that
