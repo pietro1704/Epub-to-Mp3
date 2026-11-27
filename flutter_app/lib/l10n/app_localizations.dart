@@ -1851,6 +1851,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Save'**
   String get chapterRenameSave;
+
+  /// No description provided for @resumeChoiceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue from where?'**
+  String get resumeChoiceTitle;
+
+  /// No description provided for @resumeChoiceMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You are in chapter {reader}. The audio stopped in chapter {audio} ({time}).'**
+  String resumeChoiceMessage(String reader, String audio, String time);
+
+  /// No description provided for @resumeChoiceFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Listen from here (chapter {reader})'**
+  String resumeChoiceFromHere(String reader);
+
+  /// No description provided for @resumeChoiceBackToAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the audio (chapter {audio}, {time})'**
+  String resumeChoiceBackToAudio(String audio, String time);
 }
 
 class _AppLocalizationsDelegate

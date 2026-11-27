@@ -1015,4 +1015,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chapterRenameSave => 'Save';
+
+  @override
+  String get resumeChoiceTitle => 'Continue from where?';
+
+  @override
+  String resumeChoiceMessage(String reader, String audio, String time) {
+    return 'You are in chapter $reader. The audio stopped in chapter $audio ($time).';
+  }
+
+  @override
+  String resumeChoiceFromHere(String reader) {
+    return 'Listen from here (chapter $reader)';
+  }
+
+  @override
+  String resumeChoiceBackToAudio(String audio, String time) {
+    return 'Back to the audio (chapter $audio, $time)';
+  }
 }

@@ -49,7 +49,7 @@ extension _InstantReaderTools on _InstantReaderViewState {
       ReaderTool.listen => (
         icon: Icons.play_arrow,
         label: t.play,
-        run: () => _playFromHere(chapter, _visibleTextOffset),
+        run: () => unawaited(_listenTool(chapter)),
       ),
       ReaderTool.voiceModels => (
         icon: Icons.record_voice_over,
@@ -172,6 +172,56 @@ extension _InstantReaderTools on _InstantReaderViewState {
           seconds: seconds,
           durationSeconds: player.durationSeconds,
         );
+  }
+
+  /// Listen tool: when the book's audio waits in another chapter than the one on screen, the
+  /// person chooses between listening from here and going back to the audio; otherwise it
+  /// listens from the visible text.
+  Future<void> _listenTool(Chapter chapter) async {
+    final player = widget.player;
+    final position = widget.fulltext.chapters.indexOf(chapter);
+    final audio =
+        player != null &&
+            !player.isPlaying &&
+            player.currentBookId == widget.bookId
+        ? await _liveSentencePosition()
+        : null;
+    if (!mounted) return;
+    if (audio == null || position < 0 || audio.chapterIndex == position) {
+      _playFromHere(chapter, _visibleTextOffset);
+      return;
+    }
+    final t = AppLocalizations.of(context)!;
+    final seconds = player!.positionSeconds.floor();
+    final time =
+        '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    final reader = '${position + 1}',
+        audioChapter = '${audio.chapterIndex + 1}';
+    final backToAudio = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(t.resumeChoiceTitle),
+        content: Text(t.resumeChoiceMessage(reader, audioChapter, time)),
+        actions: [
+          TextButton(
+            key: const ValueKey('resume-choice-here'),
+            onPressed: () => Navigator.pop(dialog, false),
+            child: Text(t.resumeChoiceFromHere(reader)),
+          ),
+          TextButton(
+            key: const ValueKey('resume-choice-audio'),
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(t.resumeChoiceBackToAudio(audioChapter, time)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || backToAudio == null) return;
+    if (backToAudio) {
+      unawaited(player.play());
+    } else {
+      _playFromHere(chapter, _visibleTextOffset);
+    }
   }
 
   /// "Play from here": the selection start becomes the listening start. The

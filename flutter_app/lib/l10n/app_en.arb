@@ -346,5 +346,12 @@
   "silenceTrimStrong": "Strong",
   "chapterRename": "Rename chapter",
   "chapterRenameReset": "Use automatic name",
-  "chapterRenameSave": "Save"
+  "chapterRenameSave": "Save",
+  "resumeChoiceTitle": "Continue from where?",
+  "resumeChoiceMessage": "You are in chapter {reader}. The audio stopped in chapter {audio} ({time}).",
+  "@resumeChoiceMessage": {"placeholders": {"reader": {"type": "String"}, "audio": {"type": "String"}, "time": {"type": "String"}}},
+  "resumeChoiceFromHere": "Listen from here (chapter {reader})",
+  "@resumeChoiceFromHere": {"placeholders": {"reader": {"type": "String"}}},
+  "resumeChoiceBackToAudio": "Back to the audio (chapter {audio}, {time})",
+  "@resumeChoiceBackToAudio": {"placeholders": {"audio": {"type": "String"}, "time": {"type": "String"}}}
 }
