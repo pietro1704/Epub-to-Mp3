@@ -61,27 +61,54 @@ extension _InstantReaderTools on _InstantReaderViewState {
     };
   }
 
-  List<Widget> _chromeTools(Chapter chapter, Color color) {
-    final tool = _shownTool(chapter);
-    final descriptor = _toolDescriptor(tool, chapter);
+  /// Tablet Android, Linux and Windows show every tool in the bar; a phone keeps the
+  /// recent tool beside More.
+  bool get _showsEveryTool {
+    if (kIsWeb) return false;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.linux || TargetPlatform.windows => true,
+      TargetPlatform.android => MediaQuery.sizeOf(context).shortestSide >= 600,
+      _ => false,
+    };
+  }
+
+  /// Tools shown as bar buttons for the width the bar has now; the rest go to More.
+  /// Order and labels follow the Apple reader (the order of [ReaderTool]).
+  List<ReaderTool> _barTools(Chapter chapter, double barWidth) {
+    if (!_showsEveryTool) return [_shownTool(chapter)];
+    const button = 48.0, back = 48.0, more = 48.0, titleMin = 120.0;
+    final fit = ((barWidth - back - more - titleMin) / button).floor();
+    final applicable = [
+      for (final tool in ReaderTool.values)
+        if (_toolApplies(tool, chapter)) tool,
+    ];
+    return applicable.take(fit.clamp(0, applicable.length)).toList();
+  }
+
+  List<Widget> _chromeTools(Chapter chapter, Color color, double barWidth) {
+    final everyTool = _showsEveryTool;
     return [
-      IconButton(
-        key: const ValueKey('reader-recent-tool'),
-        icon: Icon(descriptor.icon, color: color),
-        tooltip: descriptor.label,
-        onPressed: descriptor.run,
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-      ),
+      for (final tool in _barTools(chapter, barWidth))
+        () {
+          final descriptor = _toolDescriptor(tool, chapter);
+          return IconButton(
+            key: ValueKey(everyTool ? 'reader-tool-${tool.name}' : 'reader-recent-tool'),
+            icon: Icon(descriptor.icon, color: color),
+            tooltip: descriptor.label,
+            onPressed: descriptor.run,
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          );
+        }(),
     ];
   }
 
-  /// Every tool except the one already beside More, plus Add bookmark.
-  List<ReaderMenuEntry> _menuEntries(Chapter chapter) {
+  /// Every tool not already in the bar, plus Add bookmark.
+  List<ReaderMenuEntry> _menuEntries(Chapter chapter, double barWidth) {
     final t = AppLocalizations.of(context)!;
-    final shown = _shownTool(chapter);
+    final shown = _barTools(chapter, barWidth).toSet();
     return [
       for (final tool in ReaderTool.values)
-        if (tool != shown && _toolApplies(tool, chapter))
+        if (!shown.contains(tool) && _toolApplies(tool, chapter))
           () {
             final descriptor = _toolDescriptor(tool, chapter);
             return ReaderMenuEntry(
