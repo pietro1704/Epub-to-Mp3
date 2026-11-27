@@ -59,7 +59,7 @@ void main() {
     417.0,
     590.0,
   ]) {
-    for (final lineHeight in [1.0, 1.15, 1.6])
+    for (final lineHeight in [1.0, 1.15, 1.6]) {
     testWidgets(
       'every page shows whole lines only, descenders included (surface height $surfaceHeight, line height $lineHeight)',
       (tester) async {
@@ -156,6 +156,7 @@ void main() {
         expect(pages, greaterThan(3));
       },
     );
+  }
   }
 }
 
