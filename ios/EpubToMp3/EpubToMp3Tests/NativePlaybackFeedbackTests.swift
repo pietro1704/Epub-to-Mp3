@@ -244,9 +244,9 @@ final class NativePlaybackFeedbackTests: XCTestCase {
     func testRepeatedWordsUseTheirOwnUTF16Range() throws {
         let confirmed = PlaybackAudioOutput.Position(chapterIndex: 3, seconds: 12, duration: 30,
             sentenceID: "sentence", itemSeconds: 2, itemDuration: 4)
-        let projected = ReaderAudioHighlightPresentation.projected(confirmed, age: 0.25, rate: 2)
-        XCTAssertEqual(projected.seconds, 12.5, accuracy: 0.001)
-        XCTAssertEqual(projected.itemSeconds, 2.5, accuracy: 0.001)
+        let projected = ReaderAudioHighlightPresentation.projected(confirmed, age: 0.1, rate: 2)
+        XCTAssertEqual(projected.seconds, 12.2, accuracy: 0.001)
+        XCTAssertEqual(projected.itemSeconds, 2.2, accuracy: 0.001)
         XCTAssertEqual(projected.chapterIndex, confirmed.chapterIndex)
         XCTAssertEqual(projected.sentenceID, confirmed.sentenceID)
         let bounded = ReaderAudioHighlightPresentation.projected(confirmed, age: 10, rate: 4)

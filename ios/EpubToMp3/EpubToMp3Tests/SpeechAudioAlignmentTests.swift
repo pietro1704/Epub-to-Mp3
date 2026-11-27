@@ -7,6 +7,26 @@ import AVFoundation
 #endif
 
 final class SpeechAudioAlignmentTests: XCTestCase {
+
+    // The projected highlight and its playback samples exist only in the iOS reader.
+#if os(iOS)
+    /// Confirmed output arrives every 0.25 s of media time at any speed, so the
+    /// repaint between samples may never run further ahead than that.
+    @MainActor
+    func testHighlightProjectionNeverOutrunsTheNextConfirmedSampleAtAnySpeed() {
+        let confirmed = PlaybackAudioOutput.Position(chapterIndex: 0, seconds: 12, duration: 30,
+            sentenceID: nil, itemSeconds: 2, itemDuration: 20)
+        for rate in [0.75, 1.75, 2.0] {
+            let late = ReaderAudioHighlightPresentation.projected(confirmed, age: 0.7, rate: rate)
+            XCTAssertEqual(late.itemSeconds, 2.25, accuracy: 0.001, "rate \(rate)")
+            XCTAssertEqual(late.seconds, 12.25, accuracy: 0.001, "rate \(rate)")
+            // Within one sample interval the projection follows the audible speed.
+            let early = ReaderAudioHighlightPresentation.projected(confirmed, age: 0.1, rate: rate)
+            XCTAssertEqual(early.itemSeconds, 2 + 0.1 * rate, accuracy: 0.001, "rate \(rate)")
+        }
+    }
+#endif
+
     static func tag(_ json: String, version: UInt8 = 3) -> Data {
         let payload = Data("epubtomp3.speech-alignment\0".utf8) + Data(json.utf8)
         var frame = Data("PRIV".utf8)

@@ -12,6 +12,8 @@ final class PlaybackQueueSession: ObservableObject {
     @Published private(set) var currentChapterIndex = 0
     /// Active sentence ID in sentence-per-segment mode. Updated when the
     /// AVQueuePlayer advances to the next item. `nil` in snapshot mode.
+    /// Media time between periodic playback samples, independent of playback speed.
+    nonisolated static let timeSampleMediaSeconds: TimeInterval = 0.25
     @Published private(set) var activeSentenceId: String?
     private let clock: PlaybackClock
     /// Keeps the process alive across a short synthesis underrun while locked.
@@ -100,7 +102,7 @@ final class PlaybackQueueSession: ObservableObject {
             }
         }
         if let item = player.currentItem { bindDuration(to: item, in: player, changed: duration) }
-        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+        let interval = CMTime(seconds: Self.timeSampleMediaSeconds, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] value in
             Task { @MainActor [weak self] in
                 guard let self, self.player === player else { return }

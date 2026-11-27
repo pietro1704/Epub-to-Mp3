@@ -123,7 +123,9 @@ final class ReaderAudioHighlightPresentation {
     /// Repaint between confirmed audio samples without increasing the global
     /// player tick rate. Projection never survives missing/stale output.
     static func projected(_ position: PlaybackAudioOutput.Position, age: TimeInterval, rate: Double) -> PlaybackAudioOutput.Position {
-        let advance = min(0.8, max(0, age)) * max(0, rate)
+        // Never run past the next expected sample: when output stalls, a
+        // wall-clock projection would highlight words that were not heard yet.
+        let advance = min(PlaybackQueueSession.timeSampleMediaSeconds, max(0, age) * max(0, rate))
         func bounded(_ seconds: TimeInterval, duration: TimeInterval) -> TimeInterval {
             duration.isFinite && duration > 0 ? min(seconds + advance, max(0, duration - 0.001)) : seconds
         }
