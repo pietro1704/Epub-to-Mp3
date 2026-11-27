@@ -112,4 +112,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(_offset(tester), 0);
   });
+
+  testWidgets('a remote jump keeps following when the highlight arrives after the request', (tester) async {
+    final rig = await _pump(tester, follow: false);
+    rig.highlight.value = _range(2);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(650, 200));
+    await tester.pumpAndSettle();
+    final manual = _offset(tester);
+    expect(manual, greaterThan(0));
+    // The lock-screen jump bumps the request first; the audio (and the highlight) moves later.
+    rig.request.value++;
+    await tester.pumpAndSettle();
+    rig.highlight.value = _range(38);
+    await tester.pumpAndSettle();
+    expect(_offset(tester), greaterThan(manual), reason: 'the text keeps following the audio after the jump');
+    expect(rig.paired.last, isTrue);
+  });
 }

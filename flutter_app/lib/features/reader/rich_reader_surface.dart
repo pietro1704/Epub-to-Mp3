@@ -125,6 +125,10 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
   final NarrationPairing _pairing = NarrationPairing();
   bool? _publishedPairing;
   bool _forceFollow = false;
+
+  /// The highlight when the force was requested: a remote jump asks before the audio (and so
+  /// the highlight) has moved, so the force lasts until the highlight changes.
+  TextRange? _forceFollowFrom;
   (Offset, Duration)? _tapDown;
   Timer? _mouseTap;
 
@@ -240,6 +244,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
     if (oldWidget.pairRequest != widget.pairRequest) {
       _pairing.resume();
       _forceFollow = true;
+      _forceFollowFrom = widget.highlight;
     }
     if (oldWidget.chapter.index != widget.chapter.index ||
         oldWidget.chapter.text != widget.chapter.text) {
@@ -328,6 +333,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
 
   void _turn(bool forward) {
     _pairing.suspendAfterManualTurn();
+    _forceFollow = false;
     final pages = _pages;
     if (pages.isEmpty && _scroll.hasClients) {
       // Fell back to scrolling (a fragment taller than the page, Apple #1391):
@@ -466,7 +472,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
       narrated: narrated,
       follow: widget.followNarration || _forceFollow,
     );
-    _forceFollow = false;
+    if (highlight != _forceFollowFrom) _forceFollow = false;
     if (target != null) {
       _scroll.jumpTo(pages[target].clamp(0, _scroll.position.maxScrollExtent));
     }
