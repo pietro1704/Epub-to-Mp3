@@ -10,13 +10,9 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
-    <!-- App Group shared with EpubToMp3ShareExtension. Used to
-         hand EPUB/PDF payloads from the Share Sheet (Apple Books,
-         Files, Safari, …) into the main app. -->
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.com.pietrocode.epubtomp3</string>
-    </array>
+    <!-- No App Group on macOS: neither the widget nor the share extension is
+         embedded, and claiming it moves the library's defaults suite out of the
+         app container. iOS uses EpubToMp3-iOS.entitlements. -->
 
 </dict>
 </plist>
