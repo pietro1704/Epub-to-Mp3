@@ -289,6 +289,11 @@ fn is_heading_line(line: &str) -> bool {
     }
 }
 
+/// A title needs letters or digits: ornaments such as "✤✤✤", "* * *" or "———" never qualify.
+fn is_titleable(line: &str) -> bool {
+    line.chars().any(char::is_alphanumeric)
+}
+
 /// Without an outline, a page whose first line is a chapter marker starts a chapter. Needs at
 /// least two such pages, and a page packed with markers (a table of contents) never counts.
 /// Falls back to one chapter per page, which stays the navigation anchor.
@@ -297,7 +302,17 @@ fn heading_starts(pages: &[String]) -> Vec<(usize, String, u32)> {
         let mut lines = page.lines().map(str::trim).filter(|l| !l.is_empty());
         let first = lines.next().filter(|l| is_heading_line(l))?;
         let markers = page.lines().filter(|l| is_heading_line(l)).count();
-        (markers < 3).then(|| first.to_string())
+        // The real chapter name is the short line right after the marker, if any.
+        let name = lines.next().filter(|l| {
+            is_titleable(l)
+                && !is_heading_line(l)
+                && l.chars().count() <= 60
+                && !l.ends_with(['.', ',', ';', ':'])
+        });
+        (markers < 3).then(|| match name {
+            Some(name) => format!("{first} — {name}"),
+            None => first.to_string(),
+        })
     };
     let found: Vec<(usize, String)> = pages
         .iter()
@@ -358,7 +373,7 @@ fn section_starts(pages: &[String], labels: &[String]) -> Vec<(usize, String, u3
                 .iter()
                 .flat_map(|p| p.lines())
                 .map(str::trim)
-                .find(|l| !l.is_empty())
+                .find(|l| is_titleable(l))
                 .map(|l| l.chars().take(60).collect::<String>());
             match title {
                 Some(title) => (start, title, 1),

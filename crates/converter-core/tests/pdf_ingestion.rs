@@ -796,3 +796,41 @@ fn pdf_image_page_is_read_by_the_client_ocr_hook_and_skipped_without_it() {
     assert!(!without.chapters.iter().any(|c| c.text.contains("OCR")));
     assert_eq!(without.skipped_pages, 1);
 }
+
+/// PDF-AUTO-TOC-AND-TITLES: a decorative line is never a chapter title.
+#[test]
+fn pdf_without_outline_never_titles_a_chapter_with_a_decorative_line() {
+    let mut pages: Vec<String> = Vec::new();
+    for i in 0..14 {
+        pages.push(if i % 10 == 0 {
+            format!("✤✤✤\nA Chegada {i}\nTexto da pagina numero {i} com palavras suficientes para narrar.")
+        } else {
+            format!("Texto da pagina numero {i} com palavras suficientes para narrar.")
+        });
+    }
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    let book = ingest_pages(&refs);
+    for chapter in &book.chapters {
+        assert!(
+            chapter.name.chars().any(char::is_alphanumeric),
+            "decorative title: {:?}",
+            chapter.name
+        );
+    }
+    assert!(
+        book.chapters[0].name.contains("A Chegada"),
+        "{:?}",
+        book.chapters[0].name
+    );
+}
+
+#[test]
+fn pdf_without_outline_names_marker_chapters_with_their_real_title() {
+    let book = ingest_pages(&[
+        "Capitulo 1\nA Chegada\nTexto da primeira pagina com palavras suficientes para narrar.",
+        "Mais texto do primeiro capitulo com palavras suficientes para narrar.",
+        "Capitulo 2\n✤✤✤\nTexto do segundo capitulo com palavras suficientes para narrar.",
+    ]);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Capitulo 1 — A Chegada", "Capitulo 2"]);
+}
