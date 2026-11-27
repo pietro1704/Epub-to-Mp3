@@ -503,3 +503,47 @@ fn pdf_repeated_spaces_are_collapsed() {
     let text = &book.chapters[0].text;
     assert!(text.contains("O oficial do fluxo"), "{text:?}");
 }
+
+#[test]
+fn pdf_without_outline_splits_chapters_at_repeated_heading_lines() {
+    let book = ingest_pages(&[
+        "Prefacio do autor com texto longo o bastante.",
+        "Capitulo 1\nO primeiro capitulo comeca aqui com bastante texto.",
+        "Mais texto do primeiro capitulo, continuando a historia.",
+        "Capitulo 2\nO segundo capitulo comeca aqui com bastante texto.",
+        "CAPITULO III\nO terceiro capitulo comeca aqui com bastante texto.",
+    ]);
+    let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Front matter", "Capitulo 1", "Capitulo 2", "CAPITULO III"],
+        "{names:?}"
+    );
+    assert!(book.chapters[1].text.contains("continuando a historia"));
+    assert_eq!(book.chapters[1].source_path, "page-2");
+}
+
+#[test]
+fn pdf_table_of_contents_page_never_becomes_chapters() {
+    let book = ingest_pages(&[
+        "Capitulo 1\nCapitulo 2\nCapitulo 3\nCapitulo 4",
+        "Texto corrido da primeira pagina sem nenhum titulo.",
+        "Texto corrido da segunda pagina sem nenhum titulo.",
+        "Texto corrido da terceira pagina sem nenhum titulo.",
+    ]);
+    assert!(
+        book.chapters.iter().all(|c| c.name.starts_with("Page ")),
+        "{:?}",
+        book.chapters.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn pdf_single_heading_like_line_keeps_page_chapters() {
+    let book = ingest_pages(&[
+        "Texto corrido da primeira pagina sem nenhum titulo.",
+        "Capitulo 1\nUm unico titulo nao basta para dividir o livro.",
+        "Texto corrido da terceira pagina sem nenhum titulo.",
+    ]);
+    assert!(book.chapters.iter().all(|c| c.name.starts_with("Page ")));
+}
