@@ -63,6 +63,7 @@ fn segment_cache_key_is_byte_identical_to_the_package_version_era() {
         "pt-BR",
         "Uma frase para a identidade do cache.",
         &identity,
+        Default::default(),
     )
     .unwrap();
     assert_eq!(

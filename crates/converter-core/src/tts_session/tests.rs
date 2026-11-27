@@ -181,7 +181,7 @@ fn registry_prepares_two_voice_identities_and_encodes_real_audio() {
                 "source:chapter:range:text-hash",
                 "text-v1",
                 session.identity(),
-                &AudioFormat::Mp3,
+                &AudioFormat::Mp3, Default::default()
             )
             .unwrap(),
         );
@@ -205,7 +205,7 @@ fn registry_prepares_two_voice_identities_and_encodes_real_audio() {
             "source:chapter:range:text-hash",
             "text-v1",
             &restored,
-            &AudioFormat::Mp3
+            &AudioFormat::Mp3, Default::default()
         )
         .unwrap()
     );
@@ -326,7 +326,7 @@ fn cache_separates_runtime_artifacts_revision_options_range_and_format() {
         artifacts: BTreeMap::from([("model".into(), "sha-a".into())]),
         reusable: true,
     };
-    let original = cache_material("range-a", "text-v1", &identity, &AudioFormat::Mp3).unwrap();
+    let original = cache_material("range-a", "text-v1", &identity, &AudioFormat::Mp3, Default::default()).unwrap();
     for mutation in ["runtime", "artifact", "model", "options"] {
         let mut changed = identity.clone();
         match mutation {
@@ -344,23 +344,23 @@ fn cache_separates_runtime_artifacts_revision_options_range_and_format() {
         }
         assert_ne!(
             original,
-            cache_material("range-a", "text-v1", &changed, &AudioFormat::Mp3).unwrap()
+            cache_material("range-a", "text-v1", &changed, &AudioFormat::Mp3, Default::default()).unwrap()
         );
     }
     assert_ne!(
         original,
-        cache_material("range-b", "text-v1", &identity, &AudioFormat::Mp3).unwrap()
+        cache_material("range-b", "text-v1", &identity, &AudioFormat::Mp3, Default::default()).unwrap()
     );
     assert_ne!(
         original,
-        cache_material("range-a", "text-v2", &identity, &AudioFormat::Mp3).unwrap()
+        cache_material("range-a", "text-v2", &identity, &AudioFormat::Mp3, Default::default()).unwrap()
     );
     assert_ne!(
         original,
-        cache_material("range-a", "text-v1", &identity, &AudioFormat::WavPcm16).unwrap()
+        cache_material("range-a", "text-v1", &identity, &AudioFormat::WavPcm16, Default::default()).unwrap()
     );
     identity.reusable = false;
-    assert!(cache_material("range-a", "text-v1", &identity, &AudioFormat::Mp3).is_err());
+    assert!(cache_material("range-a", "text-v1", &identity, &AudioFormat::Mp3, Default::default()).is_err());
 }
 
 #[test]

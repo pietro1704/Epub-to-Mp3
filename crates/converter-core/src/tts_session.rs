@@ -216,23 +216,23 @@ impl AudioSink {
         Ok(())
     }
     pub fn into_mp3(self) -> Result<Vec<u8>, TtsFailure> {
-        normalize_with_compaction(&self.format, &self.bytes, true)
+        normalize_with_compaction(&self.format, &self.bytes, Some(self.silence))
     }
 }
 
 pub fn normalize_audio(format: &AudioFormat, bytes: &[u8]) -> Result<Vec<u8>, TtsFailure> {
-    normalize_with_compaction(format, bytes, false)
+    normalize_with_compaction(format, bytes, None)
 }
 
 fn normalize_with_compaction(
     format: &AudioFormat,
     bytes: &[u8],
-    compact: bool,
+    compact: Option<crate::tts_preferences::SilenceTrim>,
 ) -> Result<Vec<u8>, TtsFailure> {
     let invalid = |message| TtsFailure::new(FailureKind::InvalidAudio, message);
     let encode = |wav: &[u8]| {
-        if compact {
-            crate::pcm::encode_speech_wav_mp3(wav)
+        if let Some(level) = compact {
+            crate::pcm::encode_speech_wav_mp3(wav, level)
         } else {
             crate::pcm::encode_wav_mp3(wav)
         }
@@ -327,6 +327,7 @@ pub fn cache_material(
     text_revision: &str,
     identity: &ResolvedIdentity,
     format: &AudioFormat,
+    silence: crate::tts_preferences::SilenceTrim,
 ) -> Result<String, TtsFailure> {
     if !identity.reusable {
         return Err(TtsFailure::new(
@@ -336,7 +337,7 @@ pub fn cache_material(
     }
     serde_json::to_string(&(
         CONTRACT_VERSION,
-        crate::speech_silence::PROFILE,
+        crate::speech_silence::profile(silence),
         source,
         text_revision,
         identity,
@@ -355,7 +356,7 @@ pub fn request_cache_material(
     serde_json::to_string(&(
         CONTRACT_VERSION,
         "text-v1",
-        crate::speech_silence::PROFILE,
+        crate::speech_silence::profile(preferences.silence_trim),
         source,
         language,
         preferences,

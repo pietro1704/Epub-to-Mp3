@@ -67,6 +67,7 @@ impl ConversionWorker {
                         crate::tts_session::TEXT_PLANNER_PROFILE,
                         sessions.get(&key).expect("prepared identity").identity(),
                         &crate::tts_session::AudioFormat::Mp3,
+                        preferences.silence_trim,
                     )
                     .unwrap_or_else(|_| {
                         format!("opaque:{}:{:032x}", request.job_id, rand::random::<u128>())

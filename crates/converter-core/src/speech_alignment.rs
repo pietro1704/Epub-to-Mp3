@@ -85,8 +85,8 @@ impl Passage {
     }
 
     /// Apply exactly the same digital-zero edits as the encoder, in sample coordinates.
-    pub fn compact(&mut self, pcm: &[u8], rate: u32) {
-        let edits = crate::speech_silence::removed_ranges(pcm, rate);
+    pub fn compact(&mut self, pcm: &[u8], rate: u32, level: crate::tts_preferences::SilenceTrim) {
+        let edits = crate::speech_silence::removed_ranges(pcm, rate, level);
         let map = |seconds: f64| {
             let frame = seconds * f64::from(rate);
             let removed: f64 = edits
@@ -349,7 +349,7 @@ mod tests {
         pcm.extend(vec![0; 16_000 * 2]);
         pcm.extend(vec![1; 16_000 * 2]);
         let mut value = passage();
-        value.compact(&pcm, 16_000);
+        value.compact(&pcm, 16_000, Default::default());
         assert!((value.words[1].start - 1.3).abs() < 0.001);
         assert!((value.words[1].end - 2.3).abs() < 0.001);
         assert_eq!(value.words[1].location, 6);
@@ -379,7 +379,7 @@ mod tests {
         if json.len() % 2 != 0 {
             wav.push(0);
         }
-        let encoded = crate::pcm::encode_speech_wav_mp3(&wav).unwrap();
+        let encoded = crate::pcm::encode_speech_wav_mp3(&wav, Default::default()).unwrap();
         crate::pcm::validate_mp3(&encoded).unwrap();
         let words = from_tag(&encoded)[0].words.clone();
         assert_eq!(words[1].location, 6);
@@ -391,7 +391,7 @@ mod tests {
             .position(|bytes| bytes == b"\"version\":1")
             .unwrap();
         wav[version + 10] = b'9';
-        let without_invalid_markers = crate::pcm::encode_speech_wav_mp3(&wav).unwrap();
+        let without_invalid_markers = crate::pcm::encode_speech_wav_mp3(&wav, Default::default()).unwrap();
         crate::pcm::validate_mp3(&without_invalid_markers).unwrap();
         assert!(
             from_tag(&without_invalid_markers).is_empty(),
