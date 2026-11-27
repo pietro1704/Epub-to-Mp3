@@ -190,11 +190,8 @@ class LibraryBookTile extends StatelessWidget {
 
   Widget _cover(ColorScheme cs) {
     if (book.coverBase64 != null) {
-      try {
-        return Image.memory(base64Decode(book.coverBase64!), fit: BoxFit.cover);
-      } catch (_) {
-        // Fall through to placeholder
-      }
+      final bytes = CoverDecoder.decode(book.coverBase64);
+      if (bytes != null) return Image.memory(bytes, fit: BoxFit.cover);
     }
     final isPdf = book.filePath.toLowerCase().endsWith('.pdf');
     return Container(

@@ -10,6 +10,7 @@
 // This widget is embedded inside the Reader tab (not pushed as a route)
 // so the MiniPlayerBar and NavigationBar remain visible.
 
+import '../services/cover_decoder.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;

@@ -4,8 +4,8 @@
 // Layout: [cover 44x44] [chapter / book] [spacer] [play/pause] [skip +15s].
 // Tap opens FullPlayerSheet. Hidden when nothing is playing.
 
+import '../services/cover_decoder.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -374,12 +374,6 @@ class MiniPlayerBar extends ConsumerWidget {
     );
   }
 
-  static Uint8List? _decodeCover(String? base64Str) {
-    if (base64Str == null) return null;
-    try {
-      return base64Decode(base64Str);
-    } catch (_) {
-      return null;
-    }
-  }
+  static Uint8List? _decodeCover(String? base64Str) =>
+      CoverDecoder.decode(base64Str);
 }

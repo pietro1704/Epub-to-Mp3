@@ -5,6 +5,7 @@ import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'support/fake_audio_player_service.dart';
+import 'package:flutter_app/services/cover_decoder.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/mini_player_bar.dart';
 
@@ -77,6 +78,43 @@ void main() {
       expect(find.text('Author A'), findsNothing);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
       expect(find.byKey(const ValueKey('seek.forward.15')), findsOneWidget);
+    });
+
+    testWidgets('player ticks decode the book cover once', (t) async {
+      // 1x1 transparent PNG.
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+      final book = BookEntity(
+        id: 'book1',
+        title: 'Playing Book',
+        author: 'Author A',
+        filePath: '/tmp/book.epub',
+        displayFilename: 'book.epub',
+        addedAt: DateTime(2025, 1, 1),
+        coverBase64: png,
+      );
+      final prefs = await _mockPrefs({'library.books.v1': '[${book.encode()}]'});
+      final fake = FakeAudioPlayerService();
+      await fake.setQueue([
+        const ChapterProgress(index: 0, name: 'Opening Chapter'),
+      ]);
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPrefsProvider.overrideWithValue(prefs),
+            currentlyPlayingBookIdProvider.overrideWith((ref) => 'book1'),
+            globalAudioPlayerProvider.overrideWithValue(fake),
+          ],
+          child: const MaterialApp(home: Scaffold(body: MiniPlayerBar())),
+        ),
+      );
+      await t.pump();
+      CoverDecoder.decodeCalls = 0;
+      for (var i = 0; i < 10; i++) {
+        await (i.isEven ? fake.play() : fake.pause());
+        await t.pump();
+      }
+      expect(CoverDecoder.decodeCalls, lessThanOrEqualTo(1));
     });
 
     testWidgets('finishing the initial conversion keeps a later pause', (
