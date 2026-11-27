@@ -305,6 +305,25 @@ final class ReaderListeningSeekTests: XCTestCase {
         XCTAssertEqual(fixture.failures, 0)
     }
 
+    // SKIP-SECONDS-STALL-OR-RESTART: listening "from this page" streams a chapter suffix. A skip that stays after
+    // the suffix origin must be served by the running job, never by a new job that starts at the chapter start.
+    func testSkipForwardInASuffixKeepsTheRunningJobAndItsOffset() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0.7)
+        try await fixture.waitUntil { fixture.jobs.count == 1 && fixture.player.snapshot != nil }
+        fixture.player.enqueueSegment(data: LegacyAudioImportFixture.audio, chapterIndex: 0, segmentIndex: 0)
+        fixture.player.pause()
+        try await fixture.waitUntil { abs(fixture.player.positionSeconds - 420) < 1 }
+
+        fixture.player.skipForward(seconds: 30)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(fixture.jobs.count, 1, "A forward skip must not restart synthesis from the chapter start.")
+        XCTAssertFalse(fixture.controls[0].isCancellationRequested)
+        XCTAssertEqual(fixture.player.positionSeconds, 450, accuracy: 1)
+    }
+
     func testTimelineSeekNeverUsesConflictingSavedReaderPage() async throws {
         let fixture = try Fixture()
         defer { fixture.finish() }
