@@ -99,8 +99,9 @@ class BackgroundAudioHandler extends BaseAudioHandler {
         previous?.album == item.album &&
         previous?.artist == item.artist &&
         previous?.artUri == item.artUri &&
-        previous?.duration == item.duration)
+        previous?.duration == item.duration) {
       return;
+    }
     mediaItem.add(item);
     _publishState();
   }

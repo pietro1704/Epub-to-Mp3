@@ -207,8 +207,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       _playableChapters.clear();
       _resumeGuard = ResumeRestorationGuard();
     }
-    if (!prepareOnly)
+    if (!prepareOnly) {
       _playbackStartup.request(generation, playbackChapterIndex);
+    }
     final future =
         _runLocalPlaybackConversion(
           playbackChapterIndex: playbackChapterIndex,
@@ -304,8 +305,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         readerSettingsProvider(widget.bookId)
             .select((settings) => settings.audioRate),
         (_, rate) {
-          if (player.currentBookId == widget.bookId)
+          if (player.currentBookId == widget.bookId) {
             unawaited(player.setSpeed(rate));
+          }
         },
       );
     }
@@ -372,8 +374,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         .listen((chapter) {
           // The decoder can report its old item while we append a new one.
           // Keep the explicitly requested conversion inside the window.
-          if (_chapterPreparation.target == null)
+          if (_chapterPreparation.target == null) {
             _publishPlaybackWindow(chapter);
+          }
         });
     _positionSub = player.position.listen((_) {
       final index = player.currentIndexValue;

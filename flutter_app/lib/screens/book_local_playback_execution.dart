@@ -102,8 +102,9 @@ mixin BookLocalPlaybackExecution
             await _offerModelsFor(narration, generation);
             return;
           }
-          if (narration is ResolvedNarration)
+          if (narration is ResolvedNarration) {
             ttsSnapshot = narration.preferences;
+          }
           unawaited(
             _warnAboutMissingLanguageModels(
               converter,
@@ -325,8 +326,9 @@ mixin BookLocalPlaybackExecution
       _localJob = job;
       if (job.coversFullSource(
         conversionChapters.map((chapter) => chapter.index),
-      ))
+      )) {
         _markBookOffline();
+      }
       setState(() => _isConverting = false);
     } catch (e) {
       if (!_isCurrentConversion(generation)) return;
