@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 import '../../models/ebook_fulltext.dart';
 
@@ -9,6 +10,11 @@ class ReaderPage {
 /// Splits rendered text at complete lines while retaining raw source ranges.
 /// The renderer uses the same style, scale, width and per-span padding.
 class ViewportPaginator {
+  /// Characters sent to text layout, so a test can prove a long span is not laid out
+  /// again in full for every page.
+  @visibleForTesting
+  static int laidOutChars = 0;
+
   static List<ReaderPage> paginate({
     required List<SentenceSpan> spans,
     required double width,
@@ -36,6 +42,7 @@ class ViewportPaginator {
           textDirection: direction,
           textScaler: textScaler,
         )..layout(maxWidth: width);
+        laidOutChars += remaining.length;
         final available = height - used - 4; // Renderer: vertical padding 2.
         var lineHeight = 0.0;
         var end = 0;

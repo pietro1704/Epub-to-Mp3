@@ -5,6 +5,27 @@ import 'package:flutter_app/services/reader/viewport_paginator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  List<ReaderPage> paginateSample(String text, {double width = 300, double height = 400}) =>
+      ViewportPaginator.paginate(
+        spans: [
+          SentenceSpan(id: 's', text: text, startChar: 0, endChar: text.runes.length),
+        ],
+        width: width,
+        height: height,
+        style: const TextStyle(fontSize: 18, height: 1.4),
+        textScaler: TextScaler.noScaling,
+        direction: TextDirection.ltr,
+      );
+
+  test('a long span is not laid out in full again for every page', () {
+    final text = 'The quick brown fox jumps over the lazy dog. ' * 1500;
+    ViewportPaginator.laidOutChars = 0;
+    final pages = paginateSample(text);
+    expect(pages.length, greaterThan(20));
+    // Quadratic: ~pages x text. Windowed: a small multiple of the text.
+    expect(ViewportPaginator.laidOutChars, lessThan(text.length * 3));
+  });
+
   test('oversized chapter headers require a scrolling fallback', () {
     expect(
       () => ViewportPaginator.paginate(
