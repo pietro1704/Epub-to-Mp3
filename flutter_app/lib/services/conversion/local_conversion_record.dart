@@ -156,6 +156,8 @@ class LocalConversionJob {
   }
 
   LocalConversionJob copyWith({
+    String? bookId,
+    String? jobId,
     String? conversionOptionsJson,
     Map<String, dynamic>? ttsPolicyState,
     bool? fallbackNoticeShown,
@@ -168,8 +170,8 @@ class LocalConversionJob {
     DateTime? lastActivityAt,
     bool clearError = false,
   }) => LocalConversionJob(
-    bookId: bookId,
-    jobId: jobId,
+    bookId: bookId ?? this.bookId,
+    jobId: jobId ?? this.jobId,
     bookTitle: bookTitle,
     mode: mode,
     manifestUsedSelections: manifestUsedSelections,

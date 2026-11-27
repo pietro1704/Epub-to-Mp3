@@ -10,6 +10,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../services/conversion/conversion_failure_message.dart';
+import '../services/audio_share.dart' show availableAudioPaths;
+import '../services/conversion/audio_export.dart';
+import '../services/conversion/local_conversion_record.dart';
 import '../services/conversion/manual_conversion_output.dart';
 import '../services/playback/platform_voice_notice.dart';
 import '../services/conversion/embedded_converter.dart';
@@ -24,6 +27,7 @@ import '../models/tts_preferences.dart';
 
 part 'conversion_options_section.dart';
 part 'manual_conversion_progress.dart';
+part 'manual_conversion_actions.dart';
 
 class ConversionRequest {
   const ConversionRequest({
@@ -75,6 +79,8 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   SilenceTrim? _silenceTrim;
   bool _submitting = false;
   String? _jobId;
+  String? _completedBookId;
+  String? _completedPath;
   String? _error;
   String? _historyError;
   final _voiceSession = PlatformVoiceNoticeSession();
@@ -420,6 +426,8 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         );
       }
       setState(() {
+        _completedBookId = bookId;
+        _completedPath = path;
         _jobId = jobId;
         _usedSelections = actual;
         _historyError = historyError;
@@ -510,6 +518,17 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             error: _error,
             onRetry: _submit,
           ),
+          if (jobId != null &&
+              !_submitting &&
+              _error == null &&
+              _completedBookId != null &&
+              _completedPath != null)
+            ManualConversionActions(
+              key: ValueKey('manual-actions-$jobId'),
+              filePath: _completedPath!,
+              bookId: _completedBookId!,
+              jobId: jobId,
+            ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _filePath == null || _submitting ? null : _submit,
