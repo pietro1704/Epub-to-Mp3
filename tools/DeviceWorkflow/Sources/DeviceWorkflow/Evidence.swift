@@ -22,6 +22,16 @@ public enum Evidence {
         return number.intValue
     }
 
+    /// True only when every reported error is a launch that never reached the app and no test passed,
+    /// so nothing was touched and launching again repeats no work.
+    public static func neverReachedForeground(_ log: String) -> Bool {
+        let lines = log.split(separator: "\n")
+        let errors = lines.filter { $0.contains(": error: -[") }
+        return !errors.isEmpty
+            && errors.allSatisfy { $0.contains("Failed to get launch progress") && $0.contains("could not be determined") }
+            && !lines.contains { $0.hasPrefix("Test Case ") && $0.contains("' passed (") }
+    }
+
     public static func verifySummary(_ summary: [String: Any], benchmark: Bool) throws {
         guard summary["result"] as? String == "Passed",
               integer(summary["failedTests"]) == 0,
