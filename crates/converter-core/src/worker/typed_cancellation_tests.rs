@@ -129,6 +129,7 @@ fn typed_provider_returning_audio_after_cancellation_never_publishes_or_falls_ba
     }));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -176,6 +177,7 @@ fn typed_policy_stops_third_failure_and_cancellation_never_falls_back() {
     worker.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,

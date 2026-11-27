@@ -14,6 +14,7 @@ fn empty_typed_manifest_metadata_preserves_legacy_shape_and_nondefault_round_tri
     };
     manifest.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: primary.clone(),
         secondary: None,

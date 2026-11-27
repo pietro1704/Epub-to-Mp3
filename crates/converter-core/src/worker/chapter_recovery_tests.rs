@@ -74,6 +74,7 @@ fn app_policy_uses_short_system_passages_until_primary_recovers() {
     }));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: Some(2),
         primary: TtsSelection {
             session: None,

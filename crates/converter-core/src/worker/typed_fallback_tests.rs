@@ -23,6 +23,7 @@ fn explicit_preferences_retry_primary_after_invalid_audio_and_publish_mixed_segm
     }));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,
@@ -88,6 +89,7 @@ fn strict_preferences_do_not_use_registered_system_fallback() {
     }));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,

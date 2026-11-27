@@ -81,6 +81,7 @@ impl TtsSession for ChunkRecordingSession {
 fn chunk_preferences() -> TtsPreferences {
     TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         primary: TtsSelection {
             engine: "chunk-contract".into(),
             model_id: None,

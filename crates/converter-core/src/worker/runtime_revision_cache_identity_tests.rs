@@ -90,6 +90,7 @@ fn chapter_request_key_is_byte_identical_to_the_package_version_era() {
     // request's; the key function itself is unchanged.
     let edge = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: None,
         primary: TtsSelection {
             session: None,

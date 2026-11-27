@@ -69,6 +69,7 @@ fn explicit_selection_never_reuses_another_models_audio() {
         let job = if typed { "typed-B" } else { "paths-B" };
         let preferences = typed.then(|| converter_core::tts_preferences::TtsPreferences {
             footnote_narration: Default::default(),
+            silence_trim: Default::default(),
             policy_version: None,
             primary: converter_core::tts_preferences::TtsSelection {
                 session: None,

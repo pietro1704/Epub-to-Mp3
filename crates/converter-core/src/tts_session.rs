@@ -189,6 +189,7 @@ pub struct AudioSink {
     format: AudioFormat,
     bytes: Vec<u8>,
     limit: usize,
+    silence: crate::tts_preferences::SilenceTrim,
 }
 impl AudioSink {
     pub fn new(format: AudioFormat, limit: usize) -> Self {
@@ -196,7 +197,13 @@ impl AudioSink {
             format,
             bytes: Vec::new(),
             limit: limit.min(MAX_SEGMENT_BYTES),
+            silence: Default::default(),
         }
+    }
+    /// The silence level applied when the sink is encoded (default: light).
+    pub fn with_silence_trim(mut self, silence: crate::tts_preferences::SilenceTrim) -> Self {
+        self.silence = silence;
+        self
     }
     pub fn write(&mut self, bytes: &[u8]) -> Result<(), TtsFailure> {
         if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
