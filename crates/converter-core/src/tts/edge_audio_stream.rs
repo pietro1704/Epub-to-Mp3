@@ -199,7 +199,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     };
                     // The remaining total is an estimate: later dispatches may
                     // use a different size. Audio indexing never uses this total.
-                    eprintln!(
+                    crate::diagnostic!(
                         "[Rust][Edge] dispatching chunk {} (~{} total, {} bytes)",
                         chunk_index + 1,
                         estimated_total,
@@ -295,7 +295,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             {
                 let reduced_limit = (text.len() / 2).max(crate::adaptive::MIN_CHUNK_CHARS);
                 let mut remaining = text;
-                eprintln!(
+                crate::diagnostic!(
                     "[Rust][TTS] provider=edge pressure=retry-smaller-chunks previous_chars={} next_limit={reduced_limit}",
                     text.len()
                 );

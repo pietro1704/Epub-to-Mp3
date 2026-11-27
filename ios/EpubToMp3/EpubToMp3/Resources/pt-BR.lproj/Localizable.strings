@@ -279,6 +279,7 @@
 "convert.converting" = "Convertendo…";
 "convert.progressPercent" = "Convertendo… %d%%";
 "convert.chapterProgress" = "Capítulos: %d de %d";
+"convert.currentChapter" = "Convertendo o capítulo %d";
 "convert.cancel" = "Cancelar conversão";
 "convert.cancelling" = "Cancelando conversão…";
 "convert.cancelled" = "Conversão cancelada";

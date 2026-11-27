@@ -17,6 +17,7 @@ pub(super) struct RenderProgress {
     done: BTreeMap<usize, usize>,
     samples: VecDeque<(usize, f64)>,
     cached_segments: usize,
+    completed: std::collections::BTreeSet<usize>,
 }
 
 impl RenderProgress {
@@ -47,7 +48,13 @@ impl RenderProgress {
     pub fn complete(&mut self, chapter: usize) {
         if let Some(weight) = self.weights.get(&chapter) {
             self.done.insert(chapter, *weight);
+            self.completed.insert(chapter);
         }
+    }
+
+    /// Chapters published so far; a fully synthesized segment run is not enough.
+    pub fn completed_chapters(&self) -> usize {
+        self.completed.len()
     }
 
     pub fn snapshot(&self) -> Option<RenderProgressSnapshot> {

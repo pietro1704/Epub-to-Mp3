@@ -24,6 +24,9 @@ enum ManualConversionPresentation {
         var lines: [String] = []
         if session.isRunning, let progress = session.progress, progress.chaptersTotal > 0 {
             lines.append(L10n.string("convert.chapterProgress", progress.chaptersCompleted, progress.chaptersTotal))
+            if let index = progress.chapterIndex, progress.chaptersCompleted < progress.chaptersTotal {
+                lines.append(L10n.string("convert.currentChapter", index + 1))
+            }
         }
         if let voice = session.activeVoice, let engine = voice.engine,
            session.isRunning || session.phase == .completed {
