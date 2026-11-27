@@ -36,6 +36,7 @@ Future<void> _pump(WidgetTester tester, ProviderContainer container, {String? bo
 }
 
 void main() {
+  largerSizes();
   group('per-book reading overrides', () {
     test('a book without an override reads the default for every book', () async {
       final (container, _) = await _container(seed: {'readerTheme': 'dark', 'readerFontSize': 4});
@@ -198,5 +199,21 @@ void main() {
     expect(find.byKey(const ValueKey('reading-mode-book')), findsOneWidget);
     final chip = tester.widget<ChoiceChip>(find.byKey(const ValueKey('reading-mode-book')));
     expect(chip.selected, isTrue, reason: 'from a book the screen opens in its own mode');
+  });
+}
+
+void largerSizes() {
+  testWidgets('the size control reaches the larger steps and stops at the last', (tester) async {
+    final (container, _) = await _container(seed: {'readerFontSize': 4});
+    await _pump(tester, container);
+    final more = find.byIcon(Icons.text_increase);
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('34 pt'), findsOneWidget);
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('42 pt'), findsOneWidget);
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.text_increase)).onPressed, isNull);
+    expect(container.read(settingsProvider).readerFontSize, 6);
   });
 }
