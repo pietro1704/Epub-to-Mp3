@@ -368,9 +368,12 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             })
         }
         if row.availability == .ready {
-            result.append(MenuAction(title: library.actionTitle(for: .preview), destructive: false) { [weak self] in
-                self?.preview(row, in: language)
-            })
+            // The audition renderer accepts only an installed local voice, as on iOS: Edge offers no sample.
+            if !row.selection.isEdge {
+                result.append(MenuAction(title: library.actionTitle(for: .preview), destructive: false) { [weak self] in
+                    self?.preview(row, in: language)
+                })
+            }
             if row.isChosen {
                 result.append(MenuAction(title: L10n.string("models.action.useAutomatic"), destructive: false) { [weak self] in
                     self?.model.clearChoice(in: language)
