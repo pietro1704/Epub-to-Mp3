@@ -289,6 +289,11 @@ fn is_heading_line(line: &str) -> bool {
     }
 }
 
+/// A title needs letters or digits: ornaments such as "✤✤✤", "* * *" or "———" never qualify.
+fn is_titleable(line: &str) -> bool {
+    line.chars().any(char::is_alphanumeric)
+}
+
 /// Without an outline, a page whose first line is a chapter marker starts a chapter. Needs at
 /// least two such pages, and a page packed with markers (a table of contents) never counts.
 /// Falls back to one chapter per page, which stays the navigation anchor.
@@ -358,7 +363,7 @@ fn section_starts(pages: &[String], labels: &[String]) -> Vec<(usize, String, u3
                 .iter()
                 .flat_map(|p| p.lines())
                 .map(str::trim)
-                .find(|l| !l.is_empty())
+                .find(|l| is_titleable(l))
                 .map(|l| l.chars().take(60).collect::<String>());
             match title {
                 Some(title) => (start, title, 1),
