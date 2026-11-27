@@ -137,3 +137,40 @@ include!("seek_priority_tests.rs");
 include!("language_profile_tests.rs");
 #[path = "source_chunk_contract_tests.rs"]
 mod source_chunk_contract_tests;
+
+/// iPhone 16e, 2026-11-27: the screen stayed at "0 of 130" because progress
+/// events raised during synthesis carried a literal zero.
+#[test]
+fn progress_during_synthesis_reports_the_chapters_already_completed() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = crate::paths::resolve_paths_from(
+        std::collections::HashMap::<String, String>::new(),
+        root.path().to_path_buf(),
+    );
+    let mut worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let observed = seen.clone();
+    worker.progress = Some(Arc::new(move |event: ProgressEvent| {
+        observed.lock().unwrap().push(event.chapters_completed)
+    }));
+    {
+        let mut progress = worker.render_progress.lock().unwrap();
+        *progress = render_progress::RenderProgress::new([(0, 10), (1, 90)]);
+        progress.complete(0);
+    }
+    worker.emit(ProgressEvent {
+        render_progress: None,
+        job_id: "fixture".into(),
+        state: "running".into(),
+        chapter_index: Some(1),
+        chapters_total: 2,
+        chapters_completed: 0,
+        percent: 0.0,
+        engine: None,
+        model_id: None,
+        voice: None,
+        fallback_used: false,
+        message: "fixture".into(),
+    });
+    assert_eq!(*seen.lock().unwrap(), vec![1]);
+}

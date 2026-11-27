@@ -72,6 +72,7 @@ final class ManualConversionSessionTests: XCTestCase {
         XCTAssertEqual(ManualConversionPresentation.title(for: session), L10n.string("convert.progressPercent", 25))
         XCTAssertEqual(ManualConversionPresentation.detail(for: session),
                        L10n.string("convert.chapterProgress", 1, 4) + "\n"
+                       + L10n.string("convert.currentChapter", 2) + "\n"
                        + L10n.string("convert.activeVoice", TtsSelection.displayName(forEngine: "piper") ?? "piper"))
         session.reportValidationFailure("An unrelated edit must not retire this conversion")
         XCTAssertNil(session.errorMessage)
@@ -105,7 +106,8 @@ final class ManualConversionSessionTests: XCTestCase {
         let pending = Task { await session.run(file: file, start: -1, end: -1, options: nil) }
         await fulfillment(of: [entered], timeout: 1)
         XCTAssertEqual(ManualConversionPresentation.detail(for: session),
-                       L10n.string("convert.chapterProgress", 0, 2) + "\n" + notice)
+                       L10n.string("convert.chapterProgress", 0, 2) + "\n"
+                       + L10n.string("convert.currentChapter", 1) + "\n" + notice)
         gate.release()
         await pending.value
         XCTAssertEqual(session.phase, .completed)
