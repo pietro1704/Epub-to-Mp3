@@ -89,17 +89,17 @@ void main() {
     final remote = BackgroundAudioHandler(playing);
     addTearDown(remote.dispose);
     final mpris = MprisPlayerObject(remote);
-    final reply = await _call(
-      mpris,
-      'Play',
-    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('Play never replied'));
+    final reply = await _call(mpris, 'Play').timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => fail('Play never replied'),
+    );
     expect(reply, isA<DBusMethodSuccessResponse>());
     expect(playing.isPlaying, isTrue);
     await _call(mpris, 'Pause');
-    final toggled = await _call(
-      mpris,
-      'PlayPause',
-    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('PlayPause never replied'));
+    final toggled = await _call(mpris, 'PlayPause').timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => fail('PlayPause never replied'),
+    );
     expect(toggled, isA<DBusMethodSuccessResponse>());
     expect(playing.isPlaying, isTrue);
   });
@@ -113,10 +113,10 @@ void main() {
       requests++;
       return Completer<void>().future;
     };
-    final reply = await _call(
-      MprisPlayerObject(remote),
-      'Play',
-    ).timeout(const Duration(seconds: 1), onTimeout: () => fail('Play never replied'));
+    final reply = await _call(MprisPlayerObject(remote), 'Play').timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => fail('Play never replied'),
+    );
     expect(reply, isA<DBusMethodSuccessResponse>());
     expect(requests, 1);
   });
@@ -156,6 +156,57 @@ void main() {
     expect(player.positionSeconds, 30);
     await _call(object, 'Seek', [DBusInt64(-10 * 1000000)]);
     expect(player.positionSeconds, 20);
+  });
+
+  test('a growing PDF chapter publishes a title and a seek timeline', () async {
+    const chapter = ChapterProgress(
+      index: 2,
+      name: '✤✤✤',
+      status: 'running',
+      chars: 1050,
+      textOffset: 150,
+    );
+    final decoder = _ReportingDurationPlayer();
+    await decoder.setQueue([chapter]);
+    final remote = BackgroundAudioHandler(decoder);
+    addTearDown(remote.dispose);
+    final mpris = MprisPlayerObject(remote);
+    Future<Map<String, DBusValue>> fields() async =>
+        (_value(await mpris.getProperty(_player, 'Metadata')) as DBusDict)
+            .asStringVariantDict();
+    Future<void> publish(ChapterProgress current) => remote.setMetadata(
+      BackgroundAudioMetadata(
+        bookId: 'pdf',
+        bookTitle: 'Book',
+        chapterIndex: current.index,
+        chapterTitle: current.displayTitle,
+      ),
+    );
+
+    await publish(chapter);
+    expect((await fields())['mpris:length'], DBusInt64(60000000));
+    expect((await fields())['xesam:title'], DBusString('Chapter 3'));
+    decoder.durationSeconds = 8;
+    await remote.seek(const Duration(seconds: 4));
+    expect(
+      _value(await mpris.getProperty(_player, 'Position')),
+      DBusInt64(4000000),
+    );
+    expect(remote.mediaItem.value!.duration, const Duration(seconds: 60));
+
+    final finished = chapter.copyWith(status: 'completed', name: 'A Chegada');
+    decoder.durationSeconds = 51;
+    await decoder.setQueue([finished]);
+    await publish(finished);
+    expect(remote.mediaItem.value!.title, 'A Chegada');
+    expect((await fields())['mpris:length'], DBusInt64(51000000));
+
+    decoder.durationSeconds = 0;
+    const unknown = ChapterProgress(index: 3, name: '日本語', status: 'running');
+    await decoder.setQueue([unknown]);
+    await publish(unknown);
+    expect((await fields()).containsKey('mpris:length'), isFalse);
+    expect((await fields())['xesam:title'], DBusString('日本語'));
   });
 
   test('the properties playerctl reads describe the playback', () async {
@@ -201,4 +252,9 @@ class _PlayUntilStopped extends FakeAudioPlayerService {
     super.play();
     return Completer<void>().future;
   }
+}
+
+class _ReportingDurationPlayer extends FakeAudioPlayerService {
+  @override
+  double durationSeconds = 0;
 }

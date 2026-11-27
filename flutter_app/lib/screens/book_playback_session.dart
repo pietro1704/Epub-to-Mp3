@@ -44,6 +44,22 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     debugPrint(
       'BookOpenScreen: start conversion requested for ${widget.bookId}',
     );
+    // The PDF viewer opens directly from the file. Load the narration text
+    // on the first Play, using the same cache and parser as the EPUB reader.
+    if (_fulltext == null && _isPdfBook) {
+      if (_isConverting) return;
+      final generation = _localConversionGeneration;
+      setState(() => _isConverting = true);
+      await _load();
+      if (!mounted || !_isCurrentConversion(generation)) return;
+      if (_fulltext?.chapters.isNotEmpty != true) {
+        _showConversionError(
+          _errorMessage ?? AppLocalizations.of(context)!.errorNoReadableText,
+        );
+        setState(() => _isConverting = false);
+        return;
+      }
+    }
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
     if (mounted) setState(() => _isConverting = true);
@@ -71,7 +87,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
                 // chapter the reader shows (its last published position, else the chapter it
                 // last displayed); the saved listening only applies without a reader.
                 ? _readerListeningPosition?.chapterIndex ??
-                      ref.read(sharedPrefsProvider).getInt('readPos_ch_${widget.bookId}') ??
+                      ref
+                          .read(sharedPrefsProvider)
+                          .getInt('readPos_ch_${widget.bookId}') ??
                       savedChapter ??
                       0
                 : _sourceChapterIndexForPlayerIndex(
@@ -101,8 +119,10 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   }
 
   /// Converts again from the first chapter that failed, without playing.
-  Future<void> _retryFailedAudio(int chapterIndex) =>
-      _startLocalConversion(playbackChapterIndex: chapterIndex, prepareOnly: true);
+  Future<void> _retryFailedAudio(int chapterIndex) => _startLocalConversion(
+    playbackChapterIndex: chapterIndex,
+    prepareOnly: true,
+  );
 
   /// Shares the finished chapter audio through the platform share sheet.
   Future<void> _shareAudio() async {
@@ -111,7 +131,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         .load(widget.bookId, 'local-${widget.bookId}');
     final paths = availableAudioPaths(job);
     if (paths.isEmpty) return;
-    await ref.read(audioSharerProvider).share(paths, title: _fulltext?.bookTitle ?? '');
+    await ref
+        .read(audioSharerProvider)
+        .share(paths, title: _fulltext?.bookTitle ?? '');
   }
 
   Future<void> _listenFrom(ReaderListeningPosition position) async {
@@ -185,7 +207,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       _playableChapters.clear();
       _resumeGuard = ResumeRestorationGuard();
     }
-    if (!prepareOnly) _playbackStartup.request(generation, playbackChapterIndex);
+    if (!prepareOnly) {
+      _playbackStartup.request(generation, playbackChapterIndex);
+    }
     final future =
         _runLocalPlaybackConversion(
           playbackChapterIndex: playbackChapterIndex,
@@ -258,23 +282,32 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       _playbackStartup.invalidate();
       final ready = _chapterPreparation.start(target, seekable: seekable);
       unawaited(
-        _startLocalConversion(playbackChapterIndex: target, prepareOnly: true)
-            .whenComplete(() {
-              if (_chapterPreparation.target == target) {
-                _chapterPreparation.finish(false);
-              }
-            }),
+        _startLocalConversion(
+          playbackChapterIndex: target,
+          prepareOnly: true,
+        ).whenComplete(() {
+          if (_chapterPreparation.target == target) {
+            _chapterPreparation.finish(false);
+          }
+        }),
       );
       return ready;
     };
     // This book's own narration speed (Reading preferences) applies while it plays.
-    unawaited(player.setSpeed(ref.read(readerSettingsProvider(widget.bookId)).audioRate));
+    unawaited(
+      player.setSpeed(
+        ref.read(readerSettingsProvider(widget.bookId)).audioRate,
+      ),
+    );
     if (!_speedFollowsReadingPreferences) {
       _speedFollowsReadingPreferences = true;
       ref.listenManual(
-        readerSettingsProvider(widget.bookId).select((settings) => settings.audioRate),
+        readerSettingsProvider(widget.bookId)
+            .select((settings) => settings.audioRate),
         (_, rate) {
-          if (player.currentBookId == widget.bookId) unawaited(player.setSpeed(rate));
+          if (player.currentBookId == widget.bookId) {
+            unawaited(player.setSpeed(rate));
+          }
         },
       );
     }
@@ -341,7 +374,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
         .listen((chapter) {
           // The decoder can report its old item while we append a new one.
           // Keep the explicitly requested conversion inside the window.
-          if (_chapterPreparation.target == null) _publishPlaybackWindow(chapter);
+          if (_chapterPreparation.target == null) {
+            _publishPlaybackWindow(chapter);
+          }
         });
     _positionSub = player.position.listen((_) {
       final index = player.currentIndexValue;

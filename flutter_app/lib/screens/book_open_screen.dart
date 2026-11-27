@@ -11,6 +11,7 @@
 // so the MiniPlayerBar and NavigationBar remain visible.
 
 import '../services/cover_decoder.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
@@ -110,14 +111,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       }
     });
 
-    final book = ref
-        .read(libraryStoreProvider)
-        .books
-        .where((b) => b.id == widget.bookId)
-        .firstOrNull;
-    if (book == null || !isPdfFilePath(book.filePath)) {
-      _load();
-    }
+    if (!_isPdfBook) _load();
   }
 
   @override
