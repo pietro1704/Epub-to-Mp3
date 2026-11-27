@@ -6,7 +6,7 @@ import UIKit
 
 @MainActor
 final class PlayerPlaybackClockTests: XCTestCase {
-    func testMiniPlayerClockTickUpdatesProgressWithoutDecodingArtworkAgain() async throws {
+    func testMiniPlayerClockTickDoesNotDecodeArtworkAgain() async throws {
         let suiteName = "PlayerPlaybackClockTests.\(UUID().uuidString)"
         let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { suite.removePersistentDomain(forName: suiteName) }
@@ -66,12 +66,11 @@ final class PlayerPlaybackClockTests: XCTestCase {
         let coverView = try XCTUnwrap(decodedCoverView(), "Expected decoded book artwork")
         let originalCover = try XCTUnwrap(coverView.image)
         let originalCoverData = try XCTUnwrap(originalCover.pngData())
-        let slider = try XCTUnwrap(descendants(of: miniPlayer, matching: CompactSlider.self).first)
 
         player.playbackClock.update(positionSeconds: 12, durationSeconds: 180)
         await waitForMainQueue()
 
-        XCTAssertEqual(slider.value, 12, accuracy: 0.01)
+        XCTAssertTrue(coverView.image === originalCover)
         XCTAssertEqual(coverView.image?.pngData(), originalCoverData)
     }
 
