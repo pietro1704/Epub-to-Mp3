@@ -13,6 +13,7 @@ module ConverterFfiMacOSPackage
     Cargo.toml Cargo.lock mise.toml rust-toolchain.toml rust-toolchain .cargo/config.toml
     crates/converter-core crates/converter-ffi native/piper-runtime
     native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys
+    native/vendor/pdf-extract
     scripts/build_onnxruntime_macos.sh scripts/prepare_onnxruntime_macos.rb
     scripts/fetch_onnxruntime_macos.rb scripts/native_job.rb scripts/bundle_espeak_ng_data.sh
     scripts/package_converter_ffi_macos.rb
