@@ -11,6 +11,7 @@ final class MacReaderSearchTests: XCTestCase {
         let reader = try await openReader()
         defer { reader.close() }
         reader.controller.annotations.performSearch(query: "needle")
+        await reader.controller.annotations.searchTask?.value
         XCTAssertEqual(reader.selectedText(), "needle")
     }
 
@@ -18,8 +19,18 @@ final class MacReaderSearchTests: XCTestCase {
         let reader = try await openReader()
         defer { reader.close() }
         reader.controller.annotations.performSearch(query: "haystack")
+        await reader.controller.annotations.searchTask?.value
         XCTAssertEqual(reader.selectedText(), "haystack")
         XCTAssertTrue(reader.text.string.contains("Second chapter preface"))
+    }
+
+    func testSearchIgnoresAccentsAndSurroundingSpacesLikeIOS() async throws {
+        let reader = try await openReader()
+        defer { reader.close() }
+        reader.controller.annotations.performSearch(query: "  háystack ")
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in reader.selectedText() == "haystack" }, object: nil)
+        await fulfillment(of: [selected], timeout: 5)
     }
 
     private struct OpenReader {
