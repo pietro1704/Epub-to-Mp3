@@ -207,12 +207,14 @@ fn pdf_preserves_front_matter_before_the_first_outline() {
     let session = open_bytes(&source).unwrap();
     assert_eq!(session.metadata().chapters.len(), 3);
     assert_eq!(session.metadata().chapters[0].name, "Front matter");
-    assert!(session
-        .structure_verification()
-        .warnings
+    // Front matter before the first outline entry is reported, but the outline itself is sound.
+    let check = session.structure_verification();
+    assert!(check.warnings.is_empty(), "{:?}", check.warnings);
+    assert!(check.verified);
+    assert!(check
+        .notes
         .iter()
-        .any(|warning| warning.code == "PDF_CONTENT_OUTSIDE_TOC"));
-    assert!(!session.structure_verification().verified);
+        .any(|n| n.code == "PDF_FRONT_MATTER_OUTSIDE_TOC"));
     assert!(session.metadata().chapters[0].text.contains("Foreword"));
 }
 
@@ -623,4 +625,25 @@ fn oversized_heuristic_chapter_is_split_at_page_boundaries() {
             .collect::<Vec<_>>()
     );
     assert!(book.chapters.len() > 2);
+}
+
+// Parse audit 2026-11-27 (P3): layout-tool slug lines ("Cap 00 ... .indd 2 04/07/2011") leaked
+// into narration when they were not the first or last line of the page.
+#[test]
+fn pdf_layout_file_slug_lines_are_never_narrated() {
+    let pages: Vec<String> = (1..=5)
+        .map(|n| {
+            format!(
+                "Texto proprio {} da pagina com frases.\nCap 00_Livro.indd {n} 04/07/2011 10:2{n}:15\n{n}",
+                ["alfa", "beta", "gama", "delta", "epsilon"][n - 1]
+            )
+        })
+        .collect();
+    let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+    let book = ingest_pages(&refs);
+    assert!(
+        book.chapters.iter().all(|c| !c.text.contains(".indd")),
+        "{:?}",
+        book.chapters.iter().map(|c| &c.text).collect::<Vec<_>>()
+    );
 }

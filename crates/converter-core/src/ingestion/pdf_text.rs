@@ -347,7 +347,22 @@ fn normalize_page(page: &str) -> String {
 
 /// Running headers, footers and page numbers repeat on many pages. The first and last line of
 /// a page are dropped when the same line (digits aside) leads or ends at least three pages.
+/// A layout-tool file slug ("Cap 00_Book.indd 2 04/07/2011"): never narration, anywhere on a page.
+fn is_layout_slug(line: &str) -> bool {
+    let line = line.to_ascii_lowercase();
+    line.contains(".indd") || line.contains(".qxd")
+}
+
 fn strip_running_lines(pages: &mut [String]) {
+    for page in pages.iter_mut() {
+        if page.lines().any(is_layout_slug) {
+            *page = page
+                .lines()
+                .filter(|l| !is_layout_slug(l))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+    }
     if pages.len() < 3 {
         return;
     }
