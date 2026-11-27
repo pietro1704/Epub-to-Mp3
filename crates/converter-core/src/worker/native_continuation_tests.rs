@@ -127,6 +127,7 @@ fn app_policy_rate_limited_primary_waits_while_native_continues() {
     }));
     let preferences = TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         policy_version: Some(2),
         primary: TtsSelection {
             session: None,
@@ -264,6 +265,7 @@ fn bilingual_worker_narrates_both_languages_in_source_order() {
     request.language = None;
     request.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         primary: crate::tts_preferences::TtsSelection {
             engine: "system".into(),
             model_id: None,

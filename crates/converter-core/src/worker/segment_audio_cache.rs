@@ -23,6 +23,7 @@ pub(super) fn key(
     language: &str,
     text: &str,
     identity: &ResolvedIdentity,
+    silence: crate::tts_preferences::SilenceTrim,
 ) -> Option<String> {
     let source = serde_json::to_string(&(book, language, text)).ok()?;
     let material = crate::tts_session::cache_material(
@@ -30,6 +31,7 @@ pub(super) fn key(
         "speech-segment-v1",
         identity,
         &AudioFormat::Mp3,
+        silence,
     )
     .ok()?;
     Some(cache::sha256_bytes(material.as_bytes()))

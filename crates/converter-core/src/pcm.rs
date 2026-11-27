@@ -68,22 +68,25 @@ pub(crate) fn collect_rusty_mp3_output(
 /// Parse RIFF chunks rather than assuming every writer emits a 44-byte header.
 pub fn encode_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
     // Edge emits 24 kHz MP3. Keep concatenated fallback artifacts at that rate.
-    encode_wav_mp3_at_rate(data, Some(24_000), false)
+    encode_wav_mp3_at_rate(data, Some(24_000), None)
 }
 
-pub(crate) fn encode_speech_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
-    encode_wav_mp3_at_rate(data, Some(24_000), true)
+pub(crate) fn encode_speech_wav_mp3(
+    data: &[u8],
+    level: crate::tts_preferences::SilenceTrim,
+) -> Result<Vec<u8>, String> {
+    encode_wav_mp3_at_rate(data, Some(24_000), Some(level))
 }
 
 /// Preserve the legacy single-provider source rate and the encoder's rate validation.
 pub(crate) fn encode_wav_mp3_at_source_rate(data: &[u8]) -> Result<Vec<u8>, String> {
-    encode_wav_mp3_at_rate(data, None, false)
+    encode_wav_mp3_at_rate(data, None, None)
 }
 
 fn encode_wav_mp3_at_rate(
     data: &[u8],
     target_rate: Option<u32>,
-    compact: bool,
+    compact: Option<crate::tts_preferences::SilenceTrim>,
 ) -> Result<Vec<u8>, String> {
     if data.len() < 12 || &data[..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return Err("Invalid WAV header".into());
@@ -138,11 +141,11 @@ fn encode_wav_mp3_at_rate(
         return Err("System speech PCM exceeds the segment duration limit".into());
     }
     let compacted;
-    let pcm = if compact {
+    let pcm = if let Some(level) = compact {
         if let Some(alignment) = &mut alignment {
-            alignment.compact(pcm, rate);
+            alignment.compact(pcm, rate, level);
         }
-        compacted = crate::speech_silence::compact(pcm, rate)?;
+        compacted = crate::speech_silence::compact(pcm, rate, level)?;
         compacted.as_slice()
     } else {
         pcm

@@ -81,6 +81,7 @@ impl TtsSession for ChunkRecordingSession {
 fn chunk_preferences() -> TtsPreferences {
     TtsPreferences {
         footnote_narration: Default::default(),
+        silence_trim: Default::default(),
         primary: TtsSelection {
             engine: "chunk-contract".into(),
             model_id: None,
@@ -207,7 +208,14 @@ fn new_planner_profile_invalidates_legacy_whole_chapter_identity() {
             AudioFormat::Mp3,
         ))
         .unwrap(),
-        cache_material("source", "text-v1", &identity, &AudioFormat::Mp3).unwrap(),
+        cache_material(
+            "source",
+            "text-v1",
+            &identity,
+            &AudioFormat::Mp3,
+            Default::default(),
+        )
+        .unwrap(),
     ];
     let old = request_cache_material("source", Some("pt-BR"), &preferences, &identities).unwrap();
     assert_ne!(current, cache::sha256_bytes(old.as_bytes()));

@@ -100,6 +100,7 @@ impl SegmentSynthesis<'_> {
                 context.language,
                 &speech_identity,
                 session.identity(),
+                self.preferences.silence_trim,
             )
         });
         if !self.worker.execution_options.force_reprocess
@@ -129,7 +130,8 @@ impl SegmentSynthesis<'_> {
             platform_tts::segments_with_limit(&spoken, speech_limit)?
         };
         for passage in passages {
-            let mut sink = AudioSink::new(format.clone(), MAX_SEGMENT_BYTES);
+            let mut sink = AudioSink::new(format.clone(), MAX_SEGMENT_BYTES)
+                .with_silence_trim(self.preferences.silence_trim);
             if let Err(failure) = session.synthesize(&passage, &context, &mut sink) {
                 sessions.remove(&key);
                 return Err(failure);

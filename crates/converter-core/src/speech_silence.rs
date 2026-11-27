@@ -1,33 +1,85 @@
 //! Conservative generated-speech compaction before lossy encoding.
 //! Only digital zero is removable: even the quietest nonzero speech is retained.
 
+use crate::tts_preferences::SilenceTrim;
+
+/// Cache/artifact identity of the light level. It keeps the pre-levels name, so audio generated
+/// before levels existed stays valid for the default.
 pub(crate) const PROFILE: &str = "digital-silence-v1-600ms-300ms";
 
+/// Samples at or below this magnitude count as silence at the strong level (about -60 dBFS).
+const STRONG_NEAR_SILENCE: u16 = 32;
+
+/// Parameters of one level: a run of silence at least `min_ms` long is cut down to `keep_ms`;
+/// samples with magnitude up to `floor` are silence.
+struct Rule {
+    min_ms: usize,
+    keep_ms: usize,
+    floor: u16,
+}
+
+fn rule(level: SilenceTrim) -> Option<Rule> {
+    match level {
+        SilenceTrim::Off => None,
+        SilenceTrim::Light => Some(Rule {
+            min_ms: 600,
+            keep_ms: 300,
+            floor: 0,
+        }),
+        SilenceTrim::Medium => Some(Rule {
+            min_ms: 400,
+            keep_ms: 200,
+            floor: 0,
+        }),
+        SilenceTrim::Strong => Some(Rule {
+            min_ms: 250,
+            keep_ms: 120,
+            floor: STRONG_NEAR_SILENCE,
+        }),
+    }
+}
+
+/// Identity of the processing applied at `level`, part of every audio cache key.
+pub(crate) fn profile(level: SilenceTrim) -> &'static str {
+    match level {
+        SilenceTrim::Off => "silence-off-v1",
+        SilenceTrim::Light => PROFILE,
+        SilenceTrim::Medium => "digital-silence-v1-400ms-200ms",
+        SilenceTrim::Strong => "near-silence-v1-250ms-120ms-floor32",
+    }
+}
+
 /// Removed intervals in original sample coordinates, shared with word timing.
-pub(crate) fn removed_ranges(pcm: &[u8], rate: u32) -> Vec<(usize, usize)> {
-    if pcm.iter().all(|byte| *byte == 0) {
+pub(crate) fn removed_ranges(pcm: &[u8], rate: u32, level: SilenceTrim) -> Vec<(usize, usize)> {
+    let Some(rule) = rule(level) else {
+        return Vec::new();
+    };
+    let quiet = |at: usize| i16::from_le_bytes([pcm[at], pcm[at + 1]]).unsigned_abs() <= rule.floor;
+    if (0..pcm.len() / 2).all(|i| quiet(i * 2)) {
         return Vec::new();
     }
+    let min = rate as usize * rule.min_ms / 1_000;
+    let keep = rate as usize * rule.keep_ms / 1_000;
     let mut ranges = Vec::new();
     let mut cursor = 0;
     while cursor + 1 < pcm.len() {
-        if pcm[cursor..cursor + 2] != [0, 0] {
+        if !quiet(cursor) {
             cursor += 2;
             continue;
         }
         let start = cursor / 2;
-        while cursor + 1 < pcm.len() && pcm[cursor..cursor + 2] == [0, 0] {
+        while cursor + 1 < pcm.len() && quiet(cursor) {
             cursor += 2;
         }
         let end = cursor / 2;
-        if end - start >= rate as usize * 600 / 1_000 {
-            ranges.push((start + rate as usize * 300 / 1_000, end));
+        if end - start >= min {
+            ranges.push((start + keep, end));
         }
     }
     ranges
 }
 
-pub(crate) fn compact(pcm: &[u8], rate: u32) -> Result<Vec<u8>, String> {
+pub(crate) fn compact(pcm: &[u8], rate: u32, level: SilenceTrim) -> Result<Vec<u8>, String> {
     if !(8_000..=96_000).contains(&rate) || pcm.is_empty() || pcm.len() % 2 != 0 {
         return Err("Expected bounded mono PCM16 for silence compaction".into());
     }
@@ -36,12 +88,9 @@ pub(crate) fn compact(pcm: &[u8], rate: u32) -> Result<Vec<u8>, String> {
     }
     // A wholly silent response cannot establish speech; preserve it for the
     // caller's existing validation, rather than manufacturing a shorter result.
-    if pcm.iter().all(|byte| *byte == 0) {
-        return Ok(pcm.to_vec());
-    }
     let mut output = Vec::with_capacity(pcm.len());
     let mut cursor = 0;
-    for (start, end) in removed_ranges(pcm, rate) {
+    for (start, end) in removed_ranges(pcm, rate, level) {
         output.extend_from_slice(&pcm[cursor..start * 2]);
         cursor = end * 2;
     }
@@ -64,10 +113,10 @@ mod tests {
             samples.extend(vec![0; rate as usize / 5]);
             samples.extend([1, -1]);
             let pcm = bytes(&samples);
-            assert_eq!(compact(&pcm, rate).unwrap(), pcm);
+            assert_eq!(compact(&pcm, rate, SilenceTrim::Light).unwrap(), pcm);
             samples.extend(vec![0; rate as usize]);
             samples.extend([2, -2]);
-            let compacted = compact(&bytes(&samples), rate).unwrap();
+            let compacted = compact(&bytes(&samples), rate, SilenceTrim::Light).unwrap();
             let kept: Vec<_> = compacted
                 .chunks_exact(2)
                 .map(|b| i16::from_le_bytes([b[0], b[1]]))
@@ -84,11 +133,14 @@ mod tests {
     #[test]
     fn preserves_silent_responses_and_rejects_invalid_input() {
         let silence = vec![0; 48_000];
-        assert_eq!(compact(&silence, 24_000).unwrap(), silence);
+        assert_eq!(
+            compact(&silence, 24_000, SilenceTrim::Light).unwrap(),
+            silence
+        );
         for (pcm, rate) in [(vec![], 24_000), (vec![0], 24_000), (vec![0, 0], 0)] {
-            assert!(compact(&pcm, rate).is_err());
+            assert!(compact(&pcm, rate, SilenceTrim::Light).is_err());
         }
-        assert!(compact(&vec![0; 8_000 * 121 * 2], 8_000).is_err());
+        assert!(compact(&vec![0; 8_000 * 121 * 2], 8_000, SilenceTrim::Light).is_err());
     }
 
     #[test]
@@ -100,15 +152,32 @@ mod tests {
                 samples.extend(vec![0; frames]);
                 samples.push(-1);
                 let input = bytes(&samples);
-                let output = compact(&input, rate).unwrap();
+                let output = compact(&input, rate, SilenceTrim::Light).unwrap();
                 let retained = if frames < threshold {
                     frames
                 } else {
                     rate as usize * 300 / 1_000
                 };
                 assert_eq!(output.len(), (retained + 2) * 2);
-                assert_eq!(compact(&output, rate).unwrap(), output);
+                assert_eq!(compact(&output, rate, SilenceTrim::Light).unwrap(), output);
             }
         }
+    }
+
+    #[test]
+    fn only_strong_counts_near_silent_samples_and_keeps_audible_ones() {
+        let rate = 24_000;
+        // Speech, 400 ms of +-20 noise (about -64 dBFS), speech, 400 ms of +-200 (audible), speech.
+        let mut samples = vec![4_000i16; 2_400];
+        samples.extend((0..9_600).map(|i| if i % 2 == 0 { 20 } else { -20 }));
+        samples.extend(vec![4_000; 2_400]);
+        samples.extend((0..9_600).map(|i| if i % 2 == 0 { 200 } else { -200 }));
+        samples.extend(vec![4_000; 2_400]);
+        let pcm = bytes(&samples);
+        for level in [SilenceTrim::Off, SilenceTrim::Light, SilenceTrim::Medium] {
+            assert!(removed_ranges(&pcm, rate, level).is_empty());
+        }
+        let strong = removed_ranges(&pcm, rate, SilenceTrim::Strong);
+        assert_eq!(strong, [(2_400 + 2_880, 2_400 + 9_600)]);
     }
 }

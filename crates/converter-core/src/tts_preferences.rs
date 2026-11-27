@@ -162,6 +162,25 @@ impl FootnoteNarration {
     }
 }
 
+/// How much silence generated speech loses before it is encoded. `Light` is the historical
+/// behaviour and the default, so saved preferences and existing cache identities do not change.
+/// Deliberate pauses (headings, chapter ends, notes) are appended after trimming and are
+/// never affected, at any level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SilenceTrim {
+    Off,
+    #[default]
+    Light,
+    Medium,
+    Strong,
+}
+impl SilenceTrim {
+    fn is_default(&self) -> bool {
+        *self == Self::Light
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsPreferences {
@@ -176,6 +195,9 @@ pub struct TtsPreferences {
     /// chapters without notes are unchanged.
     #[serde(skip_serializing_if = "FootnoteNarration::is_default")]
     pub footnote_narration: FootnoteNarration,
+    /// Additive: absent means `light`; part of the audio cache identity when not `light`.
+    #[serde(skip_serializing_if = "SilenceTrim::is_default")]
+    pub silence_trim: SilenceTrim,
 }
 impl TtsPreferences {
     /// App settings opt into recovery; unversioned headless/job selections stay strict.
@@ -259,6 +281,7 @@ impl TtsPreferences {
     ) -> Self {
         Self {
             footnote_narration: Default::default(),
+            silence_trim: Default::default(),
             policy_version: if use_secondary {
                 self.policy_version
             } else {
@@ -434,6 +457,7 @@ mod tests {
         };
         let mut saved = TtsPreferences {
             footnote_narration: Default::default(),
+            silence_trim: Default::default(),
             policy_version: Some(2),
             primary: edge(),
             secondary: Some(secondary.clone()),

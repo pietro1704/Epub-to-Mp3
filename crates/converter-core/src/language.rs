@@ -525,6 +525,7 @@ pub fn preferences_for_language(
     {
         return crate::tts_preferences::TtsPreferences {
             footnote_narration: preferences.footnote_narration,
+            silence_trim: preferences.silence_trim,
             primary: secondary.clone(),
             secondary: None,
             policy_version: preferences.policy_version,
