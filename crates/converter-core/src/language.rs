@@ -52,6 +52,33 @@ pub fn valid_tag(tag: &str) -> bool {
         })
 }
 
+/// Replaces an ISO 639-2 primary subtag with its BCP 47 two-letter form.
+pub fn normalize_tag(tag: &str) -> String {
+    let tag = tag.trim().replace('_', "-");
+    let (primary, rest) = match tag.find('-') {
+        Some(at) => tag.split_at(at),
+        None => (tag.as_str(), ""),
+    };
+    let short = match primary.to_ascii_lowercase().as_str() {
+        "eng" => "en",
+        "por" => "pt",
+        "spa" => "es",
+        "fra" | "fre" => "fr",
+        "deu" | "ger" => "de",
+        "ita" => "it",
+        "rus" => "ru",
+        "zho" | "chi" => "zh",
+        "jpn" => "ja",
+        "kor" => "ko",
+        "lat" => "la",
+        "nld" | "dut" => "nl",
+        "ell" | "gre" => "el",
+        "ara" => "ar",
+        _ => return tag,
+    };
+    format!("{short}{rest}")
+}
+
 fn base(tag: &str) -> &str {
     tag.split(['-', '_']).next().unwrap_or(tag)
 }

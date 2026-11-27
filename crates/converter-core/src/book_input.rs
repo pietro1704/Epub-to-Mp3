@@ -20,15 +20,35 @@ pub fn parse_book_source_with_cancel(
     source: &[u8],
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Book, BookInputError> {
-    if path
+    let mut book = if path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
     {
-        Ok(PdfTextIngestion::from_bytes_with_cancel(
-            path, source, cancelled,
-        )?)
+        PdfTextIngestion::from_bytes_with_cancel(path, source, cancelled)?
     } else {
-        Ok(epub::parse_epub(std::io::Cursor::new(source))?)
+        epub::parse_epub(std::io::Cursor::new(source))?
+    };
+    resolve_language(&mut book, cancelled);
+    Ok(book)
+}
+
+/// Normalises the declared language to BCP 47 and, when the source declares none,
+/// uses the language its own text confirms. Without that evidence it stays unset.
+fn resolve_language(book: &mut Book, cancelled: &dyn Fn() -> bool) {
+    book.language = book
+        .language
+        .take()
+        .map(|tag| crate::language::normalize_tag(&tag))
+        .filter(|tag| crate::language::valid_tag(tag) && !tag.eq_ignore_ascii_case("und"));
+    if book.language.is_none() {
+        // A cancelled detection leaves the language unset; the caller sees the cancel.
+        book.language = crate::language::analyze_book(
+            book.chapters.iter().map(|chapter| chapter.text.as_str()),
+            None,
+            cancelled,
+        )
+        .ok()
+        .and_then(|analysis| analysis.confirmed);
     }
 }
 
@@ -69,12 +89,14 @@ pub fn parse_book_reader<R: std::io::Read + std::io::Seek>(
     path: &Path,
     reader: R,
 ) -> Result<Book, BookInputError> {
-    if is_pdf(path) {
+    let mut book = if is_pdf(path) {
         let source = read_pdf_source(reader)?;
-        Ok(PdfTextIngestion::from_bytes(path, &source)?)
+        PdfTextIngestion::from_bytes(path, &source)?
     } else {
-        Ok(epub::parse_epub(reader)?)
-    }
+        epub::parse_epub(reader)?
+    };
+    resolve_language(&mut book, &|| false);
+    Ok(book)
 }
 
 /// Conversion hashes the immutable source bytes; PDF reads remain bounded.
