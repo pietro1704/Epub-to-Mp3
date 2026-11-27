@@ -2,16 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/gestures.dart'
-    show
-        PointerDeviceKind,
-        kDoubleTapTimeout,
-        kLongPressTimeout,
-        kPrimaryButton,
-        kTouchSlop;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kDoubleTapTimeout, kLongPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart'
-    show RenderRepaintBoundary, ScrollDirection;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary, ScrollDirection;
 import 'package:flutter/rendering.dart' show SelectionStatus;
 import 'package:flutter/services.dart';
 
@@ -57,7 +50,7 @@ class RichReaderSurface extends StatefulWidget {
     this.savedHighlights = const [],
     this.onHighlight,
     this.onAddNote,
-    this.onSetLanguage,
+this.onSetLanguage,
     this.onRemoveHighlight,
     this.initialSourceOffset = 0,
     this.followNarration = false,
@@ -106,15 +99,14 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
     with SingleTickerProviderStateMixin {
   final _content = GlobalKey();
   final _pageKey = GlobalKey();
-  late final AnimationController _turnAnimation =
-      AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 280),
-      )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          setState(_clearOutgoing);
-        }
-      });
+  late final AnimationController _turnAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  )..addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(_clearOutgoing);
+      }
+    });
   ui.Image? _outgoing;
   bool _outgoingForward = true;
   String _outgoingStyle = 'none';
@@ -160,25 +152,19 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
       final overlapping = range == null
           ? null
           : widget.savedHighlights
-                .where(
-                  (h) => h.range.start < range.end && range.start < h.range.end,
-                )
+                .where((h) => h.range.start < range.end && range.start < h.range.end)
                 .firstOrNull;
       void act(VoidCallback call) {
         region.hideToolbar();
         region.clearSelection();
         call();
       }
-
       final t = AppLocalizations.of(context)!;
       final extras = [
-        if (range != null &&
-            overlapping != null &&
-            widget.onRemoveHighlight != null)
+        if (range != null && overlapping != null && widget.onRemoveHighlight != null)
           ContextMenuButtonItem(
             label: t.readerRemoveHighlight,
-            onPressed: () =>
-                act(() => widget.onRemoveHighlight!(overlapping.id)),
+            onPressed: () => act(() => widget.onRemoveHighlight!(overlapping.id)),
           ),
         if (range != null && overlapping == null && widget.onHighlight != null)
           ContextMenuButtonItem(
@@ -222,12 +208,8 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
     final range = _selection.registered ? _selection.selection.range : null;
     final geometry = _geometry;
     if (range == null || geometry == null) return null;
-    final low = range.startOffset < range.endOffset
-        ? range.startOffset
-        : range.endOffset;
-    final high = range.startOffset < range.endOffset
-        ? range.endOffset
-        : range.startOffset;
+    final low = range.startOffset < range.endOffset ? range.startOffset : range.endOffset;
+    final high = range.startOffset < range.endOffset ? range.endOffset : range.startOffset;
     final start = geometry.sourceOffsetForContentOffset(low);
     final end = geometry.sourceOffsetForContentOffset(high);
     if (start == null || end == null || end <= start) return null;
@@ -358,8 +340,8 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
       // an edge tap moves one screen with a line of overlap; only at either
       // end does it go to the neighbouring chapter.
       final position = _scroll.position;
-      final line =
-          (widget.bodyStyle.fontSize ?? 18) * (widget.bodyStyle.height ?? 1.5);
+      final line = (widget.bodyStyle.fontSize ?? 18) *
+          (widget.bodyStyle.height ?? 1.5);
       final step = math.max(_height - line, _height / 2);
       final atEnd = forward
           ? _scroll.offset >= position.maxScrollExtent - 0.5
@@ -371,12 +353,8 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
           widget.onPreviousChapter?.call();
         }
       } else {
-        _scroll.jumpTo(
-          (_scroll.offset + (forward ? step : -step)).clamp(
-            position.minScrollExtent,
-            position.maxScrollExtent,
-          ),
-        );
+        _scroll.jumpTo((_scroll.offset + (forward ? step : -step))
+            .clamp(position.minScrollExtent, position.maxScrollExtent));
       }
       widget.onAutoHideChrome?.call();
       return;
@@ -391,10 +369,7 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
         widget.onPreviousChapter?.call();
       }
     } else if (_scroll.hasClients) {
-      _goToPage(
-        target.clamp(0, _scroll.position.maxScrollExtent).toDouble(),
-        forward,
-      );
+      _goToPage(target.clamp(0, _scroll.position.maxScrollExtent).toDouble(), forward);
     }
     widget.onAutoHideChrome?.call();
   }
@@ -451,17 +426,12 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
                   );
                   if (_outgoingStyle == 'slide') {
                     return Transform.translate(
-                      offset: Offset(
-                        (_outgoingForward ? -1 : 1) * size.width * t,
-                        0,
-                      ),
+                      offset: Offset((_outgoingForward ? -1 : 1) * size.width * t, 0),
                       child: old,
                     );
                   }
                   return Transform(
-                    alignment: _outgoingForward
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight,
+                    alignment: _outgoingForward ? Alignment.centerLeft : Alignment.centerRight,
                     transform: Matrix4.identity()
                       ..setEntry(3, 2, 0.0012)
                       ..rotateY((_outgoingForward ? -1 : 1) * math.pi / 2 * t),
@@ -652,150 +622,142 @@ class _RichReaderSurfaceState extends State<RichReaderSurface>
                     }
                     if (event.kind == PointerDeviceKind.mouse) {
                       final position = event.localPosition;
-                      _mouseTap = Timer(
-                        kDoubleTapTimeout,
-                        () => _tapAt(position, constraints.maxWidth),
-                      );
+                      _mouseTap = Timer(kDoubleTapTimeout, () => _tapAt(position, constraints.maxWidth));
                     } else {
                       _tapAt(event.localPosition, constraints.maxWidth);
                     }
                   },
                   // A swipe turns the page; a mouse drag selects text instead, as on macOS.
                   child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    supportedDevices: const {
-                      PointerDeviceKind.touch,
-                      PointerDeviceKind.stylus,
-                      PointerDeviceKind.invertedStylus,
-                      PointerDeviceKind.trackpad,
-                    },
-                    onHorizontalDragEnd: _paginated
-                        ? (details) {
-                            final velocity = details.primaryVelocity ?? 0;
-                            if (velocity.abs() > 150) {
-                              _turn(velocity < 0);
-                            }
+                  behavior: HitTestBehavior.opaque,
+                  supportedDevices: const {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.stylus,
+                    PointerDeviceKind.invertedStylus,
+                    PointerDeviceKind.trackpad,
+                  },
+                  onHorizontalDragEnd: _paginated
+                      ? (details) {
+                          final velocity = details.primaryVelocity ?? 0;
+                          if (velocity.abs() > 150) {
+                            _turn(velocity < 0);
                           }
-                        : null,
-                    child: _withTurnOverlay(
-                      RepaintBoundary(
-                        key: _pageKey,
-                        child: Stack(
-                          children: [
-                            NotificationListener<UserScrollNotification>(
-                              // Scrolling by hand (continuous layout) suspends following.
-                              onNotification: (notification) {
-                                if (!_paginated &&
-                                    notification.direction !=
-                                        ScrollDirection.idle) {
-                                  _pairing.suspendAfterManualTurn();
-                                  _forceFollow = false;
-                                }
-                                return false;
-                              },
-                              child: SingleChildScrollView(
-                                key: const ValueKey('rich-reader-viewport'),
-                                controller: _scroll,
-                                physics: guarded
-                                    ? const NeverScrollableScrollPhysics()
-                                    : null,
-                                child: Column(
-                                  children: [
-                                    NotificationListener<
-                                      SizeChangedLayoutNotification
-                                    >(
-                                      onNotification: (_) {
-                                        _measure();
-                                        return false;
-                                      },
-                                      child: SizeChangedLayoutNotifier(
-                                        child: Padding(
-                                          key: _content,
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal:
-                                                widget.settings.readerMargin +
-                                                gutter,
-                                            vertical: _verticalPadding,
-                                          ),
-                                          child: _selectableDocument(),
-                                        ),
-                                      ),
+                        }
+                      : null,
+                  child: _withTurnOverlay(
+                    RepaintBoundary(
+                      key: _pageKey,
+                      child: Stack(
+                    children: [
+                      NotificationListener<UserScrollNotification>(
+                        // Scrolling by hand (continuous layout) suspends following.
+                        onNotification: (notification) {
+                          if (!_paginated &&
+                              notification.direction != ScrollDirection.idle) {
+                            _pairing.suspendAfterManualTurn();
+                          }
+                          return false;
+                        },
+                        child: SingleChildScrollView(
+                          key: const ValueKey('rich-reader-viewport'),
+                          controller: _scroll,
+                          physics: guarded
+                              ? const NeverScrollableScrollPhysics()
+                              : null,
+                          child: Column(
+                            children: [
+                              NotificationListener<
+                                SizeChangedLayoutNotification
+                              >(
+                                onNotification: (_) {
+                                  _measure();
+                                  return false;
+                                },
+                                child: SizeChangedLayoutNotifier(
+                                  child: Padding(
+                                    key: _content,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: widget.settings.readerMargin + gutter,
+                                      vertical: _verticalPadding,
                                     ),
-                                    if (_paginated) SizedBox(height: _height),
-                                  ],
+                                    child: _selectableDocument(),
+                                  ),
                                 ),
                               ),
-                            ),
-                            if (_paginated) ...[
-                              Positioned(
-                                left: 0,
-                                top: 0,
-                                bottom: 0,
-                                width: constraints.maxWidth * .18,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _turn(false),
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                bottom: 0,
-                                width: constraints.maxWidth * .18,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _turn(true),
-                                ),
-                              ),
+                              if (_paginated) SizedBox(height: _height),
                             ],
-                            if (widget.savedHighlights.isNotEmpty &&
-                                _geometry != null)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: CustomPaint(
-                                    painter: _SavedHighlightsPainter([
-                                      for (final h in widget.savedHighlights)
-                                        (_geometry!.boxesFor(h.range), h.color),
-                                    ], _offset),
-                                  ),
-                                ),
-                              ),
-                            if (widget.highlight != null && _geometry != null)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: CustomPaint(
-                                    painter: _ReaderHighlightPainter(
-                                      _geometry!.boxesFor(widget.highlight!),
-                                      _offset,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (top > 0)
-                              Positioned(
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                height: top,
-                                child: IgnorePointer(
-                                  child: ColoredBox(color: widget.background),
-                                ),
-                              ),
-                            if (bottom > 0)
-                              Positioned(
-                                bottom: 0,
-                                left: 0,
-                                right: 0,
-                                height: bottom,
-                                child: IgnorePointer(
-                                  child: ColoredBox(color: widget.background),
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
                       ),
-                      Size(constraints.maxWidth, _height),
+                      if (_paginated) ...[
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: constraints.maxWidth * .18,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _turn(false),
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: constraints.maxWidth * .18,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _turn(true),
+                          ),
+                        ),
+                      ],
+                      if (widget.savedHighlights.isNotEmpty && _geometry != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _SavedHighlightsPainter([
+                                for (final h in widget.savedHighlights)
+                                  (_geometry!.boxesFor(h.range), h.color),
+                              ], _offset),
+                            ),
+                          ),
+                        ),
+                      if (widget.highlight != null && _geometry != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _ReaderHighlightPainter(
+                                _geometry!.boxesFor(widget.highlight!),
+                                _offset,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (top > 0)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: top,
+                          child: IgnorePointer(
+                            child: ColoredBox(color: widget.background),
+                          ),
+                        ),
+                      if (bottom > 0)
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: bottom,
+                          child: IgnorePointer(
+                            child: ColoredBox(color: widget.background),
+                          ),
+                        ),
+                    ],
+                  ),
                     ),
+                    Size(constraints.maxWidth, _height),
+                  ),
                   ),
                 ),
               ),
