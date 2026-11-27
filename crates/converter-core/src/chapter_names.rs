@@ -1,5 +1,6 @@
 //! Book-scoped chapter name overrides and the filename cover. Source text is never edited:
 //! an override only replaces the displayed name, and resetting restores the automatic one.
+#[cfg(not(target_arch = "wasm32"))]
 use crate::cache::{atomic_write_json, read_json, CacheError};
 use crate::epub::Book;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,7 @@ impl ChapterNameOverrides {
     }
 
     /// Missing file means no overrides; a corrupt file is an error, never silently dropped.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load(path: impl AsRef<Path>) -> Result<Self, CacheError> {
         match read_json(path) {
             Err(CacheError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -70,6 +72,7 @@ impl ChapterNameOverrides {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), CacheError> {
         atomic_write_json(path, self)
     }
@@ -182,6 +185,7 @@ mod tests {
         assert!(names.is_empty());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn overrides_persist_and_a_missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
