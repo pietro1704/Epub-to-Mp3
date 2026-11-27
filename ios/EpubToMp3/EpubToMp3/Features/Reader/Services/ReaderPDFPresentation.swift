@@ -140,13 +140,16 @@ final class ReaderPDFPresentation {
         let direction: PDFDisplayDirection = mode == .paginated ? .horizontal : .vertical
         guard view.isUsingPageViewController != (mode == .paginated) || view.displayDirection != direction
             || (mode == .scrolling && view.displayMode != targetMode) else { return }
+        let wasPaginated = view.isUsingPageViewController
         view.usePageViewController(false, withViewOptions: nil)
         view.displayMode = targetMode
         view.displayDirection = direction
         view.usePageViewController(mode == .paginated, withViewOptions: nil)
         view.autoScales = true
         view.layoutIfNeeded()
-        if mode == .paginated, let sourcePage { view.go(to: sourcePage) }
+        // A paginated page is shown whole, and restoring its destination in the
+        // continuous layout can land on the next page: return to the page itself.
+        if mode == .paginated || wasPaginated, let sourcePage { view.go(to: sourcePage) }
         else if let destination { view.go(to: destination) }
         publishPosition()
     }
