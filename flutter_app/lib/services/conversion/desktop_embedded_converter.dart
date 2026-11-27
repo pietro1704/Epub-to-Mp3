@@ -28,6 +28,7 @@ part 'desktop_conversion_worker.dart';
 part '../playback/desktop_platform_speech.dart';
 part 'desktop_library_metadata.dart';
 part 'desktop_chapter_names.dart';
+part 'desktop_filename_cover.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
 final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
@@ -132,7 +133,9 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
 
   @override
   Future<NarrationPlan> bookNarrationPlan(NarrationPlanRequest request) async =>
-      NarrationPlan.parse(_languageModels.narrationPlanJson(jsonEncode(request.toJson())));
+      NarrationPlan.parse(
+        _languageModels.narrationPlanJson(jsonEncode(request.toJson())),
+      );
 
   @override
   Future<BookLanguageAnalysis> bookLanguage(String path) async {

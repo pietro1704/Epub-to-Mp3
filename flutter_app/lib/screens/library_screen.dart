@@ -1,4 +1,6 @@
+import '../services/conversion/filename_cover.dart';
 import '../services/cover_decoder.dart';
+
 import 'dart:async';
 import 'dart:io';
 
