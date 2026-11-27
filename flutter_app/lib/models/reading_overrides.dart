@@ -81,7 +81,7 @@ class ReadingOverrides {
     return ReadingOverrides(
       theme: named('theme', ReaderTheme.values),
       fontFamily: named('fontFamily', ReaderFontFamily.values),
-      fontSize: (json['fontSize'] as num?)?.toInt().clamp(0, 4),
+      fontSize: (json['fontSize'] as num?)?.toInt().clamp(0, MirrorAppSettings.maxReaderFontStep),
       layout: named('layout', ReaderLayout.values),
       lineSpacing: (json['lineSpacing'] as num?)?.toDouble().clamp(0, 16).toDouble(),
       margin: (json['margin'] as num?)?.toDouble().clamp(8, 80).toDouble(),

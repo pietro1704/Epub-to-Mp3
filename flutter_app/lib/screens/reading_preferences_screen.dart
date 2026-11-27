@@ -179,7 +179,7 @@ class _ReadingPreferencesScreenState
               ),
               IconButton(
                 icon: const Icon(Icons.text_increase),
-                onPressed: settings.readerFontSize < 4
+                onPressed: settings.readerFontSize < AppSettings.maxReaderFontStep
                     ? () => _edit(
                         forBook: (o) =>
                             o.copyWith(fontSize: settings.readerFontSize + 1),
