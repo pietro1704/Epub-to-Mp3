@@ -272,6 +272,17 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_equal "release-apple-${{ matrix.arch }}", package.dig("with", "name")
   end
 
+  # The v0.14.0 zip claimed the App Group, so its library suite moved to the group
+  # container and the books saved by builds without that entitlement disappeared.
+  # macOS embeds neither the widget nor the share extension, so it needs no group.
+  def test_macos_release_keeps_the_library_in_the_app_container
+    source = File.join(ROOT, "ios/EpubToMp3/EpubToMp3/Resources/EpubToMp3.entitlements")
+    granted = File.read(source).gsub(/<!--.*?-->/m, "").scan(%r{<key>([^<]+)</key>}).flatten
+
+    refute_includes granted, "com.apple.security.application-groups"
+    assert_includes granted, "com.apple.security.app-sandbox"
+  end
+
   def run_macos_release_step(step, directory)
     entitlements = "Resources/EpubToMp3.entitlements"
     source = File.join(ROOT, "ios/EpubToMp3/EpubToMp3", entitlements)
