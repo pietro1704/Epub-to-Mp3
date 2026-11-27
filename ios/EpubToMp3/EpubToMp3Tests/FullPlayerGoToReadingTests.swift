@@ -15,7 +15,8 @@ final class FullPlayerGoToReadingTests: XCTestCase {
         let book = BookEntity(id: "go-reading-book", title: "Book", bookmark: Data([1]),
                               displayFilename: "book.epub", addedAt: Date())
         defaults.set(try JSONEncoder().encode([book]), forKey: "library.books.v1")
-        UserDefaults.standard.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        // The player reads its location from the resume store's defaults, not from `.standard`.
+        defaults.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
         player.setSnapshot(JobSnapshot(
             jobId: "job", state: "running", bookTitle: "Book", bookAuthor: nil, coverUrl: nil, coverMimeType: nil,
             engine: nil, voice: nil, language: nil, progressPercent: nil, chaptersTotal: 1, chaptersCompleted: nil,
@@ -29,8 +30,6 @@ final class FullPlayerGoToReadingTests: XCTestCase {
 
     func testButtonAppearsWhenDivergedHidesWhenPairedAndOpensTheNarratedSentence() throws {
         let suite = "go-to-reading-\(UUID().uuidString)"
-        let previous = UserDefaults.standard.object(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        defer { UserDefaults.standard.set(previous, forKey: AudioPlayer.currentBookIDDefaultsKey) }
         let (controller, player, defaults) = try makeController(suite: suite)
         defer { player.stop(); defaults.removePersistentDomain(forName: suite) }
         var opened: [String] = []
@@ -39,6 +38,10 @@ final class FullPlayerGoToReadingTests: XCTestCase {
         let goTo = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "fullPlayer.goToReading" })
         let rate = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "fullPlayer.playbackRateButton" })
 
+        // Transport state is committed on a later main-queue turn.
+        let committed = expectation(description: "transport state committed")
+        DispatchQueue.main.async { committed.fulfill() }
+        wait(for: [committed], timeout: 2)
         controller.refresh(library: LibraryStore(defaults: defaults, defaultsKey: "library.books.v1"))
         XCTAssertFalse(goTo.isHidden, "Diverged (default) reader: the button is offered")
         XCTAssertEqual(goTo.accessibilityLabel, L10n.string("player.goToReading"))

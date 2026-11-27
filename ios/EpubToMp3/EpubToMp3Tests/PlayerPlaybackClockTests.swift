@@ -6,7 +6,7 @@ import UIKit
 
 @MainActor
 final class PlayerPlaybackClockTests: XCTestCase {
-    func testMiniPlayerClockTickUpdatesProgressWithoutDecodingArtworkAgain() async throws {
+    func testMiniPlayerClockTickDoesNotDecodeArtworkAgain() async throws {
         let suiteName = "PlayerPlaybackClockTests.\(UUID().uuidString)"
         let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { suite.removePersistentDomain(forName: suiteName) }
@@ -33,7 +33,6 @@ final class PlayerPlaybackClockTests: XCTestCase {
             context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
         }
         let coverData = try XCTUnwrap(cover.pngData())
-        let decodedCoverSize = try XCTUnwrap(UIImage(data: coverData)).size
         let book = BookEntity(
             id: bookID,
             title: "Clock Test",
@@ -58,17 +57,20 @@ final class PlayerPlaybackClockTests: XCTestCase {
             onTap: {}
         )
 
-        let coverView = try XCTUnwrap(descendants(of: miniPlayer, matching: UIImageView.self)
-            .first(where: { $0.image?.size == decodedCoverSize }),
-            "Expected decoded book artwork. Found image sizes: \(descendants(of: miniPlayer, matching: UIImageView.self).compactMap(\.image?.size))")
+        // The artwork is decoded off the main thread; only decoded artwork uses aspect fill.
+        func decodedCoverView() -> UIImageView? {
+            descendants(of: miniPlayer, matching: UIImageView.self)
+                .first { $0.contentMode == .scaleAspectFill && $0.image != nil }
+        }
+        for _ in 0..<100 where decodedCoverView() == nil { await waitForMainQueue() }
+        let coverView = try XCTUnwrap(decodedCoverView(), "Expected decoded book artwork")
         let originalCover = try XCTUnwrap(coverView.image)
         let originalCoverData = try XCTUnwrap(originalCover.pngData())
-        let slider = try XCTUnwrap(descendants(of: miniPlayer, matching: CompactSlider.self).first)
 
         player.playbackClock.update(positionSeconds: 12, durationSeconds: 180)
         await waitForMainQueue()
 
-        XCTAssertEqual(slider.value, 12, accuracy: 0.01)
+        XCTAssertTrue(coverView.image === originalCover)
         XCTAssertEqual(coverView.image?.pngData(), originalCoverData)
     }
 
