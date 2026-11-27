@@ -60,4 +60,14 @@ class IosSimulatorTestListTest < Minitest::Test
       refute status.success?, "list #{contents.inspect} must fail the step"
     end
   end
+
+  # `mise run` exports CARGO_HOME/RUSTUP_HOME to the task. A nested `mise exec` then treats the
+  # homes as explicit, misses the runner's external rustup and reinstalls Rust over the network.
+  # Only the explicit `mise install` step may install tools (CI-IOS-MISE-RUST-REINSTALL).
+  def test_only_the_explicit_install_step_may_install_tools
+    job = YAML.load_file(File.join(ROOT, '.github/workflows/ios-simulator-tests.yml')).fetch('jobs').fetch('ios-simulator')
+    assert_equal 'false', job.fetch('env')['MISE_EXEC_AUTO_INSTALL']
+    assert_equal 'false', job.fetch('env')['MISE_TASK_RUN_AUTO_INSTALL']
+    assert(job.fetch('steps').any? { |step| step['run'] == 'mise install' })
+  end
 end
