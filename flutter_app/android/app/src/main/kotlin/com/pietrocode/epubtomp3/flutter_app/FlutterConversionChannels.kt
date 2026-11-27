@@ -161,6 +161,27 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                         }
                     }
                 }
+                "exportMp3" -> {
+                    val request = call.argument<String>("request")
+                    if (!MainActivity.converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else if (request.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "request is required", null)
+                    } else {
+                        // Joining a whole book is slow: keep it off the converter thread and the UI.
+                        runQuery(result) {
+                            try {
+                                val native = nativeExportMp3(request)
+                                runOnUiThread {
+                                    if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                    else result.success(native)
+                                }
+                            } catch (error: Throwable) {
+                                runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                            }
+                        }
+                    }
+                }
                 "convert" -> {
                     if (!MainActivity.converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
