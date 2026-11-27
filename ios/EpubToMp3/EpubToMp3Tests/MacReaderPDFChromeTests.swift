@@ -7,6 +7,15 @@ import XCTest
 @MainActor
 final class MacReaderPDFChromeTests: XCTestCase {
     func testFirstHeadingClearsChromeAndTogglesPreservePDFOffset() async throws {
+        try await assertFirstHeadingClearsChrome(hostedInWindow: false)
+    }
+
+    /// The app always shows the reader in a window, where PDFKit lays out for a real screen.
+    func testFirstHeadingClearsChromeWhenTheReaderIsInAWindow() async throws {
+        try await assertFirstHeadingClearsChrome(hostedInWindow: true)
+    }
+
+    private func assertFirstHeadingClearsChrome(hostedInWindow: Bool) async throws {
         let harness = try NativeReaderTestHarness(chapters: [])
         harness.installTeardown(in: self)
         let heading = "Opening line near the top edge"
@@ -26,9 +35,21 @@ final class MacReaderPDFChromeTests: XCTestCase {
 
         let composition = harness.composition
         let root = harness.controller.view
+        var window: NSWindow?
+        if hostedInWindow {
+            let host = NSWindow(contentRect: root.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            host.isReleasedWhenClosed = false
+            host.contentViewController = harness.controller
+            host.setContentSize(root.frame.size)
+            host.makeKeyAndOrderFront(nil)
+            window = host
+        }
+        defer { window?.orderOut(nil); window?.contentViewController = nil; window?.close() }
         root.layoutSubtreeIfNeeded()
         let normalized = await harness.text.showPDF(source)
         XCTAssertEqual(normalized, false)
+        // PDFKit keeps laying out after the document is assigned.
+        if hostedInWindow { try await Task.sleep(nanoseconds: 700_000_000) }
         let pdf = try XCTUnwrap(composition.contentScrollView.documentView as? PDFView)
         pdf.layoutDocumentView()
         let page = try XCTUnwrap(pdf.document?.page(at: 0))
