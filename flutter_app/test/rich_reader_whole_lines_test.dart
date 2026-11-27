@@ -59,9 +59,9 @@ void main() {
     417.0,
     590.0,
   ]) {
-    const lineHeight = 1.6;
+    for (final lineHeight in [1.0, 1.15, 1.6])
     testWidgets(
-      'every page shows whole lines only (surface height $surfaceHeight)',
+      'every page shows whole lines only, descenders included (surface height $surfaceHeight, line height $lineHeight)',
       (tester) async {
         SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
         final settings = MirrorAppSettings(
@@ -70,7 +70,7 @@ void main() {
         final paragraphs = List.generate(
           30,
           (i) =>
-              'Esta é a frase número ${i + 1} do capítulo em HTML, com texto suficiente para quebrar em várias linhas.',
+              'Esta é a frase número ${i + 1} do capítulo em HTML, com texto suficiente para quebrar em várias linhas: gjpqy.',
         );
         final boundary = GlobalKey();
         await tester.pumpWidget(
