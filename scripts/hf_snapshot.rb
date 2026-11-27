@@ -7,7 +7,7 @@ require 'digest'
 
 module HfSnapshot
   FILES = %w[Dockerfile .dockerignore README.md LICENSE Cargo.toml Cargo.lock].freeze
-  TREES = %w[crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys].freeze
+  TREES = %w[crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys native/vendor/pdf-extract].freeze
 
   LAYOUT_FILE = '.hf-runtime'.freeze
   RAILS_ROOT = 'ruby_app/rails_gateway'.freeze
