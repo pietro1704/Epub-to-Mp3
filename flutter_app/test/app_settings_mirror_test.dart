@@ -15,13 +15,16 @@ void main() {
   }
 
   group('MirrorAppSettings', () {
-    test('font size clamps to 0..6 (steps 5 and 6 are the larger sizes)', () async {
-      final s = await make();
-      await s.setReaderFontSize(99);
-      expect(s.readerFontSize, 6);
-      await s.setReaderFontSize(-3);
-      expect(s.readerFontSize, 0);
-    });
+    test(
+      'font size clamps to 0..8 (steps 5 to 8 are the larger sizes)',
+      () async {
+        final s = await make();
+        await s.setReaderFontSize(99);
+        expect(s.readerFontSize, 8);
+        await s.setReaderFontSize(-3);
+        expect(s.readerFontSize, 0);
+      },
+    );
 
     test('readerPointSize maps the steps', () async {
       final s = await make();
@@ -32,9 +35,13 @@ void main() {
       await s.setReaderFontSize(4);
       expect(s.readerPointSize, 28);
       await s.setReaderFontSize(5);
-      expect(s.readerPointSize, 34);
+      expect(s.readerPointSize, 32);
       await s.setReaderFontSize(6);
+      expect(s.readerPointSize, 36);
+      await s.setReaderFontSize(7);
       expect(s.readerPointSize, 42);
+      await s.setReaderFontSize(8);
+      expect(s.readerPointSize, 48);
     });
 
     test('readerCustomColors falls back when stored string is bad', () async {
