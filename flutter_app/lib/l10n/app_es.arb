@@ -333,5 +333,9 @@
   "silenceTrimStrong": "Fuerte",
   "chapterRename": "Renombrar capítulo",
   "chapterRenameReset": "Usar el nombre automático",
-  "chapterRenameSave": "Guardar"
+  "chapterRenameSave": "Guardar",
+  "resumeChoiceTitle": "¿Continuar desde dónde?",
+  "resumeChoiceMessage": "Estás en el capítulo {reader}. El audio se detuvo en el capítulo {audio} ({time}).",
+  "resumeChoiceFromHere": "Escuchar desde aquí (capítulo {reader})",
+  "resumeChoiceBackToAudio": "Volver al audio (capítulo {audio}, {time})"
 }

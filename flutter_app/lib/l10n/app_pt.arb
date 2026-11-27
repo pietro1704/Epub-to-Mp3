@@ -333,5 +333,9 @@
   "silenceTrimStrong": "Forte",
   "chapterRename": "Renomear capítulo",
   "chapterRenameReset": "Usar o nome automático",
-  "chapterRenameSave": "Salvar"
+  "chapterRenameSave": "Salvar",
+  "resumeChoiceTitle": "Continuar de onde?",
+  "resumeChoiceMessage": "Você está no cap. {reader}. O áudio parou no cap. {audio} ({time}).",
+  "resumeChoiceFromHere": "Ouvir daqui (cap. {reader})",
+  "resumeChoiceBackToAudio": "Voltar ao áudio (cap. {audio}, {time})"
 }
