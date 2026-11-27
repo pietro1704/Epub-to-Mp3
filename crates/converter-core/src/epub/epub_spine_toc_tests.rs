@@ -164,3 +164,50 @@ fn image_divider_with_a_toc_entry_stays_a_chapter_in_reader_mode() {
     let names: Vec<&str> = b.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Parte", "Um"], "{names:?}");
 }
+
+// Parse audit #2 (a): an untitled file before the first TOC entry was named "Chapter N" after
+// its spine index.
+#[test]
+fn untitled_front_file_is_not_named_after_its_spine_index() {
+    let front = "<p>Dedicatoria do autor para a familia.</p>";
+    let one = format!("<h1>Um</h1><p>{BODY}</p>");
+    let b = parsed(book(
+        &[("front", front), ("a", &one)],
+        &[("Um", "a.xhtml")],
+        &[],
+    ));
+    let first = &b.chapters[0].name;
+    assert!(!first.starts_with("Chapter "), "{first:?}");
+    assert!(first.starts_with("Dedicatoria"), "{first:?}");
+}
+
+// Parse audit #2 (b): numbered body files outside the TOC (part0008, part0009...) are parts of
+// the TOC chapter before them, not new top-level chapters.
+#[test]
+fn numbered_body_files_outside_the_toc_continue_the_toc_chapter() {
+    let one = format!("<h1>Obra</h1><p>{BODY}</p>");
+    let b = parsed(book(
+        &[
+            ("part0001", &one),
+            ("part0002", "<h2>Capitulo I</h2><p>Mais texto do livro.</p>"),
+            ("part0003", "<h2>Capitulo II</h2><p>Mais texto do livro.</p>"),
+            ("part0100", "<h2>Capitulo C</h2><p>Mais texto do livro.</p>"),
+        ],
+        &[("Obra", "part0001.xhtml")],
+        &[],
+    ));
+    assert_eq!(b.chapters.len(), 1, "{:?}", b.chapters.iter().map(|c| &c.name).collect::<Vec<_>>());
+}
+
+// Parse audit #2 (b): a separate untoc'd file never outranks the TOC entry above it.
+#[test]
+fn separate_untoc_file_is_not_shallower_than_the_toc_entry_above() {
+    let one = format!("<h1>Um</h1><p>{BODY}</p>");
+    let promo = format!("<h1>Outro Livro</h1><p>{BODY}</p>");
+    let b = parsed(book(
+        &[("a", &one), ("promo", &promo)],
+        &[("Um", "a.xhtml")],
+        &[],
+    ));
+    assert!(b.chapters[1].level >= b.chapters[0].level, "{:?}", b.chapters.iter().map(|c| c.level).collect::<Vec<_>>());
+}
