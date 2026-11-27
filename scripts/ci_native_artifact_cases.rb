@@ -27,6 +27,15 @@ class CiRuntimeScopeTest
     refute_match(/Find-AppText 'um mapa antigo, dobrado'/, script)
   end
 
+  def test_windows_journey_clicks_a_visible_toolbar_contents_button_before_opening_the_more_menu
+    script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    lookup = script[/Wait-ForReaderUi 'the reader Table of contents tool or More menu' \{.*?\n  \}/m]
+    refute_nil lookup, 'the adaptive toolbar shows Contents directly on a wide window (#1733)'
+    assert_operator lookup.index("Find-AppText '^Table of contents$'"), :<, lookup.index("Find-AppText '^Show menu$'"),
+                    'the toolbar button wins; the More menu is only the fallback for a narrow window'
+    refute_match(/\$more\s*=\s*Wait-ForReaderUi/, script)
+  end
+
   def test_windows_journey_finds_and_places_controls_from_the_app_semantics_trace_before_the_native_tree
     script = File.read(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
     assert_match(/function Find-TraceNode/, script)

@@ -601,10 +601,17 @@ try {
     Start-Sleep -Milliseconds 800
   }
 
-  # The reader chrome shows the recent tool beside More; Contents lives in the menu.
-  $more =Wait-ForReaderUi 'the reader More menu' { Find-AppText '^Show menu$' }
-  Click-FlutterElement $more
-  $contents = Wait-ForReaderUi 'the reader Table of contents menu item' { Find-AppText '^Table of contents$' }
+  # The adaptive toolbar (#1733) shows every tool on a wide window, Contents included; on a narrow
+  # one Contents lives in the More menu. Opening More over a visible toolbar button would only let
+  # its scrim swallow the click, so click the toolbar button when it is there.
+  $contents = Wait-ForReaderUi 'the reader Table of contents tool or More menu' {
+    $direct = Find-AppText '^Table of contents$'
+    if ($null -ne $direct) { $direct } else { Find-AppText '^Show menu$' }
+  }
+  if ($contents.Name -match '^Show menu$') {
+    Click-FlutterElement $contents
+    $contents = Wait-ForReaderUi 'the reader Table of contents menu item' { Find-AppText '^Table of contents$' }
+  }
   Click-FlutterElement $contents
   $secondEntry = Wait-ForReaderUi 'the second chapter in the table of contents' { Find-AppText '^O mapa antigo$' }
   Click-FlutterElement $secondEntry
