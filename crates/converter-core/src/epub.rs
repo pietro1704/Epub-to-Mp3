@@ -220,10 +220,12 @@ fn parse_epub_document<R: Read + Seek>(
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
         let html = read_document(&mut archive, &path, &mut budget, reader_mode)?;
-        if markup_language.is_none() {
+        let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
+        // A generated title page often carries the tool's language, not the book's.
+        let title_page = href.to_ascii_lowercase().contains("titlepage");
+        if markup_language.is_none() && !title_page && !text.trim().is_empty() {
             markup_language = crate::language::markup_language(&html);
         }
-        let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
         if text.trim().is_empty() && !reader_mode {
             continue;
         }
@@ -268,7 +270,11 @@ fn parse_epub_document<R: Read + Seek>(
     Ok(Book {
         title,
         author,
-        language: markup_language.or(language),
+        // The package declaration wins; markup only fills a missing or invalid one.
+        language: language
+            .map(|value| value.trim().replace('_', "-"))
+            .filter(|value| crate::language::valid_tag(value) && !value.eq_ignore_ascii_case("und"))
+            .or(markup_language),
         chapters,
         toc,
         cover,
