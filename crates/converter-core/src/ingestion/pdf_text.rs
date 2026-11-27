@@ -114,7 +114,7 @@ impl PdfTextIngestion {
         };
         for (position, (start, title, level)) in starts.iter().enumerate() {
             let end = starts.get(position + 1).map_or(text.len(), |next| next.0);
-            let content = text[*start..end].join("\n\n");
+            let content = join_pages(&text[*start..end]);
             let (content, paragraph_ends) = reflow_paragraphs(&content);
             chapters.push(Chapter {
                 index: (position + 1).to_string(),
@@ -409,6 +409,21 @@ fn strip_running_lines(pages: &mut [String]) {
             .collect();
         *page = kept.join("\n").trim().to_string();
     }
+}
+
+/// A page break is a paragraph break unless it visibly cuts a sentence: the page stops on a
+/// letter, comma or hyphen and the next one opens in lowercase. Such a cut is a soft wrap.
+fn join_pages(pages: &[String]) -> String {
+    let mut out = String::new();
+    for (i, page) in pages.iter().enumerate() {
+        if i > 0 {
+            let cut = out.ends_with(|c: char| c.is_alphabetic() || c == ',' || c == '-')
+                && page.starts_with(char::is_lowercase);
+            out.push_str(if cut { "\n" } else { "\n\n" });
+        }
+        out.push_str(page);
+    }
+    out
 }
 
 /// `pdf_extract` emits one `\n` per visual line. A lone `\n` is a soft wrap (joined with a

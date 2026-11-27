@@ -682,3 +682,44 @@ fn pdf_outline_reaching_a_tenth_of_the_document_is_kept() {
     let names: Vec<&str> = book.chapters.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["First section", "Second section"]);
 }
+
+#[test]
+fn pdf_sentences_cut_by_a_page_break_stay_in_one_paragraph() {
+    // Outline sections cover pages 1-2 and 3-4, as in the metadata test above.
+    let session = open_bytes(&fixture::pdf(
+        true,
+        &[
+            "The river kept rising while the",
+            "village slept through the night.",
+            "Nobody expected such a libera-",
+            "tion from the old routine.",
+        ],
+    ))
+    .unwrap();
+    let chapters = &session.metadata().chapters;
+    assert_eq!(
+        chapters[0].text,
+        "The river kept rising while the village slept through the night."
+    );
+    assert_eq!(
+        chapters[1].text,
+        "Nobody expected such a liberation from the old routine."
+    );
+}
+
+#[test]
+fn pdf_page_break_after_a_finished_sentence_stays_a_paragraph_break() {
+    let session = open_bytes(&fixture::pdf(
+        true,
+        &[
+            "The night ended.",
+            "morning came.",
+            "A heading",
+            "Body text.",
+        ],
+    ))
+    .unwrap();
+    let chapters = &session.metadata().chapters;
+    assert_eq!(chapters[0].text, "The night ended.\n\nmorning came.");
+    assert_eq!(chapters[1].text, "A heading\n\nBody text.");
+}
