@@ -371,6 +371,10 @@ final class ReaderListeningSession {
                 if !hasDeliveredListeningChapter, !showsCurrentBook { player.pause() }
                 player.finishStreaming(snapshot: snapshot)
                 if showsCurrentBook, showsPlayerOnCompletion { playerPresentation.showFullPlayer() }
+            } catch let redirect as ReaderListeningStartRedirect {
+                guard ownsInstalledJob(jobID) else { return }
+                // The requested page offset belongs to the skipped page.
+                restartListening?(redirect.chapterIndex, 0, nil)
             } catch {
                 guard listeningJobID == jobID else { return }
                 guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
