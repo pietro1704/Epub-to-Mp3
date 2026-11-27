@@ -28,7 +28,7 @@ struct ReaderSettingsRows {
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.fontSize")
-            content.secondaryText = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
+            content.secondaryText = L10n.string("settings.fontStep", settings.readerFontSize + 1, ReaderFontScale.maximumStep + 1)
             content.image = UIImage(systemName: "textformat.size")
         case 1:
             content.text = L10n.string("settings.font")

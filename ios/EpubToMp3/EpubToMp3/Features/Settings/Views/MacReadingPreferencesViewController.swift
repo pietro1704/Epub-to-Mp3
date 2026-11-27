@@ -38,8 +38,8 @@ final class MacReadingPreferencesViewController: NSViewController {
 
     private func configureControls() {
         fontSizeSlider.minValue = 0
-        fontSizeSlider.maxValue = 4
-        fontSizeSlider.numberOfTickMarks = 5
+        fontSizeSlider.maxValue = Double(ReaderFontScale.maximumStep)
+        fontSizeSlider.numberOfTickMarks = ReaderFontScale.maximumStep + 1
         fontSizeSlider.allowsTickMarkValuesOnly = true
         fontSizeSlider.isContinuous = true
         fontSizeSlider.target = self

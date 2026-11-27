@@ -49,7 +49,7 @@ struct ReaderLayoutPreferences {
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
         if let i = args.firstIndex(of: "-uiTestReaderFontSize"), i + 1 < args.count,
            let forcedSize = Int(args[i + 1]) {
-            readerFontSize = max(0, min(4, forcedSize))
+            readerFontSize = max(0, min(ReaderFontScale.maximumStep, forcedSize))
         }
         if let i = args.firstIndex(of: "-uiTestReaderLayout"), i + 1 < args.count,
            let forced = ReaderLayout(rawValue: args[i + 1]) {

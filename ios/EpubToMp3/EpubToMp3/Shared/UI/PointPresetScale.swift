@@ -1,7 +1,8 @@
 import Foundation
 
 enum PointPresetScale {
-    static let font = [14.0, 17, 20, 24, 28]
+    /// Persisted by index: only append new sizes, so stored choices keep their size.
+    static let font = [14.0, 17, 20, 24, 28, 32, 36, 42, 48]
     static let lineSpacing = Array(stride(from: 0.0, through: 16, by: 2))
     static let margin = Array(stride(from: 16.0, through: 80, by: 4))
     static let macMargin = [16.0, 24, 32, 48, 64]

@@ -197,7 +197,7 @@ final class AppSettings: ObservableObject {
     /// Clamped in `didSet` so the rest of the app can trust 0…4.
     @Published var readerFontSize: Int = 3 {
         didSet {
-            let clamped = max(0, min(4, readerFontSize))
+            let clamped = max(0, min(ReaderFontScale.maximumStep, readerFontSize))
             if clamped != readerFontSize {
                 readerFontSize = clamped
                 return  // recursive set will write defaults

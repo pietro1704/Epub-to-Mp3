@@ -63,7 +63,7 @@ final class NativeSettingsProjectionTests: XCTestCase {
                 "-uiTestReaderLayout", "scrolling", "-uiTestReaderFontSize", "99",
             ])
             XCTAssertEqual(forced.readerLayout, .scrolling)
-            XCTAssertEqual(forced.readerFontSize, 4)
+            XCTAssertEqual(forced.readerFontSize, ReaderFontScale.maximumStep, "Out-of-range forced sizes clamp to the largest step.")
             XCTAssertFalse(defaults.bool(forKey: "readerLayout.userSet.v1"))
             XCTAssertEqual(defaults.string(forKey: "readerLayout"), "scrolling")
         }
