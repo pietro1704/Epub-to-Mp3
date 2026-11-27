@@ -115,6 +115,7 @@ final class RustConversionCoordinator {
             throw error
         }
 
+        let events = ConversionEventDelivery()
         let activity = ConversionLiveActivitySession(jobID: jobID, isManualConversion: playbackControl == nil)
         do {
             try Task.checkCancellation()
@@ -149,7 +150,7 @@ final class RustConversionCoordinator {
                                     guard let event = callbacks.progress(data) else {
                                         return
                                     }
-                                    Task { @MainActor in
+                                    events.post {
                                         guard !effectiveControl.isCancellationRequested else { return }
                                         if let recoveryBookID {
                                             try? await recoveryStore.progress(
@@ -165,7 +166,7 @@ final class RustConversionCoordinator {
                                     guard let event = callbacks.chapter(data) else {
                                         return
                                     }
-                                    Task { @MainActor in
+                                    events.post {
                                         guard !effectiveControl.isCancellationRequested else { return }
                                         if let recoveryBookID {
                                             try? await recoveryStore.progress(
@@ -190,6 +191,8 @@ final class RustConversionCoordinator {
                 effectiveControl.cancel()
                 Task { await activity.setPhase(.cancelling) }
             })
+            // Callers must have seen every progress and chapter event once convert() returns.
+            await events.drain()
             try Task.checkCancellation()
             let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
             let finalSnapshot = try result.snapshot()
@@ -204,6 +207,7 @@ final class RustConversionCoordinator {
             await outputStore.finish(lease)
             return result
         } catch {
+            await events.drain()
             await activity.setPhase(error is CancellationError || Task.isCancelled || effectiveControl.isCancellationRequested ? .cancelled : .failed)
             if let recoveryBookID {
                 try? await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: false)
