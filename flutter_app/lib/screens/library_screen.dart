@@ -20,12 +20,33 @@ import '../services/storage/library_store.dart';
 import '../state/providers.dart';
 import '../views/tag_editor_sheet.dart';
 import '../services/playback/playback_recency_recorder.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'library_columns.dart';
 import 'book_language_sheet.dart';
+import '../features/library/library_book_facts.dart';
 
 part 'library_book_tile.dart';
 part 'library_filter_controls.dart';
+
+/// Card facts for one book, read from data the app already keeps (never converts or parses).
+final libraryBookFactsProvider =
+    FutureProvider.family<LibraryBookFacts, BookEntity>((ref, book) async {
+      final fulltext = await ref
+          .watch(localFulltextCacheProvider)
+          .read(book.id);
+      final history = await ref
+          .watch(localConversionJobStoreProvider)
+          .loadHistory();
+      final job = history.jobs.where((j) => j.bookId == book.id).firstOrNull;
+      return LibraryBookFacts.of(
+        book,
+        fulltext: fulltext,
+        job: job,
+        resume: ref.watch(resumeStoreProvider).loadBookPosition(book.id),
+      );
+    });
 
 final libraryStoreProvider = ChangeNotifierProvider<LibraryStore>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
@@ -255,8 +276,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 final corrections = ref.read(bookLanguageCorrectionsProvider);
-                final choice = await showBookLanguageSheet(this.context, ref, book);
-                if (choice != null) await corrections.set(choice, bookId: book.id);
+                final choice = await showBookLanguageSheet(
+                  this.context,
+                  ref,
+                  book,
+                );
+                if (choice != null) {
+                  await corrections.set(choice, bookId: book.id);
+                }
               },
             ),
             ListTile(
@@ -314,7 +341,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               unawaited(
                 ref
                     .read(bookDerivedDataRemoverProvider)
-                    .remove(book.id, player: ref.read(globalAudioPlayerProvider)),
+                    .remove(
+                      book.id,
+                      player: ref.read(globalAudioPlayerProvider),
+                    ),
               );
               Navigator.pop(context);
             },

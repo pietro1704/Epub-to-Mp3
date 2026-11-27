@@ -316,5 +316,13 @@
   "readerHighlight": "Marcar trecho",
   "readerAddNote": "Adicionar nota",
   "readerRemoveHighlight": "Remover marcação",
-  "readerPassageLanguage": "Idioma do trecho"
+  "readerPassageLanguage": "Idioma do trecho",
+  "libraryMetaProgress": "{percent}% · cap. {current} de {total}",
+  "libraryMetaAudioNone": "Não convertido",
+  "libraryMetaAudioPartial": "Áudio {done} de {total}",
+  "libraryMetaAudioComplete": "Áudio completo",
+  "libraryMetaPages": "{count, plural, =1{1 página} other{{count} páginas}}",
+  "libraryMetaChapters": "{count, plural, =1{1 capítulo} other{{count} capítulos}}",
+  "libraryMetaAdded": "Adicionado {date}",
+  "libraryMetaLastRead": "Lido {date}"
 }

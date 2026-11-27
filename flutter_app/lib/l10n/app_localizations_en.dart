@@ -939,4 +939,52 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerPassageLanguage => 'Passage language';
+
+  @override
+  String libraryMetaProgress(int percent, int current, int total) {
+    return '$percent% · ch. $current of $total';
+  }
+
+  @override
+  String get libraryMetaAudioNone => 'Not converted';
+
+  @override
+  String libraryMetaAudioPartial(int done, int total) {
+    return 'Audio $done of $total';
+  }
+
+  @override
+  String get libraryMetaAudioComplete => 'Audio complete';
+
+  @override
+  String libraryMetaPages(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pages',
+      one: '1 page',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String libraryMetaChapters(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chapters',
+      one: '1 chapter',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String libraryMetaAdded(String date) {
+    return 'Added $date';
+  }
+
+  @override
+  String libraryMetaLastRead(String date) {
+    return 'Read $date';
+  }
 }
