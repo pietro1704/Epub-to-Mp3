@@ -6,19 +6,32 @@ import 'package:flutter_test/flutter_test.dart';
 // including a title page the nav leaves out, and lost the nesting. Mirrors the 16e
 // ReaderTocFlattener: nav rows indented by level, chapters only without a nav.
 void main() {
-  Map<String, dynamic> chapter(int index, String name) => {'index': index, 'name': name, 'text': 'Body.'};
+  Map<String, dynamic> chapter(int index, String name) => {
+    'index': index,
+    'name': name,
+    'text': 'Body.',
+  };
 
   test('the book nav becomes indented rows pointing at 0-based chapters', () {
     final fulltext = EbookFulltext.fromJson({
       'jobId': 'job',
-      'chapters': [chapter(1, 'Test Book'), chapter(2, 'Part One'), chapter(3, 'Chapter Two')],
+      'chapters': [
+        chapter(1, 'Test Book'),
+        chapter(2, 'Part One'),
+        chapter(3, 'Chapter Two'),
+      ],
       'toc': [
         {
           'title': 'Part One',
           'level': 1,
           'chapterIndex': 2,
           'children': [
-            {'title': 'Chapter Two', 'level': 2, 'chapterIndex': 3, 'children': []},
+            {
+              'title': 'Chapter Two',
+              'level': 2,
+              'chapterIndex': 3,
+              'children': [],
+            },
             {'title': 'Lost', 'level': 2, 'chapterIndex': null, 'children': []},
           ],
         },
@@ -48,14 +61,63 @@ void main() {
     final fulltext = EbookFulltext.fromJson({
       'jobId': 'job',
       'chapters': [
-        {...chapter(1, 'One'), 'anchors': {'mid': 23}},
+        {
+          ...chapter(1, 'One'),
+          'anchors': {'mid': 23},
+        },
       ],
       'toc': [
         {'title': 'One', 'level': 1, 'chapterIndex': 1, 'children': []},
-        {'title': 'Middle', 'level': 1, 'chapterIndex': 1, 'fragment': 'mid', 'children': []},
-        {'title': 'Gone', 'level': 1, 'chapterIndex': 1, 'fragment': 'nope', 'children': []},
+        {
+          'title': 'Middle',
+          'level': 1,
+          'chapterIndex': 1,
+          'fragment': 'mid',
+          'children': [],
+        },
+        {
+          'title': 'Gone',
+          'level': 1,
+          'chapterIndex': 1,
+          'fragment': 'nope',
+          'children': [],
+        },
       ],
     });
-    expect(readerTocRows(fulltext).map((row) => row.anchorOffset), [null, 23, null]);
+    expect(readerTocRows(fulltext).map((row) => row.anchorOffset), [
+      null,
+      23,
+      null,
+    ]);
   });
+
+  test(
+    'chapter name overrides rename chapter rows but not rows inside a chapter',
+    () {
+      final fulltext = EbookFulltext.fromJson({
+        'jobId': 'job',
+        'chapters': [chapter(1, 'One'), chapter(2, 'Two')],
+        'toc': [
+          {'title': 'One', 'level': 1, 'chapterIndex': 1, 'children': []},
+          {
+            'title': 'Two',
+            'level': 1,
+            'chapterIndex': 2,
+            'fragment': 'sec',
+            'children': [],
+          },
+        ],
+      });
+      final rows = readerTocRows(fulltext, names: {1: 'Prólogo', 2: 'Ignored'});
+      expect(rows.map((r) => r.title), ['Prólogo', 'Two']);
+      final noToc = EbookFulltext.fromJson({
+        'jobId': 'job',
+        'chapters': [chapter(1, 'One'), chapter(2, 'Two')],
+      });
+      expect(
+        readerTocRows(noToc, names: {2: 'A Chegada'}).map((r) => r.title),
+        ['One', 'A Chegada'],
+      );
+    },
+  );
 }

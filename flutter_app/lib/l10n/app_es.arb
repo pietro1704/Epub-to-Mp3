@@ -330,5 +330,8 @@
   "silenceTrimOff": "Desactivado",
   "silenceTrimLight": "Suave",
   "silenceTrimMedium": "Medio",
-  "silenceTrimStrong": "Fuerte"
+  "silenceTrimStrong": "Fuerte",
+  "chapterRename": "Renombrar capítulo",
+  "chapterRenameReset": "Usar el nombre automático",
+  "chapterRenameSave": "Guardar"
 }
