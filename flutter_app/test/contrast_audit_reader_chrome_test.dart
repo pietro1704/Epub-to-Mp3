@@ -92,9 +92,14 @@ Future<List<ContrastFinding>> _audit(
         (widget) => widget.runtimeType.toString().startsWith('_PopupMenu'),
       );
     case 'contents':
-      await tester.tap(more.first);
-      await settle();
-      await tester.tap(find.text(t.tableOfContents).first);
+      // A tablet shows every tool in the bar; a phone keeps the others in More.
+      if (find.byIcon(Icons.list).evaluate().isNotEmpty) {
+        await tester.tap(find.byIcon(Icons.list).first);
+      } else {
+        await tester.tap(more.first);
+        await settle();
+        await tester.tap(find.text(t.tableOfContents).first);
+      }
       await settle();
       within = panelFinder();
     case 'settings':
