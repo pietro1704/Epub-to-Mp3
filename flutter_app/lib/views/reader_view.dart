@@ -31,11 +31,21 @@ part 'reader_listening_anchor.dart';
 
 typedef ChapterStepCallback = bool Function();
 
+/// Lets a parent ask the reader whether a sentence is on the page now shown.
+class ReaderPageProbe {
+  bool Function(int sourceScalarOffset)? _onPage;
+
+  /// [sourceScalarOffset] counts Unicode scalars in the raw chapter text.
+  bool isOnPage(int sourceScalarOffset) =>
+      _onPage?.call(sourceScalarOffset) ?? false;
+}
+
 class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
   final int initialSourceOffset;
   final TextRange? measuredHighlight;
   final ValueChanged<int?>? onVisibleTextOffset;
+  final ReaderPageProbe? pageProbe;
 
   /// Source UTF-16 offset chosen with "Play from here" on selected text.
   final ValueChanged<int>? onPlayFromHere;
@@ -68,6 +78,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.initialSourceOffset = 0,
     this.measuredHighlight,
     this.onVisibleTextOffset,
+    this.pageProbe,
     this.onPlayFromHere,
     this.bookId,
     this.chapterPosition,
@@ -102,6 +113,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   void initState() {
     super.initState();
     _scrollController.addListener(_publishListeningAnchor);
+    widget.pageProbe?._onPage = _isSentenceOnPage;
     _committedChapterToken = widget.chapter.index;
     _visibleSourceAnchor = widget.initialSourceOffset;
     _pageLayoutKey = null;
@@ -110,6 +122,36 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       'name': widget.chapter.name,
       'head': widget.chapter.text.trimLeft(),
     });
+  }
+
+  /// Whether the raw source scalar [offset] lies on the page (paginated) or among the
+  /// sentences intersecting the viewport (continuous).
+  bool _isSentenceOnPage(int offset) {
+    // Spans count scalars after hard-wrap collapsing: map raw to display like
+    // ReaderListeningPosition.fromDisplayScalar in reverse.
+    final raw = widget.chapter.text.runes.toList();
+    var display = 0;
+    for (var i = 0; i < offset && i < raw.length; i++) {
+      if (raw[i] == 0x0D && i + 1 < raw.length && raw[i + 1] == 0x0A) continue;
+      display += raw[i] == 0xFFFE ? 2 : 1;
+    }
+    bool contains(SentenceSpan span) =>
+        span.startChar <= display && display < span.endChar;
+    if (_usesPaginatedSurface) {
+      if (_pages.isEmpty) return false;
+      final page = _pages[_currentPage.clamp(0, _pages.length - 1)];
+      return page.spans.any(contains);
+    }
+    final viewport = context.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return false;
+    final area = viewport.localToGlobal(Offset.zero).dy;
+    for (final span in widget.spans.where(contains)) {
+      final box = _spanKeys[span.id]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return false;
+      final top = box.localToGlobal(Offset.zero).dy;
+      return top + box.size.height > area && top < area + viewport.size.height;
+    }
+    return false;
   }
 
   /// The chapter the currently-displayed `_pages` were paginated from.
@@ -152,6 +194,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   @override
   void dispose() {
+    widget.pageProbe?._onPage = null;
     _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();

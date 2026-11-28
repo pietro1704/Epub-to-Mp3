@@ -187,8 +187,14 @@ extension _InstantReaderTools on _InstantReaderViewState {
         ? await _liveSentencePosition()
         : null;
     if (!mounted) return;
-    if (audio == null || position < 0 || audio.chapterIndex == position) {
+    if (audio == null || position < 0) {
       _playFromHere(chapter, _visibleTextOffset);
+      return;
+    }
+    // The audio is on the page shown (where its narration highlight sits): play acts directly.
+    if (audio.chapterIndex == position &&
+        _pageProbe.isOnPage(audio.textOffset)) {
+      unawaited(player!.play());
       return;
     }
     final t = AppLocalizations.of(context)!;
