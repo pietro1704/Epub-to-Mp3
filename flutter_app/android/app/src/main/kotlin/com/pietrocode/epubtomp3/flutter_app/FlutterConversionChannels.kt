@@ -186,6 +186,22 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                         }
                     }
                 }
+                "pdfOcrPage" -> {
+                    val path = call.argument<String>("path")
+                    val page = call.argument<Int>("page")
+                    if (path.isNullOrBlank() || page == null) {
+                        result.error("BAD_ARGS", "path and page are required", null)
+                    } else {
+                        runQuery(result) {
+                            try {
+                                val text = PdfPageOcr.recognize(path, page)
+                                runOnUiThread { result.success(text) }
+                            } catch (error: Throwable) {
+                                runOnUiThread { result.error("OCR_FAILED", error.message, null) }
+                            }
+                        }
+                    }
+                }
                 "exportMp3" -> {
                     val request = call.argument<String>("request")
                     if (!MainActivity.converterLibraryAvailable()) {

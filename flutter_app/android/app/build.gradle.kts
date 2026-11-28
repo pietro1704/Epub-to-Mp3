@@ -5,6 +5,8 @@ plugins {
 }
 
 dependencies {
+    // On-device OCR for scanned PDF pages (bundled Latin model, no network).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     // Built-in Kotlin needs the JVM test backend explicitly selected.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.0")
 }
