@@ -515,8 +515,9 @@ final class MacReaderTextPresentation {
             if let text = documentView as? NSTextView,
                text.string.utf16.count > 0 {
                 if let visible = MacReaderTextLayout.characterRange(in: clipView.documentVisibleRect, of: text) {
-                    playbackFraction = Double(visible.location)
-                        / Double(text.string.utf16.count)
+                    playbackFraction = ReaderPageSourcePosition.ratio(renderedAt: visible.location,
+                            in: text.string, source: chapter.text)
+                        ?? Double(visible.location) / Double(text.string.utf16.count)
                 }
             }
             ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: playbackFraction, defaults: location.defaults)
