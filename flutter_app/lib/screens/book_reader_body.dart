@@ -1,5 +1,9 @@
 part of 'book_open_screen.dart';
 
+/// Counts reader body builds so a test can prove unrelated library changes do not rebuild it.
+@visibleForTesting
+int debugReaderBodyBuilds = 0;
+
 class _BookReaderBody extends ConsumerWidget {
   const _BookReaderBody({
     required this.bookId,
@@ -37,22 +41,31 @@ class _BookReaderBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    debugReaderBodyBuilds++;
     final t = AppLocalizations.of(context)!;
-    final library = ref.watch(libraryStoreProvider);
-    BookEntity? book;
-    for (final candidate in library.books) {
-      if (candidate.id == bookId) {
-        book = candidate;
-        break;
-      }
-    }
-    final bookTitle = book?.resolvedTitle ?? '';
+    // Only what this body shows: other book fields (resume position, tags, last played)
+    // change often and must not rebuild the reader.
+    final shown = ref.watch(
+      libraryStoreProvider.select((library) {
+        for (final candidate in library.books) {
+          if (candidate.id == bookId) {
+            return (
+              title: candidate.resolvedTitle,
+              path: candidate.filePath,
+              cover: candidate.coverBase64,
+            );
+          }
+        }
+        return null;
+      }),
+    );
+    final bookTitle = shown?.title ?? '';
 
-    if (book != null && isPdfFilePath(book.filePath)) {
+    if (shown != null && isPdfFilePath(shown.path)) {
       return PdfReaderScreen(
         bookId: bookId,
         title: bookTitle,
-        filePath: book.filePath,
+        filePath: shown.path,
         prefs: ref.watch(sharedPrefsProvider),
       );
     }
@@ -113,9 +126,8 @@ class _BookReaderBody extends ConsumerWidget {
         );
 
       case _Phase.ready:
-        final coverArt = book?.coverBase64 != null
-            ? _decodeCover(book!.coverBase64!)
-            : null;
+        final cover = shown?.cover;
+        final coverArt = cover != null ? _decodeCover(cover) : null;
         final player = ref.read(globalAudioPlayerProvider);
         return Scaffold(
           body: Listener(

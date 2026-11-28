@@ -31,7 +31,6 @@ import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 import '../models/reader_listening_position.dart';
 import '../services/playback/listening_schedule.dart';
-import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
 import '../services/playback/audio_player_service.dart';
