@@ -14,7 +14,10 @@ final class ReaderPlaybackPosition {
     }
 
     private var sourceChapter: EbookFulltext.Chapter? {
-        document.activePreparedChapter?.chapter ?? document.fulltext?.chapters[safe: document.selectedChapter]
+        if let prepared = document.activePreparedChapter?.chapter { return prepared }
+        guard let chapters = document.fulltext?.chapters,
+              chapters.indices.contains(document.selectedChapter) else { return nil }
+        return chapters[document.selectedChapter]
     }
 
     func publish(_ anchor: ReaderReadingPosition.ReadingAnchor? = nil,
