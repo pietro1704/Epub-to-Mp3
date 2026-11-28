@@ -85,6 +85,63 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
         attachCapture(of: controller.view, name: "mac-reader-toolbar-after-page-click")
     }
 
+    /// MAC-CHROME-HIDE-REPAGINATES: the window, not only the reader, keeps the
+    /// text viewport when the chrome toggles (CONTEXT.md, chrome-stable viewport).
+    func testHidingTheChromeKeepsTheWindowTextViewport() async throws {
+        let suite = "mac-chrome-viewport-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        let source = try EpubFixture.createWithChapter(body: String(repeating: "Stable viewport. ", count: 400))
+        let library = LibraryStore(defaults: defaults, importDirectory: root)
+        let book = try library.importBook(from: source)
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+                                 location: .standard)
+        let controller = MacAppKitRootController(settings: AppSettings(defaults: defaults), library: library,
+            player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            playerPresentation: PlayerPresentation(defaults: defaults))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer {
+            window.orderOut(nil); window.contentViewController = nil; window.close()
+            player.stop()
+            for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
+            ReaderProgressStore.evict(bookId: book.id)
+            LocalFulltextCache.evict(bookId: book.id)
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: root)
+        }
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 1000, height: 700))
+        controller.showReader(bookID: book.id)
+        let textView = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderTextView }.first)
+        for _ in 0..<50 where textView.string.isEmpty {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        controller.view.layoutSubtreeIfNeeded()
+        let scroll = try XCTUnwrap(textView.enclosingScrollView)
+        func miniPlayerButtons() -> [NSButton] {
+            descendants(controller.view).compactMap { $0 as? NSButton }
+                .filter { $0.toolTip == L10n.string("player.play") && !$0.isHiddenOrHasHiddenAncestor }
+        }
+        XCTAssertFalse(miniPlayerButtons().isEmpty, "the mini player starts visible")
+        let viewport = scroll.convert(scroll.bounds, to: controller.view)
+        for (index, hidden) in [true, false, true].enumerated() {
+            textView.onToggleChrome?()
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(miniPlayerButtons().isEmpty, hidden, "click \(index + 1): mini player")
+            XCTAssertEqual(scroll.convert(scroll.bounds, to: controller.view), viewport,
+                           "click \(index + 1): the text viewport must not change")
+        }
+    }
+
     /// Evidence for review: the reader after the page clicks, header still shown.
     private func attachCapture(of view: NSView, name: String) {
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
