@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(PDFKit)
+import PDFKit
+#endif
 
 /// Maps PDFKit character positions to the exact Rust narration chapter axis.
 /// Matching is ordered across physical pages, so repeated paragraphs cannot
@@ -162,3 +165,18 @@ struct PDFReadingAudioMap: Sendable {
         return (result as NSString, offsets, scalarOffsets)
     }
 }
+
+#if canImport(PDFKit)
+extension PDFReadingAudioMap {
+    /// What each page says: its text layer or, for a page without one, the stored OCR text that Rust
+    /// narrates. OCR offsets do not point into the page, so such a page is turned to but not highlighted.
+    static func pageTexts(of document: PDFDocument) -> [String] {
+        let recognized = document.documentURL.map(PdfOcrPreparer.storedText) ?? [:]
+        return (0..<document.pageCount).map { index in
+            let text = document.page(at: index)?.string ?? ""
+            guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
+            return recognized[index + 1] ?? text
+        }
+    }
+}
+#endif
