@@ -152,6 +152,11 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertEqual(ReaderProgressStore.read(bookId: id)?.offsetFraction ?? -1, 0.4, accuracy: 0.001)
         }
         let before = scroll.contentView.bounds.origin.y
+        var topArea = scroll.contentView.documentVisibleRect
+        topArea.origin.y += scroll.contentView.bounds.height / 2
+        topArea.size.height = 1
+        let passageBefore = (scroll.documentView as? NSTextView)
+            .flatMap { MacReaderTextLayout.characterRange(in: topArea, of: $0)?.location }
         release.finish()
         if mismatchWithQueuedRestore {
             try sourceBytes.write(to: source, options: .atomic)
@@ -183,11 +188,14 @@ final class MacReaderActiveChapterTests: XCTestCase {
             }
             XCTAssertEqual(controller.numberOfRows(in: NSTableView()), expected.chapters.count,
                            "Chapter navigation waits until the complete catalog hydrates")
-            // A deferred font change relays out the lines, so compare with the page that now holds that offset.
-            let hydratedStarts = MacReaderTextLayout.pageStarts(of: text, viewportHeight: scroll.contentView.bounds.height)
-            let held = deferredAppearance
-                ? hydratedStarts[MacReaderTextLayout.pageIndex(of: before, in: hydratedStarts)] : before
-            XCTAssertEqual(scroll.contentView.bounds.origin.y, held, accuracy: 2)
+            // A deferred font change relays out the lines, so the reader follows the text instead of the offset.
+            if deferredAppearance {
+                let character = try XCTUnwrap(passageBefore)
+                let visible = try XCTUnwrap(MacReaderTextLayout.characterRange(in: scroll.contentView.documentVisibleRect, of: text))
+                XCTAssertTrue(NSLocationInRange(character, visible), "\(character) left \(visible)")
+            } else {
+                XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 2)
+            }
             let previouslyAvailable = try XCTUnwrap(footnotesControl())
             XCTAssertEqual(previouslyAvailable.identifier, ReaderTool.footnotes.accessibilityIdentifier)
             XCTAssertTrue(footnotesShortcutIsVisible())
