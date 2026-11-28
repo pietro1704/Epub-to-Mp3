@@ -6,3 +6,7 @@
     public static final com.pietrocode.epubtomp3.flutter_app.PdfPageOcr INSTANCE;
     public java.lang.String recognize(java.lang.String, int);
 }
+
+# The runner and test APK share the target's Kotlin stdlib (for example kotlin.LazyKt); keep it for the test-only build.
+-keep class kotlin.** { *; }
+-dontwarn kotlin.**
