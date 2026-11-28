@@ -27,8 +27,11 @@ android {
         }
     }
 
-    // The instrumented OCR test runs against the minified release build: `./gradlew :app:connectedReleaseAndroidTest`.
-    testBuildType = "release"
+    // The emulator job passes -PtestMinifiedRelease to run the instrumented OCR test against the
+    // minified release build; the default stays debug so :app:testDebugUnitTest keeps existing.
+    if (project.hasProperty("testMinifiedRelease")) {
+        testBuildType = "release"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

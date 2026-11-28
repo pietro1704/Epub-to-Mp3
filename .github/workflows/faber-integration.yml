@@ -240,7 +240,7 @@ jobs:
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -accel on
           emulator-build: '16740729'
-          script: bash -c 'cd flutter_app/android && mise exec -- ./gradlew :app:connectedReleaseAndroidTest --max-workers=1'
+          script: bash -c 'cd flutter_app/android && mise exec -- ./gradlew -PtestMinifiedRelease :app:connectedReleaseAndroidTest --max-workers=1'
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
