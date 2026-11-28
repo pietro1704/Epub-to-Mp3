@@ -71,7 +71,7 @@ public final class Workflow {
         var primary: Error?
         do {
             try resourceCheck()
-            try perform(takeHeavyLease: { heavy = try self.acquireHeavyLease() })
+            try perform(takeHeavyLease: { heavy = try self.acquireHeavyLease() }, releaseHeavyLease: { heavy = nil })
         } catch {
             primary = error
             report["error"] = String(describing: error)
@@ -154,7 +154,9 @@ public final class Workflow {
         return result
     }
 
-    /// How long a locked device is waited for before the run is `blocked`.
+    private let foregroundPollSeconds: TimeInterval = 15
+
+    /// How long a locked or busy device is waited for before the run is `blocked`.
     static let defaultUnlockWaitSeconds: TimeInterval = 1800
 
     private var unlockWaitSeconds: TimeInterval {
@@ -222,7 +224,7 @@ public final class Workflow {
         }
     }
 
-    private func perform(takeHeavyLease: () throws -> Void) throws {
+    private func perform(takeHeavyLease: () throws -> Void, releaseHeavyLease: () -> Void) throws {
         let preflightStart = ProcessInfo.processInfo.systemUptime
         defer { timings["preflightSeconds"] = timings["preflightSeconds"] ?? ProcessInfo.processInfo.systemUptime - preflightStart }
         // Read-only: waiting for the unlock only queries the device, so it holds no heavy lease.
@@ -292,24 +294,51 @@ public final class Workflow {
             try PropertyListSerialization.data(fromPropertyList: configured, format: .xml, options: 0).write(to: isolated, options: .atomic)
             testCommand = ["xcodebuild", "-quiet", "test-without-building", "-xctestrun", isolated.path] + destination + filters
         }
-        try readiness("readinessBeforeTest")
-        let processes = try deviceJSON(["info", "processes"], "processes")
-        for process in processes["runningProcesses"] as? [[String: Any]] ?? [] {
-            guard let executable = process["executable"] as? String, executable.hasSuffix("/EpubToMp3.app/EpubToMp3") else { continue }
-            guard let pid = Evidence.integer(process["processIdentifier"]), pid > 0 else { throw WorkflowError("Cannot resolve previous app PID.") }
-            try command(["xcrun", "devicectl", "device", "process", "terminate", "--device", options.device, "--pid", String(pid)], "terminatePreviousApp")
-        }
-        if benchmark {
-            try command(["xcrun", "devicectl", "device", "install", "app", "--device", options.device, app.path], "install")
-            try stage()
-        }
-        report["status"] = "testing"
-        report["nextAction"] = "Observe the workflow owner; do not restart between child phases."
+        // Like Xcode: the build never depends on the phone, and the launch waits until the app can come to the front.
+        // devicectl does not say which app is in front, so a launch that never reached the app is what tells.
+        let foregroundStart = ProcessInfo.processInfo.systemUptime
+        var slept: TimeInterval = 0
+        var attempt = 1
         let resultBundle = directory.appendingPathComponent("tests.xcresult")
-        testCommand += ["-resultBundlePath", resultBundle.path, "-test-timeouts-enabled", "YES",
-                        "-default-test-execution-time-allowance", String(options.timeout), "-maximum-test-execution-time-allowance", String(options.timeout)]
-        let test = try command(testCommand, "testWall", timeout: TimeInterval(options.timeout + 120), check: false)
-        report["status"] = "collecting"
+        var test: CommandResult
+        while true {
+            try readiness("readinessBeforeTest")
+            let processes = try deviceJSON(["info", "processes"], "processes")
+            for process in processes["runningProcesses"] as? [[String: Any]] ?? [] {
+                guard let executable = process["executable"] as? String, executable.hasSuffix("/EpubToMp3.app/EpubToMp3") else { continue }
+                guard let pid = Evidence.integer(process["processIdentifier"]), pid > 0 else { throw WorkflowError("Cannot resolve previous app PID.") }
+                try command(["xcrun", "devicectl", "device", "process", "terminate", "--device", options.device, "--pid", String(pid)], "terminatePreviousApp")
+            }
+            if benchmark && attempt == 1 {
+                try command(["xcrun", "devicectl", "device", "install", "app", "--device", options.device, app.path], "install")
+                try stage()
+            }
+            report["status"] = "testing"
+            report["nextAction"] = "Observe the workflow owner; do not restart between child phases."
+            let attemptCommand = testCommand + ["-resultBundlePath", resultBundle.path, "-test-timeouts-enabled", "YES",
+                "-default-test-execution-time-allowance", String(options.timeout), "-maximum-test-execution-time-allowance", String(options.timeout)]
+            test = try command(attemptCommand, "testWall", timeout: TimeInterval(options.timeout + 120), check: false)
+            guard test.code != 0, Evidence.neverReachedForeground(test.output) else { break }
+            // The bundle of a launch that stayed behind another app may hold a recording of that app.
+            if FileManager.default.fileExists(atPath: resultBundle.path) { try FileManager.default.removeItem(at: resultBundle) }
+            let waited = max(ProcessInfo.processInfo.systemUptime - foregroundStart, slept)
+            guard waited < unlockWaitSeconds else {
+                report["status"] = "blocked"
+                report["nextAction"] = "Leave the unlocked iPhone free for the app and explicitly retry."
+                throw WorkflowError("The app could not come to the front for \(Int(waited)) s; free the iPhone and explicitly retry.")
+            }
+            report["status"] = "waiting_for_foreground"
+            report["nextAction"] = "Leave the iPhone free; the run launches again by itself (waits up to \(Int(unlockWaitSeconds)) s)."
+            try checkpoint()
+            if attempt == 1 { notice("WAITING_FOR_FOREGROUND device=\(options.device)") }
+            let nap = min(foregroundPollSeconds, unlockWaitSeconds - waited)
+            releaseHeavyLease()
+            sleeper(nap); slept += nap
+            timings["deviceWaitSeconds", default: 0] += nap
+            try takeHeavyLease()
+            attempt += 1
+        }
+         report["status"] = "collecting"
         // Collect evidence even when xcodebuild fails, preserving native conversion diagnostics.
         let queryBundle = directory.appendingPathComponent("tests-query-copy.xcresult")
         try FileManager.default.copyItem(at: resultBundle, to: queryBundle)

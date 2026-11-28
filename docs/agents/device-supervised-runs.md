@@ -8,8 +8,8 @@ At least five sessions up to 2026-11-24 lost a device run before any test execut
 1. Ask Pietro once, in one message and before the build, for everything only a human can do: Developer Mode on, Settings >
    Developer > Enable UI Automation granted, the Mac trusted, Auto-Lock set to Never for the session, and iPhone Mirroring
    closed when the case drives SpringBoard. Never start the build and discover these afterwards.
-2. Build while the phone stays locked (`build-for-testing`); ask for the unlock only for the run step
-   (`test-without-building`). Gate the run with `xcrun devicectl device info lockState --device <id>`.
+2. Run through `scripts/device-workflow.sh`, which works like Xcode: it builds without depending on the phone, then waits
+   until the phone can run the test (see "Waiting for the phone"). Do not ask Pietro to confirm the unlock.
 3. Confirm the Xcode selection is the expected one (`xcode-select -p`, `DEVELOPER_DIR`) and that mise does not override it
    (see the toolchain section of the [execution policy](execution-policy.md)).
 4. Rebuild the FFI through the repository task when Rust changed; never test against an older signed FFI copy.
@@ -21,7 +21,8 @@ Map each new device failure to a row here so later runs apply the fix instead of
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Test runner fails at start with a LocalAuthentication error (-1) | UI Automation not enabled/authorized on the phone | Pietro enables Settings > Developer > Enable UI Automation; ask before the build (preflight 1) |
-| `WAITING_FOR_UNLOCK`, `passcodeRequired`, or the phone locks during the build | Auto-Lock while the build runs | Build locked, ask one unlock right before the run step; Auto-Lock Never during supervised sessions |
+| `WAITING_FOR_UNLOCK`, `passcodeRequired`, or the phone locks during the build | Auto-Lock while the build runs | Let the workflow wait; do not ask for a confirmation. Auto-Lock Never during supervised sessions |
+| `CoreDeviceError 10004`, "Failed to get launch progress", "process identifier of the launched application could not be determined" before any touch | Not established. Seen twice on the 16e on 2026-11-27 with `test-without-building -xctestrun`; in one of them XCTest waited on another app that was in front. A project-based `xcodebuild test` passed earlier that day | The workflow waits and launches again (`WAITING_FOR_FOREGROUND`) |
 | UI test stalls on the "Continue from where?" dialog | The resume prompt is an app dialog, not a system alert | Handle it explicitly in the test by accessibility identifier; interruption monitors only cover system alerts |
 | UI test taps the wrong Play button | Label query matches more than one control | Query by accessibility identifier, scoped to the intended container |
 | Device behavior does not match the Rust change | Stale signed FFI copy in the build products | Rebuild the FFI through the repository task, then rebuild the test bundle |
@@ -29,11 +30,21 @@ Map each new device failure to a row here so later runs apply the fix instead of
 | Widget case cannot find the app icon or a widget gallery control | The app's widgets live in the Today View; walking the Home Screen is unnecessary | Run `testHomeWidgetsAreOnTheTodayView` (supervised case below) |
 | "Activation point invalid and no suggested hit points" on a SpringBoard element | `isHittable` on an element on another page records a failure on iOS 26 | Decide by the element's frame |
 
-## Waiting for an unlock never holds the heavy lease
-`scripts/device-workflow.sh` waits for a locked phone (`WAITING_FOR_UNLOCK`, up to 30 min, `DEVICE_UNLOCK_WAIT_SECONDS`) with
-no heavy native lease: the wait only queries the device (#1435). The lease is taken after the unlock and held for the real
-work; if another job owns it the workflow waits up to `EPUB_NATIVE_WAIT_SECONDS` (one `WAITING_FOR_LEASE` line). If the
-30 minutes pass, re-enqueue the same run; do not cancel a run only because the phone is locked.
+## Waiting for the phone
+`scripts/device-workflow.sh` never needs a human to say the phone is ready. Both waits are bounded by
+`DEVICE_UNLOCK_WAIT_SECONDS` (default 30 min each) and hold no heavy native lease while they sleep:
+
+- **Locked** (`WAITING_FOR_UNLOCK`): the workflow polls `lockState` every 5 s. The lease is taken after the unlock (#1435).
+- **App cannot come to the front** (`WAITING_FOR_FOREGROUND`): `devicectl` is not used to ask which app is in front, because
+  we know of no query for it. Instead, when every error of a test launch is "Failed to get launch progress … could not be
+  determined" and no test passed, nothing was touched: the workflow waits 15 s, checks the lock again and launches again
+  without rebuilding. It deletes the result bundle of that launch unread, because it may hold a recording of another app.
+  Any other test failure ends the run at once.
+
+If another job owns the lease, the workflow waits up to `EPUB_NATIVE_WAIT_SECONDS` (one `WAITING_FOR_LEASE` line). When a
+wait times out the report says `blocked`; re-enqueue the same run. This changes only when a run starts: tests still touch
+only our app, and a case that finds another app or a system alert in front still stops.
+Not verified on a device: that the second launch succeeds once the other app leaves the front.
 
 ## Supervised case: `HomeWidgetGalleryUITests` (widgets on the Today View)
 Facts measured on the 16e (iOS 26, pt-BR) on 2026-11-24 and confirmed by the owner: the EpubToMp3 widgets live on the **Today
