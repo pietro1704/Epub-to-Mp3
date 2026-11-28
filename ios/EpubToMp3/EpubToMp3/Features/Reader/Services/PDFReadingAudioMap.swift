@@ -60,12 +60,9 @@ struct PDFReadingAudioMap: Sendable {
             let canonical = Self.normalized(chapter.text)
             var cursor = 0
             for pageIndex in start..<end {
-                let displayed = Self.normalized(pageTexts[pageIndex])
-                guard displayed.text.length > 0, cursor <= canonical.text.length else { continue }
-                // Literal matching keeps the offset tables aligned with the matched range.
-                let match = canonical.text.range(of: displayed.text as String, options: .literal,
-                    range: NSRange(location: cursor, length: canonical.text.length - cursor))
-                guard match.location != NSNotFound, match.length == displayed.text.length else { continue }
+                guard cursor <= canonical.text.length,
+                      let (displayed, match) = Self.locate(pageTexts[pageIndex], in: canonical.text, from: cursor)
+                else { continue }
                 mapped[pageIndex] = Page(chapterIndex: chapterIndex, displayOffsets: displayed.offsets,
                     chapterOffsets: Array(canonical.offsets[match.location..<NSMaxRange(match)]),
                     speechOffsets: Array(canonical.scalarOffsets[match.location..<NSMaxRange(match)]),
@@ -115,6 +112,37 @@ struct PDFReadingAudioMap: Sendable {
             if let last = page.displayOffsets.last { lastLocation = (index, last) }
         }
         return lastLocation
+    }
+
+    private static func locate(_ page: String, in narration: NSString, from cursor: Int)
+        -> (displayed: (text: NSString, offsets: [Int], scalarOffsets: [Int]), match: NSRange)? {
+        for (attempt, candidate) in narrationCandidates(page).enumerated() {
+            let displayed = normalized(candidate)
+            // A trimmed leftover such as a lone page number would match anywhere.
+            guard displayed.text.length >= (attempt == 0 ? 1 : 8) else { continue }
+            // Literal matching keeps the offset tables aligned with the matched range.
+            let match = narration.range(of: displayed.text as String, options: .literal,
+                range: NSRange(location: cursor, length: narration.length - cursor))
+            if match.location != NSNotFound, match.length == displayed.text.length { return (displayed, match) }
+        }
+        return nil
+    }
+
+    /// The page as shown, then without what Rust may leave out of the narration: layout slugs and a
+    /// repeated first or last line (running header, page number). Lines are blanked in place, so
+    /// UTF-16 offsets still point into the page.
+    private static func narrationCandidates(_ page: String) -> [String] {
+        let lines = page.components(separatedBy: "\n")
+        let filled = lines.indices.filter { !lines[$0].trimmingCharacters(in: .whitespaces).isEmpty }
+        let slugs = Set(filled.filter { lines[$0].lowercased().contains(".indd") || lines[$0].lowercased().contains(".qxd") })
+        let content = filled.filter { !slugs.contains($0) }
+        guard let first = content.first, let last = content.last else { return [page] }
+        return [page] + [[], [last], [first], [first, last]].map { (edges: [Int]) in
+            let dropped = slugs.union(edges)
+            return lines.indices.map {
+                dropped.contains($0) ? String(repeating: " ", count: lines[$0].utf16.count) : lines[$0]
+            }.joined(separator: "\n")
+        }
     }
 
     private static func normalized(_ text: String) -> (text: NSString, offsets: [Int], scalarOffsets: [Int]) {
