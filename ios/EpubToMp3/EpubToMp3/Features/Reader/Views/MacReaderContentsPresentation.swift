@@ -46,7 +46,24 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         if let artifactObserver { NotificationCenter.default.removeObserver(artifactObserver) }
     }
 
-    private var tocRows: [ReaderTocRow] { document.tocRows }
+    private var pdfView: MacReaderPDFView? { composition.contentScrollView.documentView as? MacReaderPDFView }
+
+    /// A PDF lists its narration chapters, as on iOS; a row's position is its chapter.
+    private var tocRows: [ReaderTocRow] {
+        guard let pdfView else { return document.tocRows }
+        let names = document.chapterNames
+        return pdfView.audioMap?.chapters.enumerated().map {
+            ReaderTocRow(title: $0.element.title(names), level: 0, chapterIndex: $0.offset)
+        } ?? []
+    }
+
+    /// Rust's number for a PDF narration chapter, which keys its custom name.
+    private func pdfNameKey(of row: ReaderTocRow) -> Int? {
+        guard let chapters = pdfView?.audioMap?.chapters, let position = row.chapterIndex,
+              chapters.indices.contains(position) else { return nil }
+        return Int(chapters[position].index)
+    }
+
     private let publishTitle: (String, Int) -> Void
 
     func numberOfRows(in tableView: NSTableView) -> Int { tocRows.count }
@@ -66,6 +83,7 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
     }
 
     private func sourceIndex(of row: ReaderTocRow?) -> Int? {
+        if pdfView != nil { return row?.chapterIndex }
         guard let chapters = fulltext?.chapters else { return nil }
         return row?.chapterIndex.flatMap { ReaderPlaybackAnchor.epubIndex(forReaderPosition: $0, in: chapters) }
     }
@@ -216,6 +234,12 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         guard !isSynchronizingTOCSelection else { return }
         let row = chaptersTable.selectedRow
         guard row >= 0, let chapterIndex = tocRows[safe: row]?.chapterIndex else { return }
+        if let pdfView {
+            // The PDF view saves its own position.
+            pdfView.goToChapter(chapterIndex)
+            tocPopover.performClose(nil)
+            return
+        }
         persistProgress()
         selectedChapter = chapterIndex
         showChapter(chapterIndex)
@@ -229,7 +253,9 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         menu.removeAllItems()
         let row = chaptersTable.clickedRow
         guard let tocRow = tocRows[safe: row] else { return }
-        for action in renaming.actions(for: tocRow, in: document) {
+        let actions = pdfView == nil ? renaming.actions(for: tocRow, in: document)
+            : pdfNameKey(of: tocRow).map { renaming.actions(forPDFChapter: $0, names: document.chapterNames) } ?? []
+        for action in actions {
             let item = NSMenuItem(title: action.title + (action.kind == .rename ? "…" : ""),
                                   action: action.kind == .rename ? #selector(renameChapter(_:)) : #selector(restoreChapterName(_:)),
                                   keyEquivalent: "")
@@ -267,12 +293,23 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
     private func applyName(_ name: String?, to row: ReaderTocRow, bookID: String) {
         guard document.currentBookId == bookID else { return }
         do {
-            try renaming.apply(name, to: row, in: document, bookID: bookID)
+            if pdfView != nil {
+                try renamePDFChapter(name, row: row, bookID: bookID)
+            } else {
+                try renaming.apply(name, to: row, in: document, bookID: bookID)
+            }
             chaptersTable.reloadData()
             selectCurrentTOCRow()
         } catch {
             present(failure: L10n.string("toc.rename"), message: L10n.string("toc.renameFailed"))
         }
+    }
+
+    private func renamePDFChapter(_ name: String?, row: ReaderTocRow, bookID: String) throws {
+        guard let key = pdfNameKey(of: row), let position = row.chapterIndex,
+              let chapter = pdfView?.audioMap?.chapters[position] else { return }
+        document.chapterNames = try renaming.store.set(bookID: bookID, chapter: key, name: name)
+        publishTitle(chapter.title(document.chapterNames), position)
     }
 
     private func configureTOCPopover() {
@@ -311,7 +348,8 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
     }
 
     func selectCurrentTOCRow() {
-        guard let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) else { return }
+        let current = pdfView == nil ? selectedChapter : pdfView?.currentChapter
+        guard let row = tocRows.firstIndex(where: { $0.chapterIndex == current }) else { return }
         // Updating the TOC highlight is not a request to reopen the chapter.
         isSynchronizingTOCSelection = true
         defer { isSynchronizingTOCSelection = false }
@@ -319,7 +357,7 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
     }
 
     func showTOC(_ sender: NSButton) {
-        guard fulltext != nil else { return }
+        guard fulltext != nil || pdfView != nil else { return }
         if tocPopover.contentViewController == nil { configureTOCPopover() }
         prepareDownloads()
         chaptersTable.reloadData()
