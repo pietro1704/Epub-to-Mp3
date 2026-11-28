@@ -205,3 +205,59 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
         },
     )
 }
+
+/// `{"pages": [n, ...]}`: the 1-based PDF pages a client OCR must read. Null with the error
+/// available through `nativeLastError`.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePdfImagePages(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    path: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePdfImagePages",
+        std::ptr::null_mut(),
+        || match read_string(&mut env, path)
+            .and_then(|path| super::chapter_names_boundary::pdf_image_pages_json(&path))
+        {
+            Ok(value) => env
+                .new_string(value)
+                .map_or(std::ptr::null_mut(), |value| value.into_raw()),
+            Err(error) => fail(error),
+        },
+    )
+}
+
+/// Stores the text a client OCR recognised for one PDF page; a null or blank `text` clears it.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePdfOcrPageSet(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    path: JString<'_>,
+    page: JString<'_>,
+    text: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePdfOcrPageSet",
+        std::ptr::null_mut(),
+        || {
+            let text = if text.as_raw().is_null() {
+                Ok(String::new())
+            } else {
+                read_string(&mut env, text)
+            };
+            let result = read_string(&mut env, path).and_then(|path| {
+                let page = read_string(&mut env, page)?;
+                super::chapter_names_boundary::pdf_ocr_page_set_json(&path, &page, &text?)
+            });
+            match result {
+                Ok(value) => env
+                    .new_string(value)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw()),
+                Err(error) => fail(error),
+            }
+        },
+    )
+}
