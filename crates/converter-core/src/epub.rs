@@ -1,6 +1,7 @@
 mod epub_chapter_content;
 mod epub_footnotes;
 mod epub_library_metadata;
+mod epub_library_shelf;
 mod epub_package;
 mod epub_resources;
 pub mod footnote_narration;
@@ -9,6 +10,7 @@ use epub_chapter_content::{
 };
 pub use epub_footnotes::Footnote;
 pub use epub_library_metadata::{read_library_metadata, LibraryMetadata};
+pub use epub_library_shelf::read_library_shelf;
 use epub_package::{
     normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text,
 };
