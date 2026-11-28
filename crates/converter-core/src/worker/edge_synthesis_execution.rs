@@ -41,3 +41,26 @@ where
     runtime.shutdown_background();
     result
 }
+
+/// The Edge voice a sample uses: the selected one, else the default for the language.
+pub fn edge_audition_voice(voice: Option<&str>, language: Option<&str>) -> String {
+    voice
+        .map(str::trim)
+        .filter(|voice| !voice.is_empty())
+        .unwrap_or_else(|| super::conversion_input_policy::default_edge_voice(language))
+        .to_owned()
+}
+
+/// Synthesizes one short Edge sample (MP3 bytes). It creates no job or cache
+/// entry. The caller owns the online consent check.
+pub fn synthesize_edge_audition(
+    text: &str,
+    voice: &str,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<Vec<u8>, WorkerError> {
+    run_edge_synthesis_checked(
+        crate::tts::synthesize_with_reference_client(text, voice, Default::default(), None),
+        cancelled,
+        crate::tts::reference_synthesis_timeout_for_text(text.len()),
+    )
+}

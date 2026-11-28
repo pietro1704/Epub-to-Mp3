@@ -336,6 +336,7 @@ use conversion_input_policy::chapter_selection_matches;
 pub(crate) use conversion_input_policy::persisted_request_path;
 mod conversion_schedule;
 mod edge_synthesis_execution;
+pub use edge_synthesis_execution::{edge_audition_voice, synthesize_edge_audition};
 mod error_code;
 pub(crate) use error_code::book_input_code;
 pub use error_code::{ERROR_CODE_CLOSE, ERROR_CODE_OPEN};

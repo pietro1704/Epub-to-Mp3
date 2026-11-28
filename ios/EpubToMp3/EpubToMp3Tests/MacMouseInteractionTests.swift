@@ -185,12 +185,49 @@ final class MacMouseInteractionTests: XCTestCase {
         XCTAssertEqual(toggles, 0, "a hold is not a chrome click")
     }
 
-    func testTheOnlineVoiceRowOffersNoSampleItCannotPlay() async throws {
+    func testTheOnlineVoiceRowPlaysItsSampleOnceOnlineVoicesAreAllowed() async throws {
+        var rendered: [(String, String)] = []
+        try await withOnlineVoiceRow(consent: true) { controller, window, title in
+            controller.audition = VoiceAuditionPresentation(audition: VoiceAuditionController(renderer: { selection, language in
+                rendered.append((selection.engine, language))
+                throw CocoaError(.fileReadUnknown)
+            }))
+            XCTAssertTrue(controller.runRowAction(titled: title, rowID: "edge:pt", language: "pt"),
+                          "the Edge row offers a sample")
+            for _ in 0..<60 where rendered.isEmpty { try await Task.sleep(nanoseconds: 50_000_000) }
+            XCTAssertEqual(rendered.map(\.0), ["edge"])
+            XCTAssertEqual(rendered.map(\.1), ["pt"])
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        }
+    }
+
+    func testTheOnlineVoiceSampleWithoutConsentExplainsWhyAndRendersNothing() async throws {
+        var renders = 0
+        try await withOnlineVoiceRow(consent: false) { controller, window, title in
+            controller.audition = VoiceAuditionPresentation(audition: VoiceAuditionController(renderer: { _, _ in
+                renders += 1
+                throw CocoaError(.fileReadUnknown)
+            }))
+            XCTAssertTrue(controller.runRowAction(titled: title, rowID: "edge:pt", language: "pt"),
+                          "the Edge row offers a sample that can explain itself")
+            for _ in 0..<60 where window.attachedSheet == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+            let content = try XCTUnwrap(window.attachedSheet?.contentView, "a notice is shown")
+            let texts = descendants(content).compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertTrue(texts.contains(L10n.string("models.consent.message")), "the notice says why: \(texts)")
+            XCTAssertEqual(renders, 0)
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        }
+    }
+
+    /// The Portuguese voice page with its Edge row loaded; the closure also gets the sample action's title.
+    private func withOnlineVoiceRow(
+        consent: Bool, _ body: (MacModelsViewController, NSWindow, String) async throws -> Void
+    ) async throws {
         let name = "mac-edge-sample-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let settings = AppSettings(defaults: defaults)
-        settings.allowOnlineAudioFallback = true
+        settings.allowOnlineAudioFallback = consent
         let model = ModelsByLanguageModel(source: ModelsByLanguageModelTests.FakeSource(), settings: settings,
             terms: SpeechModelTermsAcceptanceStore(defaults: defaults), systemVoiceLanguages: { [] })
         await model.load()
@@ -208,8 +245,8 @@ final class MacMouseInteractionTests: XCTestCase {
                     .first { $0.accessibilityIdentifier() == "models.menu.pt.edge:pt" }
             }
         }
-        // The audition renderer accepts only an installed Piper voice, so a sample entry here can only fail.
-        XCTAssertEqual(try XCTUnwrap(menu, "the Edge row is listed").isHidden, true)
+        XCTAssertEqual(try XCTUnwrap(menu, "the Edge row is listed").isHidden, false, "the row menu is reachable")
+        try await body(controller, window, model.libraryState(for: "pt").actionTitle(for: .preview))
     }
 }
 #endif

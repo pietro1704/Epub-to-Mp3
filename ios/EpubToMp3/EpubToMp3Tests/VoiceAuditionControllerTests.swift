@@ -80,4 +80,25 @@ final class VoiceAuditionControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .playing)
         controller.stop()
     }
+
+#if !APP_FOUNDATION_HOST_TESTS
+    /// A cancelled control stops the real converter after it validated the options, so nothing goes online.
+    func testTheConverterAcceptsTheEdgeSampleOptionsOnlyWithConsent() throws {
+        XCTAssertThrowsError(try VoiceAuditionController.renderOptions(
+            selection: .edgeDefault, language: "pt", allowOnlineFallback: false, modelsRoot: nil)) {
+            XCTAssertEqual($0.localizedDescription, L10n.string("models.consent.message"))
+        }
+        let options = try VoiceAuditionController.renderOptions(
+            selection: .edgeDefault, language: "pt", allowOnlineFallback: true, modelsRoot: nil)
+        let adapter = ConverterFFIAdapter()
+        let control = try adapter.makePlaybackControl()
+        control.cancel()
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("edge-\(UUID().uuidString).mp3")
+        XCTAssertThrowsError(try adapter.audition(text: "Uma amostra.", options: options, output: output,
+                                                  control: control)) {
+            guard case EmbeddedConverterError.conversionFailed(let reason) = $0 else { return XCTFail("\($0)") }
+            XCTAssertTrue(reason.contains("Audition cancelled"), reason)
+        }
+    }
+#endif
 }

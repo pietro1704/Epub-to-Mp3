@@ -1,6 +1,6 @@
 use super::*;
 
-/// A bounded installed-Piper audition creates no book, job, manifest or selection.
+/// A bounded audition (installed Piper, or Edge with online consent) creates no book, job, manifest or selection.
 #[no_mangle]
 pub unsafe extern "C" fn converter_voice_audition_v1(
     options_json: *const c_char,
@@ -66,12 +66,53 @@ pub unsafe extern "C" fn converter_voice_audition_v1(
     })
 }
 
+/// Edge is online, so its sample runs only with the captured online consent.
+fn synthesize_edge_audition(
+    options: &EmbeddedConversionOptionsV1,
+    text: &str,
+    output: &Path,
+    synthesize: &impl Fn(&str, &str) -> Result<Vec<u8>, String>,
+) -> Result<(), String> {
+    let preferences = options
+        .tts_preferences
+        .as_ref()
+        .ok_or("Audition requires captured voice identity")?;
+    if preferences.primary.engine != "edge" || preferences.secondary.is_some() {
+        return Err("Audition accepts one voice without fallback".into());
+    }
+    if !preferences.allow_online_fallback {
+        return Err(converter_core::tts_preferences::edge_consent_required_message("primary"));
+    }
+    let voice = converter_core::worker::edge_audition_voice(
+        preferences.primary.voice.as_deref(),
+        options.language.as_deref(),
+    );
+    let audio = synthesize(text, &voice)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, &audio))
+        .map_err(|error| format!("Failed to write the audition audio: {error}"))
+}
+
 fn synthesize_audition(
     options: EmbeddedConversionOptionsV1,
     text: &str,
     output: &Path,
     token: &piper::CancellationToken,
 ) -> Result<(), String> {
+    if options
+        .tts_preferences
+        .as_ref()
+        .is_some_and(|preferences| preferences.primary.engine == "edge")
+    {
+        let cancelled = || token.is_cancelled();
+        return synthesize_edge_audition(&options, text, output, &|text, voice| {
+            converter_core::worker::synthesize_edge_audition(text, voice, &cancelled)
+                .map_err(|error| error.to_string())
+        });
+    }
     #[cfg(not(feature = "piper-runtime"))]
     {
         let _ = (options, text, output, token);
@@ -189,5 +230,55 @@ mod tests {
             assert_eq!(std::fs::read(output).unwrap(), b"existing audio");
             converter_job_control_free(control);
         }
+    }
+
+    fn edge_options(consent: bool) -> EmbeddedConversionOptionsV1 {
+        let mut primary = converter_core::tts_preferences::TtsSelection {
+            engine: "edge".into(),
+            model_id: None,
+            voice: None,
+            session: None,
+        };
+        primary.session =
+            Some(converter_core::tts_session::SessionSelection::from_legacy(&primary).unwrap());
+        serde_json::from_value(serde_json::json!({
+            "contract_version": 2,
+            "language": "pt",
+            "tts_preferences": converter_core::tts_preferences::TtsPreferences {
+                primary,
+                secondary: None,
+                allow_online_fallback: consent,
+                ..Default::default()
+            },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn consented_edge_audition_renders_the_language_default_voice() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("preview.mp3");
+        let options = edge_options(true);
+        options.validate_contract().unwrap();
+        synthesize_edge_audition(&options, "Uma amostra.", &output, &|text, voice| {
+            assert_eq!(text, "Uma amostra.");
+            assert_eq!(voice, "pt-BR-FranciscaNeural");
+            Ok(b"mp3".to_vec())
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(output).unwrap(), b"mp3");
+    }
+
+    #[test]
+    fn edge_audition_without_consent_never_reaches_the_network() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("preview.mp3");
+        let error =
+            synthesize_edge_audition(&edge_options(false), "Uma amostra.", &output, &|_, _| {
+                panic!("Edge must not run without consent")
+            })
+            .unwrap_err();
+        assert!(error.contains("[[edge_consent_required_v1"), "{error}");
+        assert!(!output.exists());
     }
 }

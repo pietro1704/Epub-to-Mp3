@@ -18,7 +18,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private let model: ModelsByLanguageModel
-    private let audition = VoiceAuditionPresentation()
+    var audition = VoiceAuditionPresentation()
     private let table = NSTableView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let automaticFallbackButton = NSSwitch()
@@ -348,11 +348,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         case .downloadable:
             Task { [weak self] in await self?.model.download(row, in: language) }
         case .needsConsent:
-            let alert = NSAlert()
-            alert.messageText = L10n.string("models.consent.title")
-            alert.informativeText = L10n.string("models.consent.message")
-            alert.addButton(withTitle: L10n.string("common.ok"))
-            present(alert) { _ in }
+            explainOnlineConsent()
         case .unavailable: break
         }
     }
@@ -367,13 +363,13 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
                 Task { await self?.model.cancelDownload(row) }
             })
         }
+        // An online voice offers its sample even before the consent: choosing it explains why it cannot play.
+        if row.availability == .ready || (row.selection.isEdge && row.availability == .needsConsent) {
+            result.append(MenuAction(title: library.actionTitle(for: .preview), destructive: false) { [weak self] in
+                self?.preview(row, in: language)
+            })
+        }
         if row.availability == .ready {
-            // The audition renderer accepts only an installed local voice, as on iOS: Edge offers no sample.
-            if !row.selection.isEdge {
-                result.append(MenuAction(title: library.actionTitle(for: .preview), destructive: false) { [weak self] in
-                    self?.preview(row, in: language)
-                })
-            }
             if row.isChosen {
                 result.append(MenuAction(title: L10n.string("models.action.useAutomatic"), destructive: false) { [weak self] in
                     self?.model.clearChoice(in: language)
@@ -391,6 +387,15 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             })
         }
         return result
+    }
+
+    /// Runs one entry of a row's menu by its title (also driven directly by tests).
+    @discardableResult
+    func runRowAction(titled title: String, rowID: String, language: String) -> Bool {
+        guard let row = model.state.sections.first(where: { $0.language == language })?.rows.first(where: { $0.id == rowID }),
+              let action = actions(for: row, in: language).first(where: { $0.title == title }) else { return false }
+        action.run()
+        return true
     }
 
     private var menuActions: [MenuAction] = []
@@ -416,12 +421,19 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         menuActions[item.tag].run()
     }
 
+    private func explainOnlineConsent() {
+        showInfo(title: L10n.string("models.consent.title"), message: L10n.string("models.consent.message"))
+    }
+
     private func preview(_ row: ModelsByLanguageViewState.Row, in language: String) {
+        // Read at play time: Edge samples go online only while the consent is on.
+        if row.selection.isEdge, !model.allowOnlineFallback { return explainOnlineConsent() }
         Task { [weak self] in
             guard let self else { return }
             do {
                 let choice = try await model.auditionChoice(for: row, in: language)
-                audition.present(selection: choice.selection, language: choice.language, on: view.window)
+                audition.present(selection: choice.selection, language: choice.language,
+                                 allowOnlineFallback: model.allowOnlineFallback, on: view.window)
             } catch {
                 showInfo(title: L10n.string("voiceAudition.title"), message: AppErrorReporter.message(error, context: #function))
             }

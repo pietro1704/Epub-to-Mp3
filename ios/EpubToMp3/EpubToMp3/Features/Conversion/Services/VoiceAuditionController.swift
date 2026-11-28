@@ -1,6 +1,11 @@
 import Foundation
 import AVFoundation
 
+/// Shown as is: it tells the listener why an online sample cannot play.
+private struct OnlineVoiceConsentRequired: LocalizedError {
+    var errorDescription: String? { L10n.string("models.consent.message") }
+}
+
 private struct VoiceAuditionInvocation: @unchecked Sendable {
     let adapter: ConverterFFIAdapter
     let control: ConverterPlaybackControl
@@ -43,8 +48,31 @@ final class VoiceAuditionController: NSObject, AVAudioPlayerDelegate {
         }
     }
 
+    /// What the converter is asked to render for one sample: an installed Piper
+    /// voice, or an Edge voice once the listener allowed online voices.
+    static func renderOptions(selection: TtsSelection, language: String, allowOnlineFallback: Bool,
+                              modelsRoot: URL?) throws -> ConversionOptions {
+        if selection.isEdge {
+            guard allowOnlineFallback else {
+                throw OnlineVoiceConsentRequired()
+            }
+            var options = NarrationConversionOptions.current(
+                for: TtsPreferences(primary: selection, secondary: nil, allowOnlineFallback: true))
+            options.language = language
+            return options
+        }
+        guard selection.isPiper, let modelID = selection.modelID,
+              let root = modelsRoot ?? LocalSpeechModelReadiness.ttsModelsRoot() else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        var options = ConversionOptions(engine: TtsSelection.piperEngine, language: language, modelsRoot: root.path,
+            modelID: modelID, espeakDataDirectory: Bundle.main.resourceURL?.path)
+        options.ttsPreferences = TtsPreferences(primary: selection, secondary: nil, allowOnlineFallback: false)
+        return options
+    }
+
     @discardableResult
-    func start(selection: TtsSelection, language: String) -> Task<Void, Never> {
+    func start(selection: TtsSelection, language: String, allowOnlineFallback: Bool = false) -> Task<Void, Never> {
         stop()
         let attempt = UUID()
         generation = attempt
@@ -58,19 +86,14 @@ final class VoiceAuditionController: NSObject, AVAudioPlayerDelegate {
                     try play(output)
                     return
                 }
-                guard selection.isPiper, let modelID = selection.modelID,
-                      let root = modelsRoot ?? LocalSpeechModelReadiness.ttsModelsRoot() else {
-                    throw EmbeddedConverterError.artifactUnavailable
-                }
+                let options = try Self.renderOptions(selection: selection, language: language,
+                    allowOnlineFallback: allowOnlineFallback, modelsRoot: modelsRoot)
                 let adapter = ConverterFFIAdapter()
                 let control = try adapter.makePlaybackControl()
                 self.control = control
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("voice-audition-\(attempt.uuidString)")
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
                 self.directory = directory
-                var options = ConversionOptions(engine: TtsSelection.piperEngine, language: language, modelsRoot: root.path,
-                    modelID: modelID, espeakDataDirectory: Bundle.main.resourceURL?.path)
-                options.ttsPreferences = TtsPreferences(primary: selection, secondary: nil, allowOnlineFallback: false)
                 let output = directory.appendingPathComponent("preview.mp3")
                 let invocation = VoiceAuditionInvocation(adapter: adapter, control: control, options: options,
                     text: Self.sample(language: language), output: output)
