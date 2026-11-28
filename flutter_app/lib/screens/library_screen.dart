@@ -17,6 +17,7 @@ import '../features/library/public_book_download.dart';
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
 import '../services/conversion/epub_metadata_reader.dart';
+import '../services/conversion/library_shelf_reader.dart';
 import '../services/linux_book_import.dart';
 import '../services/storage/library_store.dart';
 import '../state/providers.dart';
@@ -52,7 +53,13 @@ final libraryBookFactsProvider =
 
 final libraryStoreProvider = ChangeNotifierProvider<LibraryStore>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
-  return LibraryStore(prefs: prefs, metadataReader: readEpubMetadata);
+  final store = LibraryStore(
+    prefs: prefs,
+    metadataReader: readEpubMetadata,
+    shelfReader: readLibraryShelf,
+  );
+  unawaited(store.refreshShelf());
+  return store;
 });
 
 enum _SortMode { lastPlayed, title, dateAdded }

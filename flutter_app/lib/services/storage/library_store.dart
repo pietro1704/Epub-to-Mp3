@@ -32,6 +32,11 @@ class EpubMetadata {
 
 typedef EpubMetadataReader = Future<EpubMetadata> Function(String filePath);
 
+/// One call for many books: the metadata of each path in order, null for a book it cannot read.
+typedef LibraryShelfReader = Future<List<EpubMetadata?>> Function(
+  List<String> paths,
+);
+
 class LibraryStoreException implements Exception {
   final int code;
   final String message;
@@ -45,13 +50,23 @@ class LibraryStore extends ChangeNotifier {
     required this._prefs,
     this.defaultsKey = 'library.books.v1',
     EpubMetadataReader? metadataReader,
-  })  : _readMetadata = metadataReader ?? _defaultMetadata {
+    LibraryShelfReader? shelfReader,
+  })  : _readMetadata = metadataReader ?? _defaultMetadata,
+        _readShelf = shelfReader {
     _load();
   }
 
   final SharedPreferences _prefs;
   final String defaultsKey;
   final EpubMetadataReader _readMetadata;
+  final LibraryShelfReader? _readShelf;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   final List<BookEntity> _books = [];
   String? _loadError;
@@ -61,6 +76,36 @@ class LibraryStore extends ChangeNotifier {
 
   static Future<EpubMetadata> _defaultMetadata(String path) async =>
       const EpubMetadata();
+
+  /// Reads every EPUB of the shelf with one batch call and keeps its thumbnail cover (and the
+  /// author a book still lacks), persisting and notifying once.
+  Future<void> refreshShelf() async {
+    final read = _readShelf;
+    if (read == null) return;
+    final epubs = [
+      for (final book in _books)
+        if (book.filePath.toLowerCase().endsWith('.epub')) book,
+    ];
+    if (epubs.isEmpty) return;
+    final metadata = await read([for (final book in epubs) book.filePath]);
+    var changed = false;
+    for (final (position, book) in epubs.indexed) {
+      final meta = position < metadata.length ? metadata[position] : null;
+      if (meta == null) continue;
+      final cover = meta.coverBase64;
+      if (cover != null && cover != book.coverBase64) {
+        book.coverBase64 = cover;
+        changed = true;
+      }
+      if (book.author == null && (meta.author?.isNotEmpty ?? false)) {
+        book.author = meta.author;
+        changed = true;
+      }
+    }
+    if (!changed || _disposed) return;
+    _persist();
+    notifyListeners();
+  }
 
   // ---- CRUD --------------------------------------------------------
 

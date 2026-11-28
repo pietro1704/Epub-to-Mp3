@@ -59,7 +59,7 @@ struct ShelfRequest {
     cover_max_edge: Option<u32>,
 }
 
-fn library_shelf_json(request: &str) -> Result<String, String> {
+pub(super) fn library_shelf_json(request: &str) -> Result<String, String> {
     let request: ShelfRequest = serde_json::from_str(request)
         .map_err(|error| format!("invalid library shelf request: {error}"))?;
     let edge = request.cover_max_edge.unwrap_or(DEFAULT_SHELF_COVER_EDGE);
