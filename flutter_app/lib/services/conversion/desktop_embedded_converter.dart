@@ -17,6 +17,7 @@ import '../../models/narration_plan.dart';
 import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
 import 'linux_page_ocr.dart';
+import 'windows_page_ocr.dart';
 import 'pdf_ocr_preparer.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/listening_schedule.dart';
@@ -76,9 +77,10 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   late final _MetadataDart _metadata;
   final String _libraryPath;
 
-  /// Linux reads scanned PDF pages with Tesseract when it is already installed.
-  late final PdfOcrPreparer? _pdfOcr = Platform.isLinux
-      ? _linuxPdfOcr(_libraryPath)
+  /// Scanned PDF pages are read by Tesseract (Linux) or Windows.Media.Ocr (Windows), only
+  /// when the engine is already installed.
+  late final PdfOcrPreparer? _pdfOcr = Platform.isLinux || Platform.isWindows
+      ? _desktopPdfOcr(_libraryPath)
       : null;
   final bool _workerLibraryAvailable;
   final Map<String, int> _controls = {};
@@ -550,16 +552,21 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   }
 }
 
-PdfOcrPreparer _linuxPdfOcr(String libraryPath) {
-  final ocr = LinuxPageOcr();
+PdfOcrPreparer _desktopPdfOcr(String libraryPath) {
+  final windows = Platform.isWindows;
+  final linux = LinuxPageOcr();
+  final win = WindowsPageOcr();
   return PdfOcrPreparer(
-    available: ocr.isAvailable,
+    available: windows ? win.isAvailable : linux.isAvailable,
     listPages: (path) async {
-      final raw = await desktopPdfImagePagesJson(path, libraryPath: libraryPath);
+      final raw = await desktopPdfImagePagesJson(
+        path,
+        libraryPath: libraryPath,
+      );
       final pages = (jsonDecode(raw ?? '{}') as Map)['pages'] as List? ?? [];
       return pages.cast<num>().map((page) => page.toInt()).toList();
     },
-    recognize: ocr.recognize,
+    recognize: windows ? win.recognize : linux.recognize,
     store: (path, page, text) =>
         desktopPdfOcrPageSet(path, page, text, libraryPath: libraryPath),
   );
