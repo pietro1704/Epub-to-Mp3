@@ -267,6 +267,34 @@ internal class ConversionModelChannels(
                         }
                     }
                 }
+                "voiceAudition" -> {
+                    val request = call.argument<String>("request").orEmpty()
+                    val text = call.argument<String>("text").orEmpty()
+                    val output = call.argument<String>("output").orEmpty()
+                    if (request.isBlank() || text.isBlank() || output.isBlank()) {
+                        result.error("BAD_ARGS", "request, text and output are required", null)
+                    } else {
+                        // Cancellable by id through cancelVoiceAudition; Piper or consented Edge.
+                        nativePrepareConversion(request)
+                        runNative(result) {
+                            try {
+                                val ok = nativeVoiceAudition(request, conversionOptions(call.argument<String>("optionsJson")), text, output)
+                                val error = if (ok) null else nativeLastError()
+                                runOnUiThread {
+                                    if (ok) result.success(output)
+                                    else result.error(EMBEDDED_UNAVAILABLE, error ?: "Voice sample failed", null)
+                                }
+                            } catch (error: Throwable) {
+                                runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                            }
+                        }
+                    }
+                }
+                "cancelVoiceAudition" -> {
+                    val request = call.argument<String>("request").orEmpty()
+                    if (request.isNotBlank()) nativeCancelConversion(request)
+                    result.success(null)
+                }
                 "ttsModelMetadata" -> {
                     val modelId = call.argument<String>("modelId")
                     val root = call.argument<String>("root")

@@ -128,6 +128,7 @@ class MainActivity : AudioServiceActivity() {
 
     external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean, textOffset: Int): String?
     external fun nativePiperSynthesizeWithOptions(text: String, output: String, optionsJson: String): Boolean
+    external fun nativeVoiceAudition(request: String, optionsJson: String, text: String, output: String): Boolean
     external fun nativeParse(inputPath: String): String?
     external fun nativeLibraryMetadata(inputPath: String): String?
     external fun nativeChapterNames(path: String, index: String?, name: String?): String?

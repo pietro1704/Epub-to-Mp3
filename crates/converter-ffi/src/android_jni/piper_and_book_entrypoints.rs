@@ -261,3 +261,50 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
         },
     )
 }
+
+/// Renders one voice sample (installed Piper, or Edge with the online consent captured in the
+/// options). The request id names an independent cancellation control: call
+/// `nativePrepareConversion(id)` first and `nativeCancelConversion(id)` to stop the sample.
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeVoiceAudition(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    request: JString<'_>,
+    options_json: JString<'_>,
+    text: JString<'_>,
+    output: JString<'_>,
+) -> jboolean {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeVoiceAudition",
+        0,
+        || {
+            let result = (|| -> Result<(), String> {
+                let request = read_string(&mut env, request)?;
+                let options = read_string(&mut env, options_json)?;
+                let text = read_string(&mut env, text)?;
+                let output = read_string(&mut env, output)?;
+                let control = android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .entry(request.clone())
+                    .or_default()
+                    .clone();
+                #[cfg(feature = "piper-runtime")]
+                piper_runtime_register_embedded();
+                let result = crate::voice_audition_boundary::voice_audition_checked(
+                    &options, &text, &output, &control,
+                );
+                android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&request);
+                result
+            })();
+            match result {
+                Ok(()) => 1,
+                Err(error) => fail::<jboolean>(error),
+            }
+        },
+    )
+}
