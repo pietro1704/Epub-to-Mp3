@@ -118,3 +118,50 @@ pub unsafe extern "C" fn converter_pdf_image_pages_json_v1(path: *const c_char) 
         },
     )
 }
+
+/// Stores (or, with a null or blank `text`, clears) the text a client OCR recognised for one
+/// 1-based page of a PDF, in the `<pdf>.ocr.json` sidecar read on every open, and returns
+/// `{"pages": {page: text}}`. Free the result with `converter_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn converter_pdf_ocr_page_set_json_v1(
+    path: *const c_char,
+    page: *const c_char,
+    text: *const c_char,
+) -> *mut c_char {
+    ffi_guard(
+        "converter_pdf_ocr_page_set_json_v1",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let path = match c_string(path, "path") {
+                Ok(value) => value,
+                Err(error) => return fail(error),
+            };
+            let page = match c_string(page, "page").and_then(|page| {
+                page.trim()
+                    .parse::<u32>()
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(value) => value,
+                Err(error) => return fail(error),
+            };
+            let text = if text.is_null() {
+                String::new()
+            } else {
+                match c_string(text, "text") {
+                    Ok(value) => value,
+                    Err(error) => return fail(error),
+                }
+            };
+            let book = Path::new(&path);
+            let result = converter_core::ocr_pages::OcrPages::load(book)
+                .and_then(|mut pages| {
+                    pages.set(page, &text);
+                    pages.save(book).map(|_| pages)
+                })
+                .map_err(|error| error.to_string())
+                .and_then(|pages| serde_json::to_string(&pages).map_err(|error| error.to_string()));
+            json_result(result)
+        },
+    )
+}

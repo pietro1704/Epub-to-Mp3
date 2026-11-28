@@ -58,3 +58,39 @@ fn pdf_image_pages_json_is_empty_for_a_text_pdf() {
     );
     assert_eq!(image_pages_json(&text)["pages"], serde_json::json!([]));
 }
+
+#[test]
+fn client_ocr_text_is_read_when_the_book_is_opened_and_can_be_cleared() {
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("scan.pdf");
+    std::fs::write(&input, image_page_pdf(false)).unwrap();
+    let path = CString::new(input.to_str().unwrap()).unwrap();
+    let page = CString::new("3").unwrap();
+    let text = CString::new("Texto reconhecido pelo OCR do cliente na terceira pagina.").unwrap();
+    let chapters_text = |path: &CString| unsafe {
+        let session = converter_session_open(path.as_ptr());
+        assert!(!session.is_null());
+        let metadata = converter_session_metadata_json(session);
+        let value: serde_json::Value =
+            serde_json::from_slice(CStr::from_ptr(metadata).to_bytes()).unwrap();
+        converter_string_free(metadata);
+        converter_session_free(session);
+        value.to_string()
+    };
+    assert!(!chapters_text(&path).contains("reconhecido pelo OCR"));
+    unsafe {
+        let raw = converter_pdf_ocr_page_set_json_v1(path.as_ptr(), page.as_ptr(), text.as_ptr());
+        assert!(!raw.is_null(), "storing OCR text must succeed");
+        let value: serde_json::Value =
+            serde_json::from_str(CStr::from_ptr(raw).to_str().unwrap()).unwrap();
+        converter_string_free(raw);
+        assert!(value["pages"]["3"].as_str().unwrap().contains("reconhecido"));
+    }
+    assert!(chapters_text(&path).contains("reconhecido pelo OCR"));
+    unsafe {
+        // A null text clears the page again.
+        let raw = converter_pdf_ocr_page_set_json_v1(path.as_ptr(), page.as_ptr(), ptr::null());
+        converter_string_free(raw);
+    }
+    assert!(!chapters_text(&path).contains("reconhecido pelo OCR"));
+}
