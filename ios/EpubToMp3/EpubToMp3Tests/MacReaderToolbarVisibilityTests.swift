@@ -101,7 +101,9 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
                                  location: .standard)
-        let controller = MacAppKitRootController(settings: AppSettings(defaults: defaults), library: library,
+        let settings = AppSettings(defaults: defaults)
+        settings.readerTheme = .sepia
+        let controller = MacAppKitRootController(settings: settings, library: library,
             player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
             playerPresentation: PlayerPresentation(defaults: defaults))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
@@ -139,6 +141,12 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
             XCTAssertEqual(miniPlayerButtons().isEmpty, hidden, "click \(index + 1): mini player")
             XCTAssertEqual(scroll.convert(scroll.bounds, to: controller.view), viewport,
                            "click \(index + 1): the text viewport must not change")
+            guard hidden else { continue }
+            // The strip left by the hidden mini player is part of the page.
+            let surface = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderSurfaceView }.first)
+            let strip = try XCTUnwrap(surface.superview)
+            XCTAssertEqual(strip.layer?.backgroundColor, surface.layer?.backgroundColor,
+                           "click \(index + 1): the empty strip must use the reader background")
         }
     }
 
