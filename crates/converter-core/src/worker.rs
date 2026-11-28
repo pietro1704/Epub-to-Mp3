@@ -181,6 +181,8 @@ pub struct ExecutionOptions {
 pub struct ConversionWorker {
     language_overrides: Vec<crate::language::LanguageOverride>,
     source_identity: Mutex<Option<String>>,
+    /// Set while repairing a job's own output in place.
+    repairing: std::sync::atomic::AtomicBool,
     expected_source_sha256: Mutex<Option<String>>,
     pronunciation: crate::pronunciation::PronunciationDictionary,
     render_progress: Mutex<render_progress::RenderProgress>,
@@ -220,6 +222,7 @@ impl ConversionWorker {
         Ok(Self {
             language_overrides: Vec::new(),
             source_identity: Mutex::new(None),
+            repairing: Default::default(),
             expected_source_sha256: Mutex::new(None),
             pronunciation: Default::default(),
             render_progress: Default::default(),
@@ -342,6 +345,7 @@ pub(crate) use error_code::book_input_code;
 pub use error_code::{ERROR_CODE_CLOSE, ERROR_CODE_OPEN};
 pub mod background_pacing;
 mod heading_pauses;
+mod interrupted_jobs;
 mod job_lifecycle;
 mod language_routing;
 mod native_tts_adapters;

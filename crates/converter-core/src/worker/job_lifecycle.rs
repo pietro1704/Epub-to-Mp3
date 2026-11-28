@@ -219,10 +219,15 @@ impl ConversionWorker {
         for audio in receipts {
             discard_chapter_audio_receipt(&audio)?;
         }
-        match self.jobs.restart_for_repair(&request.job_id) {
+        self.repairing
+            .store(true, std::sync::atomic::Ordering::Release);
+        let result = match self.jobs.restart_for_repair(&request.job_id) {
             Ok(_) => self.run_prepared(request),
             Err(JobError::NotFound(_)) => self.run_claimed(request),
             Err(error) => Err(error.into()),
-        }
+        };
+        self.repairing
+            .store(false, std::sync::atomic::Ordering::Release);
+        result
     }
 }

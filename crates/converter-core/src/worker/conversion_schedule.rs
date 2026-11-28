@@ -60,6 +60,7 @@ impl ConversionWorker {
             super::persisted_request_path(&self.config.paths.jobs_dir, &request.job_id),
             request,
         )?;
+        self.record_job_source(&request.job_id, &book_key)?;
         let chapters: Vec<_> = book
             .chapters
             .iter()
@@ -138,7 +139,9 @@ impl ConversionWorker {
         let detected_language = language_decision.language.as_deref();
         let results = Mutex::new(Vec::with_capacity(total));
         let completed = AtomicUsize::new(0);
+        let recovery_jobs = self.recovery_candidates(&request.job_id, &book_key);
         let chapter_context = ChapterExecutionContext {
+            recovery_jobs: &recovery_jobs,
             request: request,
             book: &book,
             cache_dir: &cache_dir,
