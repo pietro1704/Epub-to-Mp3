@@ -161,6 +161,31 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                         }
                     }
                 }
+                "pdfImagePages", "pdfOcrPageSet" -> {
+                    if (!MainActivity.converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val path = call.argument<String>("path")
+                        val page = call.argument<String>("page")
+                        val text = call.argument<String>("text")
+                        val isPages = call.method == "pdfImagePages"
+                        if (path.isNullOrBlank() || (!isPages && page.isNullOrBlank())) {
+                            result.error("BAD_ARGS", "path" + (if (isPages) "" else " and page") + " required", null)
+                        } else {
+                            runQuery(result) {
+                                try {
+                                    val native = if (isPages) nativePdfImagePages(path) else nativePdfOcrPageSet(path, page!!, text)
+                                    runOnUiThread {
+                                        if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                        else result.success(native)
+                                    }
+                                } catch (error: Throwable) {
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
+                            }
+                        }
+                    }
+                }
                 "exportMp3" -> {
                     val request = call.argument<String>("request")
                     if (!MainActivity.converterLibraryAvailable()) {
