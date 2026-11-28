@@ -178,6 +178,72 @@ final class MacConvertScreenControllerTests: XCTestCase {
         XCTAssertFalse(controller.form.failure.isHidden)
     }
 
+    private func convertedController(
+        _ fixture: Fixture, audioExtension: String,
+        chooseExport: (() async -> MacConvertScreenController.ExportChoice?)? = nil
+    ) async throws -> (MacConvertScreenController, URL) {
+        let output = fixture.directory.appendingPathComponent("converted-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try CompletedMP3Fixture.data(frames: 80).write(to: output.appendingPathComponent("one.\(audioExtension)"))
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            let manifest = "{\"manifest\":{\"jobId\":\"\(jobID)\",\"title\":\"Converted fixture\",\"author\":\"Author\","
+                + "\"chapters\":[{\"title\":\"Um\",\"filename\":\"one.\(audioExtension)\",\"textChars\":3}]}}"
+            return .init(jobID: jobID, manifestJSON: Data(manifest.utf8), outputDirectory: output)
+        }))
+        let external = try EpubFixture.createWithChapters(["A book that is not in the library"])
+        addTeardownBlock { try? FileManager.default.removeItem(at: external) }
+        let controller = MacConvertScreenController(settings: fixture.settings, library: fixture.library,
+            viewModel: model, inboxDirectory: fixture.directory.appendingPathComponent("inbox"),
+            chooseExport: chooseExport)
+        _ = controller.view
+        await controller.selectDocument(external)
+        XCTAssertTrue(controller.form.addToLibrary.isHidden)
+        XCTAssertTrue(controller.form.exportAudio.isHidden)
+        await controller.submit()
+        return (controller, output)
+    }
+
+    func testFinishedConversionAddsTheBookWithItsAudioOnlyWhenAsked() async throws {
+        let fixture = try fixture()
+        let (controller, _) = try await convertedController(fixture, audioExtension: "mp3")
+        XCTAssertEqual(fixture.library.books.map(\.id), [fixture.book.id], "Nothing is added automatically")
+        XCTAssertFalse(controller.form.addToLibrary.isHidden)
+        XCTAssertEqual(controller.form.addToLibrary.title, L10n.string("convert.addToLibrary"))
+
+        await controller.addResultToLibrary()
+
+        XCTAssertEqual(fixture.library.books.count, 2)
+        let added = try XCTUnwrap(fixture.library.books.first { $0.id != fixture.book.id })
+        XCTAssertNotNil(added.lastJobId)
+        XCTAssertTrue(controller.form.addToLibrary.isHidden)
+        XCTAssertEqual(controller.form.delivery.stringValue, L10n.string("convert.addedToLibrary"))
+    }
+
+    func testExportWritesTheChosenLayoutAndFormatToTheChosenFolder() async throws {
+        let fixture = try fixture()
+        let destination = fixture.directory.appendingPathComponent("exported", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let (controller, _) = try await convertedController(fixture, audioExtension: "mp3") {
+            .init(directory: destination, layout: .perChapter, format: .m4a)
+        }
+        XCTAssertFalse(controller.form.exportAudio.isHidden)
+        XCTAssertTrue(controller.form.exportAudio.isEnabled)
+
+        await controller.exportResult()
+
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), ["01 - Um.m4a"])
+        XCTAssertEqual(controller.form.delivery.stringValue,
+                       ManualConversionDelivery.doneMessage(fileCount: 1))
+    }
+
+    func testExportIsDisabledWithTheReasonWhenThereIsNoMP3Audio() async throws {
+        let fixture = try fixture()
+        let (controller, _) = try await convertedController(fixture, audioExtension: "wav")
+        XCTAssertFalse(controller.form.exportAudio.isHidden)
+        XCTAssertFalse(controller.form.exportAudio.isEnabled)
+        XCTAssertEqual(controller.form.delivery.stringValue, L10n.string("convert.export.needsPiper"))
+    }
+
     func testFailureAllowsRetryWithoutRecordingAJob() async throws {
         let fixture = try fixture()
         var calls = 0

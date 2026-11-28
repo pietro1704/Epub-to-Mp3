@@ -16,6 +16,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var chapterNamesUpdate: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?)
         -> UnsafeMutablePointer<CChar>?)?
     private var filenameCoverJSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
+    private var exportMP3JSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var auditionVoice: ConverterVoiceAudition?
     private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
     /// `converter_set_background_cpu_limit_v1`: absent in older libraries (then pacing is simply unavailable).
@@ -89,6 +90,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         chapterNamesUpdate = symbol("converter_chapter_names_update_json_v1", as: (@convention(c) (UnsafePointer<CChar>?,
             UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?).self)
         filenameCoverJSON = symbol("converter_filename_cover_json_v1", as: (@convention(c) (UnsafePointer<CChar>?)
+            -> UnsafeMutablePointer<CChar>?).self)
+        exportMP3JSON = symbol("converter_export_mp3_json_v1", as: (@convention(c) (UnsafePointer<CChar>?)
             -> UnsafeMutablePointer<CChar>?).self)
         prepareAudio = symbol("converter_audio_prepare_v1", as: (@convention(c) (UnsafePointer<CChar>?) -> Bool).self)
         setBackgroundCPULimitSymbol = symbol("converter_set_background_cpu_limit_v1", as: (@convention(c) (UInt32) -> Void).self)
@@ -338,6 +341,18 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
         defer { freeString(result) }
         return try JSONDecoder().decode(FilenameCover.self, from: Data(String(cString: result).utf8))
+    }
+
+    /// Writes MP3 files for a finished book and returns them in chapter order.
+    func exportMP3(request: String) throws -> [URL] {
+        guard let export = exportMP3JSON else { throw EmbeddedConverterError.artifactUnavailable }
+        guard let result = request.withCString({ export($0) }) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(result) }
+        struct Exported: Decodable { let files: [String] }
+        return try JSONDecoder().decode(Exported.self, from: Data(String(cString: result).utf8))
+            .files.map { URL(fileURLWithPath: $0) }
     }
 
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }

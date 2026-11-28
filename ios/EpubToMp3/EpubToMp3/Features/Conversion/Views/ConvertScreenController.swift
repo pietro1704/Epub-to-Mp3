@@ -24,6 +24,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let viewModel: ConvertViewModel
     private var submissionObserver: AnyCancellable?
     private var startedWholeBookConversion = false
+    private var delivery = ConvertDeliveryState()
+    private weak var exportPicker: UIDocumentPickerViewController?
+    private var exportStaging: URL?
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
@@ -120,10 +123,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         case .flags:
             return 4
         case .result:
-            var count = 0
-            if viewModel.submittedJobId != nil { count += 2 }
-            if viewModel.error != nil { count += 1 }
-            return count
+            return resultRows.count
         case .action:
             return viewModel.isSubmitting ? 2 : 1
         }
@@ -181,8 +181,12 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 presentPicker()
             }
         case .result:
-            if viewModel.submittedJobId != nil && indexPath.row == 1 {
-                openSubmittedJob()
+            guard resultRows.indices.contains(indexPath.row) else { break }
+            switch resultRows[indexPath.row] {
+            case .open: openSubmittedJob()
+            case .addToLibrary: addResultToLibrary()
+            case .export: chooseExport(from: tableView.rectForRow(at: indexPath))
+            case .completed, .delivery, .error: break
             }
         case .action:
             if indexPath.row == 1 { viewModel.cancel() } else { submit() }
@@ -330,6 +334,22 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         return cell
     }
 
+    private enum ResultRow {
+        case completed, open, addToLibrary, export, delivery, error
+    }
+
+    private var resultRows: [ResultRow] {
+        var rows: [ResultRow] = []
+        if viewModel.submittedJobId != nil {
+            rows += [.completed, .open]
+            if delivery.canAddToLibrary(library: library) { rows.append(.addToLibrary) }
+            if delivery.isReady { rows.append(.export) }
+            if delivery.message != nil { rows.append(.delivery) }
+        }
+        if viewModel.error != nil { rows.append(.error) }
+        return rows
+    }
+
     private func resultCell(for indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         cell.accessoryView = nil
@@ -338,35 +358,43 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         cell.accessibilityLabel = nil
         cell.accessibilityHint = nil
         cell.accessibilityTraits = .staticText
+        cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        var row = indexPath.row
-        if viewModel.submittedJobId != nil {
-            if row == 0 {
-                content.text = L10n.string("convert.completed")
-                content.image = UIImage(systemName: "checkmark.seal.fill")
-                cell.selectionStyle = .none
-                cell.accessoryType = .none
-                cell.contentConfiguration = content
-                return cell
-            }
-            row -= 1
-            if row == 0 {
-                content.text = L10n.string("convert.openResult")
-                content.image = UIImage(systemName: "arrow.right.circle")
-                cell.accessoryType = .disclosureIndicator
-                cell.selectionStyle = .default
-                cell.accessibilityTraits = .button
-                cell.contentConfiguration = content
-                return cell
-            }
-            row -= 1
+        guard resultRows.indices.contains(indexPath.row) else { return cell }
+        func button(_ key: String, symbol: String, identifier: String, enabled: Bool) {
+            content.text = L10n.string(key)
+            content.image = UIImage(systemName: symbol)
+            content.textProperties.color = enabled ? .label : .secondaryLabel
+            cell.selectionStyle = enabled ? .default : .none
+            cell.accessibilityTraits = enabled ? .button : [.button, .notEnabled]
+            cell.accessibilityIdentifier = identifier
         }
-        if row == 0, let error = viewModel.error {
-            content.text = error
+        switch resultRows[indexPath.row] {
+        case .completed:
+            content.text = L10n.string("convert.completed")
+            content.image = UIImage(systemName: "checkmark.seal.fill")
+        case .open:
+            content.text = L10n.string("convert.openResult")
+            content.image = UIImage(systemName: "arrow.right.circle")
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            cell.accessibilityTraits = .button
+        case .addToLibrary:
+            button("convert.addToLibrary", symbol: "books.vertical",
+                   identifier: "convert.addToLibrary", enabled: !delivery.isBusy)
+        case .export:
+            let hasAudio = delivery.audiobook(library: library) != nil
+            button("convert.export", symbol: "square.and.arrow.up",
+                   identifier: "convert.export", enabled: hasAudio && !delivery.isBusy)
+            content.secondaryText = hasAudio ? nil : L10n.string("convert.export.needsPiper")
+        case .delivery:
+            content.text = delivery.message
+            content.textProperties.numberOfLines = 0
+            cell.accessibilityIdentifier = "convert.delivery"
+        case .error:
+            content.text = viewModel.error
             content.image = UIImage(systemName: "exclamationmark.triangle")
             content.imageProperties.tintColor = .systemRed
-            content.secondaryText = nil
-            cell.selectionStyle = .none
         }
         cell.contentConfiguration = content
         return cell
@@ -417,7 +445,118 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         present(picker, animated: true)
     }
 
+    // MARK: - Delivery of a finished conversion
+
+    /// Reads what the finished job can be delivered as; a source already in the library
+    /// gets the audio linked, as on the Mac.
+    func prepareDelivery(source: URL) async {
+        guard let result = viewModel.session.result, delivery.jobID != result.jobID,
+              let snapshot = try? result.snapshot() else { return }
+        guard let sourceID = try? await Task.detached(operation: {
+            try ConvertViewModel.sourceIdentity(of: source)
+        }).value, viewModel.submittedJobId == result.jobID else { return }
+        delivery = ConvertDeliveryState(jobID: result.jobID, source: source, sourceID: sourceID, snapshot: snapshot)
+        if library.books.contains(where: { $0.id == sourceID }) {
+            library.recordConversion(jobId: result.jobID, for: sourceID)
+        }
+        reloadData()
+    }
+
+    private func addResultToLibrary() {
+        guard !delivery.isBusy, let jobID = delivery.jobID, let source = delivery.source else { return }
+        delivery.isBusy = true
+        reloadData()
+        Task { [weak self] in
+            guard let self else { return }
+            let message: String
+            do {
+                try await ManualConversionDelivery.addToLibrary(source: source, jobID: jobID, library: self.library)
+                message = L10n.string("convert.addedToLibrary")
+            } catch {
+                message = AppErrorReporter.message(error, context: "Add converted book to library")
+            }
+            self.finishDelivery(jobID: jobID, message: message)
+        }
+    }
+
+    private func finishDelivery(jobID: String, message: String?) {
+        guard delivery.jobID == jobID else { return }
+        delivery.isBusy = false
+        delivery.message = message
+        reloadData()
+    }
+
+    /// Layout, then format; the destination is chosen in Files after the files are written.
+    private func chooseExport(from rect: CGRect) {
+        guard !delivery.isBusy, delivery.audiobook(library: library) != nil else { return }
+        let layouts = ManualConversionDelivery.Layout.allCases.map { layout in
+            (L10n.string(layout.titleKey), { [weak self] in self?.chooseExportFormat(layout, from: rect) ?? () })
+        }
+        presentChoices(title: L10n.string("convert.export.layout"), choices: layouts, from: rect)
+    }
+
+    private func chooseExportFormat(_ layout: ManualConversionDelivery.Layout, from rect: CGRect) {
+        let formats = ManualConversionDelivery.Format.allCases.map { format in
+            (format.title, { [weak self] in self?.export(layout: layout, format: format) ?? () })
+        }
+        presentChoices(title: L10n.string("convert.export.format"), choices: formats, from: rect)
+    }
+
+    private func presentChoices(title: String, choices: [(String, () -> Void)], from rect: CGRect) {
+        let sheet = UIAlertController(title: title, message: nil, preferredStyle: .actionSheet)
+        for (name, run) in choices {
+            sheet.addAction(UIAlertAction(title: name, style: .default) { _ in run() })
+        }
+        sheet.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        sheet.popoverPresentationController?.sourceView = tableView
+        sheet.popoverPresentationController?.sourceRect = rect
+        present(sheet, animated: true)
+    }
+
+    private func export(layout: ManualConversionDelivery.Layout, format: ManualConversionDelivery.Format) {
+        guard !delivery.isBusy, let jobID = delivery.jobID,
+              let book = delivery.audiobook(library: library) else { return }
+        delivery.isBusy = true
+        delivery.message = L10n.string("convert.export.running")
+        reloadData()
+        Task { [weak self] in
+            let staging = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ManualExportShare-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+                let files = try await ManualConversionDelivery.export(book, layout: layout, format: format, to: staging)
+                guard let self, self.delivery.jobID == jobID, self.view.window != nil else {
+                    try? FileManager.default.removeItem(at: staging)
+                    self?.finishDelivery(jobID: jobID, message: nil)
+                    return
+                }
+                let picker = UIDocumentPickerViewController(forExporting: files, asCopy: true)
+                picker.delegate = self
+                self.exportPicker = picker
+                self.exportStaging = staging
+                self.present(picker, animated: true)
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                self?.finishDelivery(jobID: jobID, message: L10n.string("convert.export.failed") + " "
+                    + AppErrorReporter.message(error, context: "Export converted audio"))
+            }
+        }
+    }
+
+    private func finishExport(savedFiles: Int?) {
+        if let exportStaging { try? FileManager.default.removeItem(at: exportStaging) }
+        exportStaging = nil
+        exportPicker = nil
+        guard let jobID = delivery.jobID else { return }
+        finishDelivery(jobID: jobID, message: savedFiles.map(ManualConversionDelivery.doneMessage(fileCount:)))
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if controller === exportPicker { finishExport(savedFiles: nil) }
+    }
+
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if controller === exportPicker { return finishExport(savedFiles: urls.count) }
         guard let url = urls.first else { return }
         viewModel.recoverySelection = nil
         viewModel.recoveryLanguage = nil
@@ -438,6 +577,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         view.endEditing(true)
         Task { [weak self] in
             guard let self else { return }
+            let converted = self.viewModel.selectedFile
             await self.viewModel.submit(
                 player: self.player
             )
@@ -446,6 +586,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 self.library.recordConversion(jobId: jobId, for: bookID)
             }
             self.reloadData()
+            if let converted { await self.prepareDelivery(source: converted) }
             if let failure = self.viewModel.session.failure, BookLanguageUncertain.decode(failure) != nil,
                let file = self.viewModel.selectedFile {
                 let requestID = self.viewModel.session.requestID

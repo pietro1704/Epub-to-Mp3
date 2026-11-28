@@ -23,6 +23,9 @@ final class MacConversionForm: NSView {
     let result = NSTextField(wrappingLabelWithString: "")
     let revealResult = NSButton()
     let history = NSButton()
+    let addToLibrary = NSButton()
+    let exportAudio = NSButton()
+    let delivery = NSTextField(wrappingLabelWithString: "")
 
     init() {
         super.init(frame: .zero)
@@ -34,6 +37,9 @@ final class MacConversionForm: NSView {
         configure(submit, key: "convert.startConversion", identifier: "convert.submit")
         configure(cancel, key: "convert.cancel", identifier: "convert.cancel")
         configure(revealResult, key: "convert.openResult", identifier: "convert.openResult")
+        configure(addToLibrary, key: "convert.addToLibrary", identifier: "convert.addToLibrary")
+        configure(exportAudio, key: "convert.export", identifier: "convert.export")
+        delivery.setAccessibilityIdentifier("convert.delivery")
         let historyTitle = L10n.string("jobs.title")
         history.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: historyTitle)
         history.imagePosition = .imageOnly
@@ -76,12 +82,13 @@ final class MacConversionForm: NSView {
             field(L10n.string("convert.languageOptional"), language),
             field(L10n.string("convert.chapterRangeOptional"), chapters),
             field(L10n.string("silenceTrim.title"), silenceTrim), silenceTrimDescription,
-            clearCache, forceReprocess, maxPerformance, actions, status, failure, result, revealResult])
+            clearCache, forceReprocess, maxPerformance, actions, status, failure, result,
+            addToLibrary, exportAudio, delivery, revealResult])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         MacScrollableStack.install(stack, in: self)
-        for label in [header, fileLabel, silenceTrimDescription, status, failure, result] {
+        for label in [header, fileLabel, silenceTrimDescription, status, failure, result, delivery] {
             label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
     }
@@ -115,5 +122,43 @@ final class MacConversionForm: NSView {
         control.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
         return row
     }
+}
+/// Layout and format choices shown inside the export folder panel.
+@MainActor
+final class MacExportOptionsView: NSView {
+    private let layoutPopUp = NSPopUpButton()
+    private let formatPopUp = NSPopUpButton()
+
+    var selectedLayout: ManualConversionDelivery.Layout {
+        ManualConversionDelivery.Layout.allCases[layoutPopUp.indexOfSelectedItem]
+    }
+    var selectedFormat: ManualConversionDelivery.Format {
+        ManualConversionDelivery.Format.allCases[formatPopUp.indexOfSelectedItem]
+    }
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 420, height: 76))
+        layoutPopUp.addItems(withTitles: ManualConversionDelivery.Layout.allCases.map { L10n.string($0.titleKey) })
+        layoutPopUp.setAccessibilityLabel(L10n.string("convert.export.layout"))
+        layoutPopUp.setAccessibilityIdentifier("convert.export.layout")
+        formatPopUp.addItems(withTitles: ManualConversionDelivery.Format.allCases.map(\.title))
+        formatPopUp.setAccessibilityLabel(L10n.string("convert.export.format"))
+        formatPopUp.setAccessibilityIdentifier("convert.export.format")
+        let grid = NSGridView(views: [
+            [NSTextField(labelWithString: L10n.string("convert.export.layout")), layoutPopUp],
+            [NSTextField(labelWithString: L10n.string("convert.export.format")), formatPopUp],
+        ])
+        grid.column(at: 0).xPlacement = .trailing
+        grid.rowAlignment = .firstBaseline
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.centerXAnchor.constraint(equalTo: centerXAnchor),
+            grid.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 #endif
