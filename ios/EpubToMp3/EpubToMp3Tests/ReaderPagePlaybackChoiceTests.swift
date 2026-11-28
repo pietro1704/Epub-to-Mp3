@@ -40,7 +40,9 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
         let savedWidget = widgetKeys.map { widget?.object(forKey: $0) }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
+        // The host app clears a reading book it does not know from the standard defaults, so keep an isolated channel.
+        let location = ReaderLocation(defaults: defaults)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: location)
         let presenter = UIViewController()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
         let previousKeyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -67,10 +69,10 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
             let file = try AVAudioFile(forWriting: audio, settings: format.settings)
             try file.write(from: buffer)
         }
-        standard.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        standard.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        standard.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
-        standard.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        defaults.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        defaults.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
         let chapter = JobSnapshot.Chapter(index: 0, name: "Chapter", status: "completed",
             downloadUrl: audio.absoluteString, chars: 1000, charsProcessed: 1000,
             progressRatio: 1, durationSeconds: 60, startedAt: nil, completedAt: nil)
@@ -83,11 +85,12 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
         for _ in 0..<30 where item.status == .unknown { try await Task.sleep(nanoseconds: 100_000_000) }
         XCTAssertEqual(item.status, .readyToPlay)
         player.resume()
-        if moveBeforePause { standard.set(pageRatio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) }
+        if moveBeforePause { defaults.set(pageRatio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) }
         player.pause()
         XCTAssertTrue(player.hasPausedPlaybackToResume)
-        standard.set(pageRatio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
-        if changeBook { standard.set("another-reader", forKey: ReaderSessionState.currentlyReadingBookIDKey) }
+        XCTAssertTrue(player.isPlaybackForReaderBook(id), "The paused audio must stay anchored to its book")
+        defaults.set(pageRatio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        if changeBook { defaults.set("another-reader", forKey: ReaderSessionState.currentlyReadingBookIDKey) }
 
         ReaderPlaybackTapHandler.handle(player: player, presenting: presenter)
 

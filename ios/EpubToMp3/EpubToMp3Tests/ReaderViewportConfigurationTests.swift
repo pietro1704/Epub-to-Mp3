@@ -31,7 +31,7 @@ final class ReaderViewportConfigurationTests: XCTestCase {
         XCTAssertFalse(configuration.showsPageIndicator)
     }
 
-    func testHiddenChromeUsesTheSafeReaderSurfaceWithoutPageChrome() {
+    func testHiddenChromeKeepsTheSafeReaderSurfaceAndThePageIndicator() {
         let configuration = ReaderViewportConfiguration.resolve(
             layout: .paginated,
             chromeHidden: true,
@@ -39,7 +39,8 @@ final class ReaderViewportConfigurationTests: XCTestCase {
         )
 
         XCTAssertFalse(configuration.usesScreenEdges)
-        XCTAssertFalse(configuration.showsPageIndicator)
+        // Since #1416 the indicator owns a reserved strip, so hiding the chrome does not remove it.
+        XCTAssertTrue(configuration.showsPageIndicator)
     }
 
     @MainActor
