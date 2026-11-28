@@ -36,9 +36,11 @@ enum AppIsolation {
 
     /// Activates the isolation when `arguments` ask for it. Call first thing in `main`.
     @discardableResult
-    static func activateIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) -> URL? {
+    static func activateIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments,
+                                    temporaryDirectory: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true),
+                                    redirectHome: Bool = true) -> URL? {
         guard arguments.contains(launchArgument) else { return nil }
-        return activate()
+        return activate(temporaryDirectory: temporaryDirectory, redirectHome: redirectHome)
     }
 
     /// Redirects the process. Idempotent; returns the throwaway home.
