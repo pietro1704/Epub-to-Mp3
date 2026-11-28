@@ -96,9 +96,10 @@ or device stays idle.
   a PR; (3) the next card. Prepare device runs first (build-for-testing,
   install, prerequisites such as Developer Mode and UI automation), and ask
   Pietro to unlock only for the on-device step.
-- GitHub Actions is the parallel compute. Push, and while CI runs, move to the
-  next card's code instead of waiting. Keep at most two of your own PRs waiting
-  on CI, which limits context switching.
+- GitHub Actions is the parallel compute. Open the PR ready with auto-merge and
+  start the next card in the same turn; there is no cap on your own PRs waiting
+  on CI (Pietro, 2026-11-28). Remove a PR's worktree only after its CI passed and
+  it merged.
 - Light work (editing, `gh`, reviews, docs) runs next to the heavy job and never
   starts a second compiler.
 - Other projects' background jobs on these hosts (for example course
