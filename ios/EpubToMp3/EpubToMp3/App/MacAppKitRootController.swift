@@ -454,7 +454,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             ?? player.location.playingBookID
         let dismissal = MiniPlayerDismissal()
         let showsReaderChrome = !(detailController is MacReaderViewController) || !readerChromeHidden
-        let hasReadingContext = showsReaderChrome && !dismissal.isDismissed(bookID: bookID) && (player.snapshot != nil
+        let hasReadingContext = !dismissal.isDismissed(bookID: bookID) && (player.snapshot != nil
             || player.location.readingBookID != nil
             || library.books.contains { $0.lastOpenedAt != nil })
         // Keep the internal stack constrained to the full bar width. Toggling
@@ -463,6 +463,9 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         // creates a large empty region beside the mini-player controls.
         playerBar.setCollapsed(!hasReadingContext)
         playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
+        // Hidden with the chrome, the bar keeps its constraints and height, so
+        // the reader viewport and its pages stay the same.
+        if !showsReaderChrome { playerBar.view.isHidden = true }
         refreshDetailAccessibilityChildren()
     }
 
