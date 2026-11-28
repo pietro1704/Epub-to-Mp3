@@ -314,6 +314,8 @@ final class ModelsByLanguageModel: ObservableObject {
 
     func auditionChoice(for row: ModelsByLanguageViewState.Row, in language: String) async throws
         -> (selection: TtsSelection, language: String) {
+        // Edge is not an installed catalogue model: the row's own selection names it.
+        if row.selection.isEdge { return (row.selection, language) }
         guard let entry = entry(for: row, in: language) else { throw SpeechModelInstallationError.unknownModel(row.id) }
         return try await source.auditionChoice(for: entry)
     }

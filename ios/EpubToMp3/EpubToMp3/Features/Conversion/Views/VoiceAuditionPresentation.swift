@@ -14,7 +14,7 @@ final class VoiceAuditionPresentation: NSObject {
     }
     #if os(macOS)
     private var sheet: NSAlert?
-    func present(selection: TtsSelection, language: String, on window: NSWindow?) {
+    func present(selection: TtsSelection, language: String, allowOnlineFallback: Bool = false, on window: NSWindow?) {
         guard let window else { return }
         let alert = NSAlert()
         sheet = alert
@@ -30,7 +30,7 @@ final class VoiceAuditionPresentation: NSObject {
             }
         }
         alert.beginSheetModal(for: window) { [weak self] _ in self?.audition.stop(); self?.sheet = nil }
-        audition.start(selection: selection, language: language)
+        audition.start(selection: selection, language: language, allowOnlineFallback: allowOnlineFallback)
     }
     #else
     func present(selection: TtsSelection, language: String, on controller: UIViewController) {
