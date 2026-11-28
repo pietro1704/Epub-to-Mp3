@@ -8,6 +8,7 @@ import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 import '../services/conversion/embedded_conversion_contract.dart' show ManualTtsModelCatalog;
 import '../services/conversion/model_install/model_install_models.dart';
+import '../services/conversion/voice_audition.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
 import '../state/providers.dart';
 import '../views/reader_narration_menu.dart'
@@ -49,6 +50,78 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
   final Map<String, ModelInstallEvent?> _progress = {};
   final Map<String, ModelInstallCancellation> _cancellations = {};
   String? _error;
+  String? _sampleId;
+  VoiceAudition? _audition;
+
+  @override
+  void dispose() {
+    final audition = _audition;
+    if (audition != null) audition.stop();
+    super.dispose();
+  }
+
+  /// One short sample of a voice. An online voice plays only with the online consent, and
+  /// without it the same notice as the voice row is shown.
+  Future<void> _sample(Map<String, dynamic> model) async {
+    final audition = _audition = ref.read(voiceAuditionProvider);
+    if (audition == null) return;
+    final id = model['id'] as String;
+    final messenger = ScaffoldMessenger.of(context);
+    final t = AppLocalizations.of(context)!;
+    if (audition.state.value != VoiceAuditionState.idle && _sampleId == id) {
+      await audition.stop();
+      return;
+    }
+    _sampleId = id;
+    try {
+      final catalog = await ref.read(ttsCatalogProvider.future);
+      final selection = catalog
+          .captureNewPreferences(TtsPreferences(primary: _selectionFor(model)))
+          .primary;
+      await audition.start(
+        selection,
+        _base,
+        allowOnline: ref
+            .read(settingsProvider)
+            .ttsPreferences
+            .allowOnlineFallback,
+        modelsRoot: await ref.read(ttsModelRootProvider.future),
+      );
+    } on OnlineVoiceConsentRequired {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.modelsOnlineNeedsConsent)),
+      );
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(t.voiceSampleFailed)));
+    }
+  }
+
+  Widget _sampleButton(Map<String, dynamic> model, AppLocalizations t) {
+    final id = model['id'] as String;
+    final audition = ref.read(voiceAuditionProvider);
+    if (audition == null) return const SizedBox.shrink();
+    return ValueListenableBuilder<VoiceAuditionState>(
+      valueListenable: audition.state,
+      builder: (context, state, _) {
+        final active =
+            _sampleId == id &&
+            state != VoiceAuditionState.idle &&
+            state != VoiceAuditionState.failed;
+        return IconButton(
+          key: ValueKey('voice-sample-$id'),
+          icon: Icon(
+            active ? Icons.stop_circle_outlined : Icons.play_circle_outline,
+          ),
+          tooltip: active
+              ? t.voiceSampleStop
+              : (state == VoiceAuditionState.generating
+                    ? t.voiceSamplePreparing
+                    : t.voiceSampleTooltip),
+          onPressed: () => _sample(model),
+        );
+      },
+    );
+  }
 
   String get _base => LanguageModelChoices.baseLanguage(widget.language);
 
@@ -205,7 +278,7 @@ class _ModelsLanguageScreenState extends ConsumerState<ModelsLanguageScreen> {
                   tooltip: MaterialLocalizations.of(context).cancelButtonLabel,
                   onPressed: () => _cancellations[id]?.cancel(),
                 )
-              : (!installed && usable ? const Icon(Icons.download_outlined) : null),
+              : (!installed && usable ? const Icon(Icons.download_outlined) : _sampleButton(model, t)),
           onTap: !usable || installing
               ? null
               : installed

@@ -1534,6 +1534,30 @@ abstract class AppLocalizations {
   /// **'Turn on “Allow online fallback” in Settings to use online voices'**
   String get modelsOnlineNeedsConsent;
 
+  /// No description provided for @voiceSampleTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Hear voice sample'**
+  String get voiceSampleTooltip;
+
+  /// No description provided for @voiceSamplePreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing a short sample with the installed voice…'**
+  String get voiceSamplePreparing;
+
+  /// No description provided for @voiceSampleStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop sample'**
+  String get voiceSampleStop;
+
+  /// No description provided for @voiceSampleFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The sample could not be played.'**
+  String get voiceSampleFailed;
+
   /// No description provided for @modelsNotInstalled.
   ///
   /// In en, this message translates to:

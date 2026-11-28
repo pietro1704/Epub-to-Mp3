@@ -79,6 +79,10 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   late final _MetadataDart _metadata;
   final String _libraryPath;
 
+  /// Renders voice samples through this converter's native library.
+  AuditionRender get voiceAuditionRender =>
+      desktopVoiceAuditionRender(libraryPath: _libraryPath);
+
   /// Scanned PDF pages are read by Tesseract (Linux) or Windows.Media.Ocr (Windows), only
   /// when the engine is already installed.
   late final PdfOcrPreparer? _pdfOcr = Platform.isLinux || Platform.isWindows

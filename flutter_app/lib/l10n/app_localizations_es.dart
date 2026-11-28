@@ -820,6 +820,19 @@ class AppLocalizationsEs extends AppLocalizations {
       'Activa «Permitir respaldo en línea» en Ajustes para usar voces en línea';
 
   @override
+  String get voiceSampleTooltip => 'Escuchar muestra de voz';
+
+  @override
+  String get voiceSamplePreparing =>
+      'Preparando una muestra breve con la voz instalada…';
+
+  @override
+  String get voiceSampleStop => 'Detener muestra';
+
+  @override
+  String get voiceSampleFailed => 'No se pudo reproducir la muestra.';
+
+  @override
   String get modelsNotInstalled => 'Toca para descargar y usar';
 
   @override

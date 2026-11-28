@@ -818,6 +818,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'Turn on “Allow online fallback” in Settings to use online voices';
 
   @override
+  String get voiceSampleTooltip => 'Hear voice sample';
+
+  @override
+  String get voiceSamplePreparing =>
+      'Preparing a short sample with the installed voice…';
+
+  @override
+  String get voiceSampleStop => 'Stop sample';
+
+  @override
+  String get voiceSampleFailed => 'The sample could not be played.';
+
+  @override
   String get modelsNotInstalled => 'Tap to download and use';
 
   @override

@@ -819,6 +819,19 @@ class AppLocalizationsPt extends AppLocalizations {
       'Ative “Permitir reserva online” em Ajustes para usar vozes online';
 
   @override
+  String get voiceSampleTooltip => 'Ouvir amostra da voz';
+
+  @override
+  String get voiceSamplePreparing =>
+      'Preparando uma amostra curta com a voz instalada…';
+
+  @override
+  String get voiceSampleStop => 'Parar amostra';
+
+  @override
+  String get voiceSampleFailed => 'Não foi possível reproduzir a amostra.';
+
+  @override
   String get modelsNotInstalled => 'Toque para baixar e usar';
 
   @override
