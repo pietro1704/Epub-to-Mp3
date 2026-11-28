@@ -226,7 +226,11 @@ jobs:
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Build the minified release APK (also regenerates the release plugin registrant)
         working-directory: flutter_app
-        run: mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --release --no-pub --target-platform android-arm64
+        run: |
+          # The integration build above generated a registrant that lists the dev-only
+          # integration_test plugin, which the release classpath lacks; build with pub so it is rewritten.
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --release --target-platform android-arm64
       - name: Run the ML Kit PDF OCR in the minified release build
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
