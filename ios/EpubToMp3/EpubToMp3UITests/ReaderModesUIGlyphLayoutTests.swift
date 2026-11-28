@@ -2,6 +2,7 @@ import XCTest
 
 extension ReaderModesUITests {
     func testNativeLOTRLandscapePaginationKeepsEveryGlyphVisible() throws {
+        try requireSimulator()
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launchNativeLOTR()
         try openBook(app, titleContaining: "lord")

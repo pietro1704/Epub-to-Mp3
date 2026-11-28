@@ -54,6 +54,7 @@ extension ReaderModesUITests {
     }
 
     func testNativeLOTRScrollChapterControlsAdvanceAndRetreat() throws {
+        try requireSimulator()
         let app = ReaderModesHarness().launch(.init(
             source: .seededLOTR,
             layout: "scrolling",

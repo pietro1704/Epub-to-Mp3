@@ -3,6 +3,7 @@ import XCTest
 @MainActor
 final class ReaderPagePlaybackChoiceUITests: XCTestCase {
     func testOptInActualReaderPageChoicesThroughPlayPause() throws {
+        try requireSimulator()
         guard ProcessInfo.processInfo.environment["APP_IOS_LIVE_EDGE"] == "1",
               let bookID = ProcessInfo.processInfo.environment["EPUB2MP3_GUI_BOOK_ID"],
               !bookID.isEmpty, !bookID.hasPrefix("$(") else {

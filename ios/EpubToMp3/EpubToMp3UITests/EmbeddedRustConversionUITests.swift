@@ -3,6 +3,7 @@ import XCTest
 @MainActor
 final class EmbeddedRustConversionUITests: XCTestCase {
     func testSeedBookOpensWithEmbeddedRustReaderAndNoClippedLines() throws {
+        try requireSimulator()
         continueAfterFailure = false
 
         let app = XCUIApplication()

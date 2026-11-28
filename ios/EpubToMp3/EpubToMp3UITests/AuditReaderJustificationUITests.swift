@@ -3,6 +3,7 @@ import XCTest
 @MainActor
 final class AuditReaderJustificationUITests: XCTestCase {
     func testSeededJustifiedReaderPreservesGlyphsAndLocationThroughChromeAndPageTurns() throws {
+        try requireSimulator()
         continueAfterFailure = false
         let harness = ReaderModesHarness()
         let app = harness.launch(.init(source: .seededLOTR, layout: "paginated", smallFont: true,

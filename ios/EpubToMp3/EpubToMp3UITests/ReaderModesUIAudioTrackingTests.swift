@@ -2,6 +2,7 @@ import XCTest
 
 extension ReaderModesUITests {
     func testNativeLOTRAudioTrackingChoicePersistsWithoutMovingTheReader() throws {
+        try requireSimulator()
         let harness = ReaderModesHarness()
         let app = harness.launch(.init(source: .seededLOTR, layout: "paginated", smallFont: false,
             chromeToggleEnabled: true, paginationProbeEnabled: true,
