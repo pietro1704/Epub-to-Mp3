@@ -16,6 +16,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var chapterNamesUpdate: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?)
         -> UnsafeMutablePointer<CChar>?)?
     private var filenameCoverJSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
+    private var pdfImagePagesJSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
+    private var pdfOcrPageSet: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var exportMP3JSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var auditionVoice: ConverterVoiceAudition?
     private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
@@ -129,6 +132,10 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             bookLanguageJSON: symbol("converter_book_language_json_v1", as: ConverterBookLanguageV1.self),
             narrationPlanJSON: symbol("converter_book_narration_plan_json_v1", as: ConverterBookNarrationPlanV1.self),
             freeString: free, lastError: error)
+        pdfImagePagesJSON = symbol("converter_pdf_image_pages_json_v1", as: (@convention(c) (UnsafePointer<CChar>?)
+            -> UnsafeMutablePointer<CChar>?).self)
+        pdfOcrPageSet = symbol("converter_pdf_ocr_page_set_json_v1", as: (@convention(c) (UnsafePointer<CChar>?,
+            UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?).self)
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
         auditionVoice = symbol("converter_voice_audition_v1", as: ConverterVoiceAudition.self)
@@ -215,6 +222,28 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             playbackFeedback: jobControlPlaybackFeedback,
             listeningGeneration: jobControlListeningGeneration
         )
+    }
+
+    /// 1-based pages that draw content without a text layer; a client OCR reads them.
+    func pdfImagePages(at url: URL) throws -> [Int] {
+        guard let pdfImagePagesJSON else { throw EmbeddedConverterError.artifactInvalid("PDF OCR ABI is unavailable") }
+        struct Response: Decodable { let pages: [Int] }
+        return try JSONDecoder().decode(Response.self,
+            from: ownedJSON(url.path.withCString { pdfImagePagesJSON($0) })).pages
+    }
+
+    /// Rust keeps the text beside the book and reads it on every later open.
+    func setPdfOcrText(_ text: String, page: Int, at url: URL) throws {
+        guard let pdfOcrPageSet else { throw EmbeddedConverterError.artifactInvalid("PDF OCR ABI is unavailable") }
+        _ = try ownedJSON(url.path.withCString { path in
+            String(page).withCString { page in text.withCString { pdfOcrPageSet(path, page, $0) } }
+        })
+    }
+
+    private func ownedJSON(_ value: UnsafeMutablePointer<CChar>?) throws -> Data {
+        guard let value else { throw EmbeddedConverterError.conversionFailed(readError()) }
+        defer { freeString(value) }
+        return Data(String(cString: value).utf8)
     }
 
     func openBook(at url: URL) throws -> EmbeddedBook {

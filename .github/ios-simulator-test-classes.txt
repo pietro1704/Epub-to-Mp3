@@ -26,6 +26,7 @@ ModelsScreenAlertTests
 NarrationPlanContractTests
 NativeFormAccessibilityTests
 NativePlaybackFeedbackTests
+PdfOcrPreparerTests
 PlatformSettingsCellTests
 PlaybackBindingStoreTests
 PlaybackTransportStateTests

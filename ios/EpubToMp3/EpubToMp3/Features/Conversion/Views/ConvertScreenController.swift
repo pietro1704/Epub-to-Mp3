@@ -440,7 +440,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     }
 
     private func presentPicker() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: Self.acceptedTypes, asCopy: false)
+        // An app-owned copy: PDF OCR text is saved beside the book, which a file opened
+        // in place does not allow.
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: Self.acceptedTypes, asCopy: true)
         picker.delegate = self
         present(picker, animated: true)
     }

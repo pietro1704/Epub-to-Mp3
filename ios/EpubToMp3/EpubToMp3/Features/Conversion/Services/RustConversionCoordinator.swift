@@ -86,6 +86,11 @@ final class RustConversionCoordinator {
         if options != nil {
             try adapter.validateConversionSupport(options: options)
         }
+        #if canImport(Vision)
+        // Before the first Rust open: image-only pages are narrated from this text.
+        try await PdfOcrPreparer.vision(adapter: adapter)
+            .prepare(bookURL) { playbackControl?.isCancellationRequested == true }
+        #endif
         let requestedChapterPositions = try requestedChapterRange(
             in: bookURL,
             chapterStart: chapterStart,
