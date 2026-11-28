@@ -1,7 +1,11 @@
 //! Source dispatch shared by metadata inspection and actual conversion.
 use crate::{
     epub::{self, Book},
-    ingestion::{pdf_text::PdfTextIngestion, IngestionError},
+    ingestion::{
+        pdf_text::{PageOcr, PdfTextIngestion},
+        IngestionError,
+    },
+    ocr_pages::OcrPages,
 };
 use std::path::Path;
 
@@ -15,6 +19,14 @@ pub enum BookInputError {
     Pdf(#[from] IngestionError),
 }
 
+/// The text a client OCR stored beside the book, if any.
+fn recognised_pages(path: &Path) -> Result<Option<OcrPages>, BookInputError> {
+    let pages = OcrPages::load(path).map_err(|error| {
+        BookInputError::Io(std::io::Error::other(format!("OCR sidecar: {error}")))
+    })?;
+    Ok((!pages.pages.is_empty()).then_some(pages))
+}
+
 pub fn parse_book_source_with_cancel(
     path: &Path,
     source: &[u8],
@@ -24,7 +36,13 @@ pub fn parse_book_source_with_cancel(
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
     {
-        PdfTextIngestion::from_bytes_with_cancel(path, source, cancelled)?
+        let ocr = recognised_pages(path)?;
+        PdfTextIngestion::from_bytes_with_ocr(
+            path,
+            source,
+            cancelled,
+            ocr.as_ref().map(|pages| pages as &dyn PageOcr),
+        )?
     } else {
         epub::parse_epub(std::io::Cursor::new(source))?
     };
@@ -106,7 +124,13 @@ pub fn parse_book_reader<R: std::io::Read + std::io::Seek>(
 ) -> Result<Book, BookInputError> {
     let mut book = if is_pdf(path) {
         let source = read_pdf_source(reader)?;
-        PdfTextIngestion::from_bytes(path, &source)?
+        let ocr = recognised_pages(path)?;
+        PdfTextIngestion::from_bytes_with_ocr(
+            path,
+            &source,
+            &|| false,
+            ocr.as_ref().map(|pages| pages as &dyn PageOcr),
+        )?
     } else {
         epub::parse_epub(reader)?
     };

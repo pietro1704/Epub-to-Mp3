@@ -40,6 +40,8 @@ pub mod model_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod model_store;
 pub mod narration_plan;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ocr_pages;
 mod parallel_columns;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paths;
