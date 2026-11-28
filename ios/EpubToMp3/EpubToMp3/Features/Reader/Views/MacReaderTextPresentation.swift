@@ -151,18 +151,73 @@ final class MacReaderTextPresentation {
                 // reads the committed settings and preserves the exact viewport
                 // while regenerating authored colors when returning to light.
                 let origin = self.contentScrollView.contentView.bounds.origin
+                let passage = self.visiblePassage()
                 self.applyCurrentReaderTheme()
                 self.showChapter(self.selectedChapter)
                 // A new column count can shorten the document.
                 let maximumY = max(0, (self.contentScrollView.documentView?.frame.height ?? 0)
                     - self.contentScrollView.contentView.bounds.height)
-                let target = self.pageAligned(min(origin.y, maximumY))
+                let target = passage.flatMap { self.offset(showing: $0, maximumY: maximumY) }
+                    ?? self.pageAligned(min(origin.y, maximumY))
                 self.contentScrollView.contentView.scroll(to: NSPoint(x: origin.x, y: target))
+                self.heldPassage = passage.map {
+                    var held = $0
+                    held.restoredOffset = self.contentScrollView.contentView.bounds.origin.y
+                    return held
+                }
                 self.contentScrollView.reflectScrolledClipView(self.contentScrollView.contentView)
                 self.updatePageIndicator()
                 self.persistReadingProgress()
             }
             .store(in: &settingsCancellables)
+    }
+
+    /// The first character on screen, and where the viewport sat relative to its line.
+    private struct Passage {
+        let chapter: Int
+        let character: Int
+        let offsetFromLine: CGFloat
+        var restoredOffset: CGFloat
+    }
+
+    private var heldPassage: Passage?
+
+    /// A font or margin change moves the text, so the reader follows the passage, not the offset. Until the person
+    /// moves, successive changes keep the same passage; picking a new one each time would drift backwards.
+    private func visiblePassage() -> Passage? {
+        let clipView = contentScrollView.contentView
+        guard contentScrollView.documentView === textView else { return nil }
+        let y = clipView.bounds.origin.y
+        if let held = heldPassage, held.chapter == selectedChapter, abs(held.restoredOffset - y) <= 0.5 { return held }
+        var area = clipView.documentVisibleRect
+        // The line that ends exactly at the top edge belongs to the previous page.
+        area.origin.y += 1
+        area.size.height -= 1
+        guard y > 0.5, let visible = MacReaderTextLayout.characterRange(in: area, of: textView) else { return nil }
+        // Glyph bounds can overlap the next line, so AppKit may also report the line above the top edge.
+        for character in visible.location..<NSMaxRange(visible) {
+            guard let line = MacReaderTextLayout.lineRect(forCharacterAt: character, in: textView) else { return nil }
+            if line.maxY > area.minY {
+                return Passage(chapter: selectedChapter, character: character,
+                               offsetFromLine: y - line.minY, restoredOffset: y)
+            }
+        }
+        return nil
+    }
+
+    private func offset(showing passage: Passage, maximumY: CGFloat) -> CGFloat? {
+        guard contentScrollView.documentView === textView, let manager = textView.layoutManager else { return nil }
+        // A line read before the whole text is laid out can still move.
+        textView.textContainer.map { manager.ensureLayout(for: $0) }
+        guard let line = MacReaderTextLayout.lineRect(forCharacterAt: passage.character, in: textView) else { return nil }
+        let height = contentScrollView.contentView.bounds.height
+        if settings.readerLayout == .paginated {
+            if MacReaderTextLayout.showsColumns(textView), height > 0 {
+                return min((line.minY / height).rounded(.down) * height, maximumY)
+            }
+            return min(pageAligned(line.minY), maximumY)
+        }
+        return min(max(0, line.minY + passage.offsetFromLine), maximumY)
     }
 
     func applyCurrentReaderTheme() {

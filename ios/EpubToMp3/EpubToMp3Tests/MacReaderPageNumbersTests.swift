@@ -6,6 +6,8 @@ import XCTest
 /// PARITY-MAC-READER-3: like the iPhone, a paginated page says "x of y" and a switch turns it off.
 @MainActor
 final class MacReaderPageNumbersTests: XCTestCase {
+    private var settingsUnderTest: AppSettings?
+
     func testPaginatedPageShowsItsNumberAndFollowsPageTurns() async throws {
         try await withReader { textView, indicator in
             let label = try XCTUnwrap(indicator(), "missing page indicator")
@@ -120,6 +122,40 @@ final class MacReaderPageNumbersTests: XCTestCase {
         }
     }
 
+    /// MAC-FONT-CHANGE-KEEPS-TEXT-POSITION: like the iPhone, a font change keeps the passage on screen.
+    func testFontSizeChangeKeepsThePassageOnScreen() async throws {
+        for layout in [ReaderLayout.paginated, .scrolling] {
+            try await withReader(layout: layout, columns: 1) { textView, _ in
+                let settings = try XCTUnwrap(self.settingsUnderTest)
+                let scroll = try XCTUnwrap(textView.enclosingScrollView)
+                for _ in 1...6 {
+                    XCTAssertEqual(textView.onPageTap?(true), true)
+                    try await Task.sleep(nanoseconds: 150_000_000)
+                }
+                @MainActor func visibleCharacters() throws -> NSRange {
+                    var area = scroll.contentView.documentVisibleRect
+                    area.origin.y += 1
+                    area.size.height -= 1
+                    return try XCTUnwrap(MacReaderTextLayout.characterRange(in: area, of: textView))
+                }
+                let passage = try visibleCharacters().location
+                let origin = scroll.contentView.bounds.origin.y
+                let size = settings.readerFontSize
+                for step in [2, 2, -2] {
+                    settings.readerFontSize += step
+                    try await Task.sleep(nanoseconds: 400_000_000)
+                    let shown = try visibleCharacters()
+                    XCTAssertTrue(NSLocationInRange(passage, shown),
+                                  "\(layout), step \(step): character \(passage) left the screen, shown \(shown)")
+                }
+                settings.readerFontSize = size
+                try await Task.sleep(nanoseconds: 400_000_000)
+                XCTAssertEqual(scroll.contentView.bounds.origin.y, origin, accuracy: 1,
+                               "\(layout): the original size must return to the original position")
+            }
+        }
+    }
+
     func testIndicatorFollowsTheSwitchAndTheLayout() async throws {
         try await withReader(showsNumbers: false) { _, indicator in
             XCTAssertNil(indicator(), "switched off")
@@ -229,6 +265,7 @@ final class MacReaderPageNumbersTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let settings = AppSettings(defaults: defaults)
+        settingsUnderTest = settings
         settings.readerLayout = layout
         settings.readerShowPageNumbers = showsNumbers
         if let columns { settings.readerColumns = columns }
