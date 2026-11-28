@@ -136,7 +136,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     super.initState();
     // Opening a book shows the chrome. A provider cannot change while the tree builds.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(readerChromeVisibleProvider.notifier).state = true;
+      if (!mounted) return;
+      ref.read(readerChromeVisibleProvider.notifier).state = true;
+      // The previous book may have left the system bars hidden.
+      _applySystemChrome();
     });
     final settings = ref.read(settingsProvider);
     final bookId = widget.bookId;
@@ -383,36 +386,39 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                 bottom: false,
                 child: LayoutBuilder(
                   builder: (context, bar) => Row(
-                  children: [
-                    BackButton(
-                      color: fg,
-                      onPressed: () =>
-                          ref.read(appDestinationProvider.notifier).state =
-                              AppDestination.library,
-                    ),
-                    Expanded(
-                      child: Semantics(
-                        header: true,
-                        child: Text(
-                          widget.fulltext.bookTitle ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                    children: [
+                      BackButton(
+                        color: fg,
+                        onPressed: () =>
+                            ref.read(appDestinationProvider.notifier).state =
+                                AppDestination.library,
+                      ),
+                      Expanded(
+                        child: Semantics(
+                          header: true,
+                          child: Text(
+                            widget.fulltext.bookTitle ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: fg,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
                         ),
                       ),
-                    ),
-                    // Apple-style chrome: the recent tool beside More; the
-                    // other tools live in the overflow menu.
-                    ..._chromeTools(chapter, fg, bar.maxWidth),
-                    ReaderNarrationMenu(
-                      color: fg,
-                      bookId: widget.bookId,
-                      entries: _menuEntries(chapter, bar.maxWidth),
-                      onChanged: widget.onNarrationChanged,
-                      currentSentence: _liveSentencePosition,
-                    ),
-                  ],
+                      // Apple-style chrome: the recent tool beside More; the
+                      // other tools live in the overflow menu.
+                      ..._chromeTools(chapter, fg, bar.maxWidth),
+                      ReaderNarrationMenu(
+                        color: fg,
+                        bookId: widget.bookId,
+                        entries: _menuEntries(chapter, bar.maxWidth),
+                        onChanged: widget.onNarrationChanged,
+                        currentSentence: _liveSentencePosition,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -426,7 +432,9 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                   _requestedSourceOffset ??
                   (ref
                               .read(sharedPrefsProvider)
-                              .getInt('readPos_sourceChapter_${widget.bookId}') ==
+                              .getInt(
+                                'readPos_sourceChapter_${widget.bookId}',
+                              ) ==
                           _currentChapterIndex
                       ? ref
                                 .read(sharedPrefsProvider)
