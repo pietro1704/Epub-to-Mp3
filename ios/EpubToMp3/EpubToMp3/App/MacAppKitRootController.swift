@@ -466,6 +466,9 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         // Hidden with the chrome, the bar keeps its constraints and height, so
         // the reader viewport and its pages stay the same.
         if !showsReaderChrome { playerBar.view.isHidden = true }
+        // The empty strip continues the page instead of showing the window colour.
+        detailContainer.view.wantsLayer = true
+        detailContainer.view.layer?.backgroundColor = showsReaderChrome ? nil : detailController?.view.layer?.backgroundColor
         refreshDetailAccessibilityChildren()
     }
 
