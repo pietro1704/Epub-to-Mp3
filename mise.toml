@@ -1,6 +1,6 @@
 [tools]
 # Latest stable Node accepted by the Rails browser runtime tooling.
-node = "26.13.0"
+node = "26.13.1"
 npm = "12.2.2"
 # Project-managed Codex CLI; invoke through mise independently of app installs.
 # Update from the repository root with: mise use --pin npm:@openai/codex@latest
@@ -8,7 +8,7 @@ npm = "12.2.2"
 "npm:@openai/codex" = "latest"
 # Match the published compiler, target libraries and build receipts.
 rust = "1.99.1"
-ruby = "4.0.7"
+ruby = "4.0.10"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "aqua:orhun/git-cliff" = "2.14.2"
 # Git LFS is required by the offline host/CI transport contracts.

@@ -165,12 +165,12 @@ class CiRuntimeScopeTest
     [setup, verify, install].each { |step| refute_nil step }
     [setup, verify].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
     assert_pinned_action('ruby/setup-ruby', setup.fetch('uses'))
-    assert_equal({ 'ruby-version' => '4.0.7', 'bundler-cache' => false }, setup.fetch('with'))
+    assert_equal({ 'ruby-version' => '4.0.10', 'bundler-cache' => false }, setup.fetch('with'))
     assert_operator steps.index(steps.find { |step| step['uses'].to_s.start_with?('jdx/mise-action@') }), :<, steps.index(setup)
     assert_operator steps.index(setup), :<, steps.index(install)
     assert_operator steps.index(install), :<, steps.index(verify)
     check = verify.fetch('run')
-    assert_includes check, 'RUBY_VERSION == "4.0.7"'
+    assert_includes check, 'RUBY_VERSION == "4.0.10"'
     assert_includes check, 'RbConfig::CONFIG.fetch("host_cpu") == "x86_64"'
     assert_includes check, 'File.realpath(RbConfig.ruby)'
     assert_includes check, 'RUNNER_TOOL_CACHE'

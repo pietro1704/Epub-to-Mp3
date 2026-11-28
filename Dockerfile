@@ -13,9 +13,9 @@
 # converter-server and no voice model weights.
 
 # Keep in step with .ruby-version and the tool versions in mise.toml.
-ARG RUBY_VERSION=4.0.7
+ARG RUBY_VERSION=4.0.10
 ARG RUST_VERSION=1.99.1
-ARG NODE_VERSION=26.13.0
+ARG NODE_VERSION=26.13.1
 
 # Stage 1: Rust/WASM bindings. The workspace manifest lists every member, so
 # the crates, native and benches trees are all needed to resolve it.
