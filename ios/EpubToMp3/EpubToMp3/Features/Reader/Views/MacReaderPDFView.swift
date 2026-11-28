@@ -88,7 +88,10 @@ final class MacReaderPDFView: PDFView {
         guard let document, let page = currentPage, let audioMap else { return nil }
         let viewport = convert(visibleRect, to: page).intersection(page.bounds(for: displayBox))
         let character = viewport.isEmpty ? 0 : firstCharacter(in: page.selection(for: viewport), on: page) ?? 0
-        return audioMap.anchor(page: document.index(for: page), character: character)?.chapterIndex
+        let index = document.index(for: page)
+        // A page whose text does not match the narration still belongs to the last chapter begun by then.
+        return audioMap.anchor(page: index, character: character)?.chapterIndex
+            ?? audioMap.chapters.lastIndex { $0.startPage.map { $0 <= index } ?? false }
     }
 
     func goToChapter(_ chapter: Int) {

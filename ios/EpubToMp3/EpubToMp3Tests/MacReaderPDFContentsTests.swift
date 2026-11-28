@@ -80,6 +80,7 @@ final class MacReaderPDFContentsTests: XCTestCase {
             (contents.tableView(table, viewFor: nil, row: $0) as? NSTableCellView)?.textField?.stringValue ?? ""
         }
         XCTAssertEqual(titles, expected)
+        XCTAssertEqual(table.selectedRow, 0, "the open chapter is highlighted")
         guard titles.count == expected.count else { return }
 
         table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
