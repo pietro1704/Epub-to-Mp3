@@ -203,6 +203,8 @@ final class AppSettings: ObservableObject {
                 return  // recursive set will write defaults
             }
             readerDefaults.set(readerFontSize, forKey: "readerFontSize")
+            // Choosing a size applies it to HTML books too; "original typography" turns it off again.
+            if !loadingPersistedValues { readerOverrideFontSize = true }
         }
     }
 

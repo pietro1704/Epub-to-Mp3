@@ -77,7 +77,8 @@ struct ReaderLayoutPreferences {
         readerOverrideFontFamily =
             defaults.object(forKey: "readerOverrideFontFamily") as? Bool ?? false
         readerOverrideFontSize =
-            defaults.object(forKey: "readerOverrideFontSize") as? Bool ?? false
+            defaults.object(forKey: "readerOverrideFontSize") as? Bool
+            ?? (defaults.object(forKey: "readerFontSize") != nil)
         if args.contains("-uiTestReaderOverrideFontSize") {
             readerOverrideFontSize = true
         }
