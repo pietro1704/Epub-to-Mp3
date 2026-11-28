@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/screens/convert_screen.dart';
+import 'package:flutter_app/screens/settings_screen.dart';
 import 'package:flutter_app/services/conversion/audio_export.dart';
 import 'package:flutter_app/services/conversion/local_conversion_record.dart';
 import 'package:flutter_app/services/storage/local_conversion_store.dart';
@@ -182,5 +183,22 @@ void main() {
         }
       });
     }
+  }
+
+  for (final locale in const [Locale('en'), Locale('pt'), Locale('es')]) {
+    testWidgets('silence trim setting ${locale.languageCode}', (t) async {
+      t.view.physicalSize = const Size(900, 900);
+      t.view.devicePixelRatio = 1;
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await t.pumpWidget(_app(prefs, locale, const SettingsScreen()));
+      await t.pumpAndSettle();
+      await t.scrollUntilVisible(
+        find.byKey(const ValueKey('tts-silence-trim')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await _save(t, 'silence-trim-${locale.languageCode}');
+    });
   }
 }
