@@ -25,6 +25,22 @@ module MacValidate
     raise "#{command.first} failed" unless system(*command)
   end
 
+  # What cargo compiles into converter-ffi: manifests, build scripts and src
+  # trees of its workspace and vendored crates.
+  FFI_INPUT_GLOBS = ['Cargo.{toml,lock}'] + %w[crates/converter-core crates/converter-ffi native/* native/vendor/*]
+                                             .map { |crate| "#{crate}/{Cargo.toml,build.rs,src/**/*}" }
+
+  # `build` embeds target/release as it is and never runs cargo, so an old dylib
+  # yields an app whose newer converter calls fail only at run time.
+  def self.verify_ffi_current!(root)
+    built = File.mtime(File.join(root, 'target/release/libconverter_ffi.dylib'))
+    newest = Dir.glob(FFI_INPUT_GLOBS, base: root).map { |relative| [File.mtime(File.join(root, relative)), relative] if File.file?(File.join(root, relative)) }.compact.max
+    return unless newest && newest.first > built
+
+    raise "target/release/libconverter_ffi.dylib is older than #{newest.last}; refusing to embed it. " \
+          'Run `mise run converter-ffi:build` first (if cargo reports it fresh, touch crates/converter-ffi/src/lib.rs and run it again)'
+  end
+
   def self.identity(root, configuration)
     project = File.join(root, 'ios/EpubToMp3')
     files = %w[EpubToMp3 EpubToMp3ShareExtension EpubToMp3Widget].flat_map do |directory|
@@ -158,6 +174,7 @@ module MacValidate
       verify_entitlements!(app)
       run!('open', app)
     when 'build'
+      verify_ffi_current!(root)
       status = NativeJob.run(phase: 'build', build_dir: derived, command: [RbConfig.ruby, __FILE__,
         '_build', root, derived, configuration])
       return status unless status.zero?

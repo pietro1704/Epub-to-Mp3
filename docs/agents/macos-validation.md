@@ -22,6 +22,11 @@ For a linked checkout with the usable native cache, pass `--checkout PATH`.
 Packaging requires that checkout's bundler to match the current validator's
 version. The command reads existing FFI/ORT artifacts; it never installs models
 or runtime dependencies. A missing input is a failure, not a request to build it.
+`build` also fails when `target/release/libconverter_ffi.dylib` is older than a
+Rust input it embeds (manifests, `build.rs` and `src/` of converter-core,
+converter-ffi and `native/`); run `mise run converter-ffi:build` first. The check
+compares modification times: it does not prove that a newer dylib was built from
+this checkout.
 
 ```sh
 mise run mac:validate -- inspect --derived-data /path/to/existing/DerivedData
