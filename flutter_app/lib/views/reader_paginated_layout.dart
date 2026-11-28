@@ -180,37 +180,42 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: widget.onCenterTap,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      left: margin,
-                      right: margin,
-                      top: topPad,
-                      bottom: bottomPad,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (pageIndex == 0) _chapterHeader(headingStyle, fg),
-                        ...page.spans.map(
-                          (s) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: GestureDetector(
-                              onTap: () => widget.onJumpToSentence?.call(s),
-                              child: Text(
-                                s.text,
-                                key: _spanKeys.putIfAbsent(
-                                  s.id,
-                                  () => GlobalKey(),
-                                ),
-                                style: bodyStyle,
-                                textAlign: flutterTextAlign(
-                                  settings.readerTextAlignment,
+                  child: ScrollConfiguration(
+                    // Pages turn; desktop must not paint a scroll bar over them.
+                    behavior: ScrollConfiguration.of(context)
+                        .copyWith(scrollbars: false),
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.only(
+                        left: margin,
+                        right: margin,
+                        top: topPad,
+                        bottom: bottomPad,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (pageIndex == 0) _chapterHeader(headingStyle, fg),
+                          ...page.spans.map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: GestureDetector(
+                                onTap: () => widget.onJumpToSentence?.call(s),
+                                child: Text(
+                                  s.text,
+                                  key: _spanKeys.putIfAbsent(
+                                    s.id,
+                                    () => GlobalKey(),
+                                  ),
+                                  style: bodyStyle,
+                                  textAlign: flutterTextAlign(
+                                    settings.readerTextAlignment,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -266,7 +271,9 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
     final id = widget.currentSentenceId;
     int? narrated;
     if (id != null) {
-      final index = _pages.indexWhere((page) => page.spans.any((span) => span.id == id));
+      final index = _pages.indexWhere(
+        (page) => page.spans.any((span) => span.id == id),
+      );
       narrated = index < 0 ? null : index;
     }
     final shown = _pages.isEmpty ? 0 : _currentPage.clamp(0, _pages.length - 1);
@@ -276,7 +283,9 @@ extension _ReaderPaginatedLayout on _ReaderViewState {
       follow: follow || _forceFollow,
     );
     _forceFollow = false;
-    final paired = target != null ? true : NarrationPairing.paired(shown: shown, narrated: narrated);
+    final paired = target != null
+        ? true
+        : NarrationPairing.paired(shown: shown, narrated: narrated);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (target != null && _currentPage != target) _showPage(target);
