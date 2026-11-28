@@ -83,6 +83,20 @@ final class MacReaderPDFView: PDFView {
         return true
     }
 
+    /// The narration chapter of the first text visible on the current page.
+    var currentChapter: Int? {
+        guard let document, let page = currentPage, let audioMap else { return nil }
+        let viewport = convert(visibleRect, to: page).intersection(page.bounds(for: displayBox))
+        let character = viewport.isEmpty ? 0 : firstCharacter(in: page.selection(for: viewport), on: page) ?? 0
+        return audioMap.anchor(page: document.index(for: page), character: character)?.chapterIndex
+    }
+
+    func goToChapter(_ chapter: Int) {
+        guard let chapters = audioMap?.chapters, chapters.indices.contains(chapter),
+              let index = chapters[chapter].startPage, let page = document?.page(at: index) else { return }
+        go(to: page)
+    }
+
     private func firstCharacter(in selection: PDFSelection?, on page: PDFPage) -> Int? {
         guard let selection,
               selection.numberOfTextRanges(on: page) > 0 else { return nil }
