@@ -14,6 +14,7 @@ import 'model_install/android_model_install_operations.dart';
 import 'model_install/model_install_models.dart';
 import 'model_install/model_install_runner.dart';
 import 'embedded_conversion_result.dart';
+import 'pdf_ocr_preparer.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/android_speech_fallback.dart';
 
@@ -267,6 +268,7 @@ class AndroidEmbeddedConverter
   }) async {
     try {
       await ensureRuntimeLoaded();
+      await PdfOcrPreparer.android(_channel).prepare(inputPath);
       final raw = await _channel.invokeMethod<String>('parse', {
         'inputPath': inputPath,
         'jobId': jobId,
