@@ -3,12 +3,12 @@ import AppKit
 import XCTest
 @testable import EpubToMp3
 
-/// MAC-READER-TOOLBAR-VISIBLE: on macOS the reader's "Aa" and the other header
-/// buttons stay visible all the time; a click in the middle of the page must
-/// not hide them.
+/// MAC-UNSYNCED-HEADER-MINIPLAYER: as on the iPhone, one click on the page hides
+/// the reader header and the mini player together, and the next one shows both.
+/// This replaces the earlier MAC-READER-TOOLBAR-VISIBLE rule.
 @MainActor
 final class MacReaderToolbarVisibilityTests: XCTestCase {
-    func testCentreClickKeepsReaderToolbarVisible() async throws {
+    func testOnePageClickHidesAndShowsTheHeaderTogetherWithTheMiniPlayer() async throws {
         let suite = "mac-reader-toolbar-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
@@ -22,9 +22,11 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
                                  location: .standard)
+        // What the window is told about the mini player after each click.
+        var miniPlayerHidden: [Bool] = []
         let controller = MacReaderViewController(library: library, settings: AppSettings(defaults: defaults),
             player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
-            onClose: {})
+            onClose: {}, onChromeChanged: { miniPlayerHidden.append($0) })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650),
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -54,14 +56,21 @@ final class MacReaderToolbarVisibilityTests: XCTestCase {
         XCTAssertFalse(buttons.isEmpty)
 
         let surface = try XCTUnwrap(controller.view as? MacReaderSurfaceView)
-        for click in [textView.onToggleChrome, surface.onToggleChrome, textView.onToggleChrome] {
+        let textFrame = textView.convert(textView.bounds, to: controller.view)
+        let clicks = [textView.onToggleChrome, surface.onToggleChrome, textView.onToggleChrome, surface.onToggleChrome]
+        for (index, click) in clicks.enumerated() {
+            let hidden = index.isMultiple(of: 2)
             click?()
             controller.view.layoutSubtreeIfNeeded()
-            XCTAssertFalse(header.isHidden, "A page click must not hide the reader header")
+            XCTAssertEqual(miniPlayerHidden.count, index + 1)
+            XCTAssertEqual(miniPlayerHidden.last, hidden, "click \(index + 1): mini player")
+            XCTAssertEqual(header.isHidden, hidden, "click \(index + 1): header")
             for button in buttons {
-                XCTAssertFalse(button.isHiddenOrHasHiddenAncestor,
-                               "\(button.title.isEmpty ? String(describing: button.image) : button.title) must stay visible")
+                XCTAssertEqual(button.isHiddenOrHasHiddenAncestor, hidden,
+                               "click \(index + 1): \(button.title.isEmpty ? String(describing: button.image) : button.title)")
             }
+            XCTAssertEqual(textView.convert(textView.bounds, to: controller.view), textFrame,
+                           "hiding the chrome must not move the page")
         }
         // MAC-READER-TOOLBAR-TITLE-AMBIGUOUS: one possible title position, centred between the controls.
         let title = try XCTUnwrap(descendants(controller.view)
