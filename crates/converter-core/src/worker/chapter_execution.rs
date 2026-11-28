@@ -23,6 +23,8 @@ pub(super) struct ChapterExecutionContext<'a> {
     pub(super) cache_dir: &'a Path,
     pub(super) output_dir: &'a Path,
     pub(super) book_key: &'a str,
+    /// Earlier jobs whose finished chapters may be reused.
+    pub(super) recovery_jobs: &'a [String],
     pub(super) detected_language: Option<&'a str>,
     pub(super) language_profile: &'a crate::language::profile::BookLanguageProfile,
     pub(super) total: usize,
@@ -223,17 +225,14 @@ impl ConversionWorker {
         let request_key =
             self.typed_cache_request_key(request, preferences, language, &base_request_key)?;
         let reject_opaque_native = true;
-        if !self.execution_options.force_reprocess
-            && !chapter_audio_is_reusable(&mp3, &request_key, reject_opaque_native)
-        {
-            if let Some(predecessor) = self
-                .control
-                .as_ref()
-                .and_then(|control| control.recover_job())
-            {
+        if !self.execution_options.force_reprocess {
+            for predecessor in context.recovery_jobs {
+                if chapter_audio_is_reusable(&mp3, &request_key, reject_opaque_native) {
+                    break;
+                }
                 recover_chapter_audio_for_generation(
                     &self.config.paths.output_dir,
-                    &predecessor,
+                    predecessor,
                     &mp3,
                     &request_key,
                     reject_opaque_native,
