@@ -16,6 +16,8 @@ import '../../models/language_model_resolution.dart';
 import '../../models/narration_plan.dart';
 import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
+import 'linux_page_ocr.dart';
+import 'pdf_ocr_preparer.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/listening_schedule.dart';
 import 'desktop_tts_model_adapter.dart';
@@ -29,6 +31,7 @@ part '../playback/desktop_platform_speech.dart';
 part 'desktop_library_metadata.dart';
 part 'desktop_chapter_names.dart';
 part 'desktop_filename_cover.dart';
+part 'desktop_pdf_ocr.dart';
 part 'desktop_audio_export.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
@@ -72,6 +75,11 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   late final _OpenDart _open;
   late final _MetadataDart _metadata;
   final String _libraryPath;
+
+  /// Linux reads scanned PDF pages with Tesseract when it is already installed.
+  late final PdfOcrPreparer? _pdfOcr = Platform.isLinux
+      ? _linuxPdfOcr(_libraryPath)
+      : null;
   final bool _workerLibraryAvailable;
   final Map<String, int> _controls = {};
   final Map<String, GrowingChapterAudioSource> _streams = {};
@@ -398,6 +406,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   }) async {
     _requireWorkerLibrary();
     final libraryPath = _libraryPath;
+    await _pdfOcr?.prepare(inputPath);
     return _enqueueWorker(
       () => runDesktopParseWorker(libraryPath, inputPath, jobId),
     );
@@ -539,4 +548,19 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       expectedChapterIndex: chapterIndex,
     );
   }
+}
+
+PdfOcrPreparer _linuxPdfOcr(String libraryPath) {
+  final ocr = LinuxPageOcr();
+  return PdfOcrPreparer(
+    available: ocr.isAvailable,
+    listPages: (path) async {
+      final raw = await desktopPdfImagePagesJson(path, libraryPath: libraryPath);
+      final pages = (jsonDecode(raw ?? '{}') as Map)['pages'] as List? ?? [];
+      return pages.cast<num>().map((page) => page.toInt()).toList();
+    },
+    recognize: ocr.recognize,
+    store: (path, page, text) =>
+        desktopPdfOcrPageSet(path, page, text, libraryPath: libraryPath),
+  );
 }

@@ -15,6 +15,7 @@ class PdfOcrPreparer {
     required this.listPages,
     required this.recognize,
     required this.store,
+    this.available,
   });
 
   factory PdfOcrPreparer.android(MethodChannel channel) => PdfOcrPreparer(
@@ -42,9 +43,13 @@ class PdfOcrPreparer {
   final PdfOcrRecognize recognize;
   final PdfOcrStore store;
 
+  /// When set and false, nothing is read (the platform OCR is not installed).
+  final Future<bool> Function()? available;
+
   /// Returns how many pages were newly read.
   Future<int> prepare(String path) async {
     if (!path.toLowerCase().endsWith('.pdf')) return 0;
+    if (available != null && !await available!()) return 0;
     final done = _storedPages(path);
     var read = 0;
     final List<int> pages;
