@@ -20,8 +20,9 @@ class MacValidateTest < Minitest::Test
     FileUtils.mkdir_p([File.join(@root, 'ios/EpubToMp3/EpubToMp3'), File.join(@root, 'target/release'),
                        File.join(@app, 'Contents/MacOS'), @bin])
     File.write(File.join(@root, 'ios/EpubToMp3/EpubToMp3/App.swift'), 'source')
-    File.write(File.join(@root, 'target/release/libconverter_ffi.dylib'), 'ffi')
     %w[Cargo.toml Cargo.lock].each { |name| File.write(File.join(@root, name), name) }
+    # Written after its inputs: a current library.
+    File.write(File.join(@root, 'target/release/libconverter_ffi.dylib'), 'ffi')
     File.write(File.join(@app, 'Contents/MacOS/EpubToMp3'), 'app')
     %w[xcode-select xcodebuild uname codesign open xcrun pgrep].each do |name|
       File.write(File.join(@bin, name), <<~SH)
