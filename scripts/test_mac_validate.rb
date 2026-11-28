@@ -103,6 +103,43 @@ class MacValidateTest < Minitest::Test
     assert_includes File.read(@trace), "open #{@app}"
   end
 
+  # MAC-VALIDATE-STALE-DYLIB: the build embeds target/release as found, so a
+  # converter older than its Rust sources produced an app without export.
+  def test_build_refuses_a_converter_dylib_older_than_its_rust_sources
+    File.write(File.join(@bin, 'xcodegen'), "#!/bin/sh\nexit 0\n")
+    File.chmod(0o755, File.join(@bin, 'xcodegen'))
+    File.write(File.join(@bin, 'xcodebuild'), <<~SH)
+      #!/bin/sh
+      echo xcodebuild "$@" >> "$MAC_VALIDATE_TEST_TRACE"
+      if [ "$1" = -version ]; then echo Xcode-fixture; fi
+      exit 0
+    SH
+    built = Time.now - 600
+    %w[target/release/libconverter_ffi.dylib Cargo.toml Cargo.lock].each do |relative|
+      File.utime(built, built, File.join(@root, relative))
+    end
+    %w[crates/converter-ffi/src/lib.rs crates/converter-core/src/export.rs native/piper-runtime/src/lib.rs].each do |relative|
+      source = File.join(@root, relative)
+      FileUtils.mkdir_p(File.dirname(source))
+      File.write(source, 'newer than the dylib')
+      _out, error, status = invoke('build')
+      refute status.success?, "#{relative} is newer than the dylib"
+      assert_includes error, relative
+      assert_includes error, 'mise run converter-ffi:build'
+      refute_match(/-jobs/, File.read(@trace))
+      refute File.exist?(File.join(@derived, 'mac-validation-Debug.json'))
+      File.utime(built - 60, built - 60, source)
+    end
+    # Files the library does not compile never block the build.
+    %w[crates/converter-ffi/tests/export.rs crates/converter-server/src/main.rs].each do |relative|
+      source = File.join(@root, relative)
+      FileUtils.mkdir_p(File.dirname(source))
+      File.write(source, 'not part of the dylib')
+    end
+    _out, error, status = invoke('build')
+    assert status.success?, error
+  end
+
   def test_inspection_of_legacy_product_is_read_only_and_does_not_build
     out, error, status = invoke('inspect')
     assert status.success?, error
