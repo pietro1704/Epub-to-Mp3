@@ -29,6 +29,7 @@ NativePlaybackFeedbackTests
 PDFRunningLinesAnchorTests
 PdfOcrPreparerTests
 PlatformSettingsCellTests
+PlaybackAnchorWithoutReaderTests
 PlaybackBindingStoreTests
 PlaybackTransportStateTests
 PlayerPlaybackClockTests
