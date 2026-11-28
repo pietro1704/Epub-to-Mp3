@@ -3,6 +3,7 @@ package com.pietrocode.epubtomp3.flutter_app
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlin.test.Test
@@ -28,7 +29,9 @@ class PdfPageOcrR8Test {
         pdf.outputStream().use { document.writeTo(it) }
         document.close()
         try {
+            Log.i("PdfPageOcrR8Test", "Starting recognition of the synthetic PDF")
             val text = PdfPageOcr.recognize(pdf.path, 1).lowercase()
+            Log.i("PdfPageOcrR8Test", "Recognition returned ${text.length} characters")
             assertTrue("quick" in text && "lazy" in text, "OCR text was: $text")
         } finally {
             pdf.delete()
