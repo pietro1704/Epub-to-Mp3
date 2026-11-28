@@ -41,6 +41,9 @@ Map each new device failure to a row here so later runs apply the fix instead of
   without rebuilding. It deletes the result bundle of that launch unread, because it may hold a recording of another app.
   Any other test failure ends the run at once.
 
+A lock query that fails during the unlock wait does not end it. If the phone locks between the check and the launch,
+`xcodebuild` asks to unlock it until the test timeout; when no test case started, the workflow goes back to waiting.
+
 If another job owns the lease, the workflow waits up to `EPUB_NATIVE_WAIT_SECONDS` (one `WAITING_FOR_LEASE` line). When a
 wait times out the report says `blocked`; re-enqueue the same run. This changes only when a run starts: tests still touch
 only our app, and a case that finds another app or a system alert in front still stops.
