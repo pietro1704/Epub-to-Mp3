@@ -164,4 +164,67 @@ extension EpubHtmlRendererTests {
         XCTAssertEqual(font.familyName, CTFontCopyFamilyName(installed) as String)
         #endif
     }
+
+    @MainActor
+    func testChoosingASizeResizesHtmlTextAndKeepsTheHeadingHierarchy() throws {
+        let settings = makeSettings()
+        XCTAssertFalse(settings.readerOverrideFontSize, "A fresh install shows the publisher sizes.")
+        let html = "<h1 style='font-size:48pt'>Title</h1><h3 style='font-size:20pt'>Section</h3>"
+            + String(repeating: "<p style='font-size:12pt'>Body paragraph.</p>", count: 4)
+        for step in [3, 6, 1] {
+            settings.readerFontSize = step
+            XCTAssertTrue(settings.readerOverrideFontSize, "Choosing a size applies it to the book.")
+            let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+                html: html, css: nil, textSettings: ReaderTextSettings(settings: settings))))
+            let body = chosenPointSize(settings)
+            XCTAssertEqual(try pointSize("Body", in: rendered), body, accuracy: 0.5)
+            // Flutter's cappedHeadingSize: min(body + 6, body * 1.5).
+            XCTAssertEqual(try pointSize("Title", in: rendered), min(body + 6, body * 1.5), accuracy: 0.5)
+            XCTAssertEqual(try pointSize("Section", in: rendered), min(body + 6, body * 1.5), accuracy: 0.5)
+        }
+    }
+
+    @MainActor
+    func testOriginalTypographyAfterASizeChoiceRestoresThePublisherSizes() throws {
+        let settings = makeSettings()
+        settings.readerFontSize = 6
+        settings.restoreOriginal()
+        XCTAssertFalse(settings.readerOverrideFontSize)
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<h1 style='font-size:48pt'>Title</h1><p style='font-size:12pt'>Body.</p>", css: nil,
+            textSettings: ReaderTextSettings(settings: settings))))
+        let title = try pointSize("Title", in: rendered)
+        XCTAssertGreaterThan(title, try pointSize("Body", in: rendered) * 3)
+    }
+
+    @MainActor
+    func testSavedSizeOverrideSurvivesTheUpdate() throws {
+        // (saved size, saved override, expected override); the same rule as Flutter's readerOverrideFontSize.
+        let cases: [(Int?, Bool?, Bool)] = [(5, true, true), (5, nil, true), (5, false, false), (nil, nil, false)]
+        for (size, override, expected) in cases {
+            let suite = "font-size-migration-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            if let size { defaults.set(size, forKey: "readerFontSize") }
+            if let override { defaults.set(override, forKey: "readerOverrideFontSize") }
+            let label = "size \(String(describing: size)), override \(String(describing: override))"
+            XCTAssertEqual(AppSettings(defaults: defaults).readerOverrideFontSize, expected, label)
+            // Loading is not a choice: a second launch reads the same state.
+            XCTAssertEqual(AppSettings(defaults: defaults).readerOverrideFontSize, expected, label)
+        }
+    }
+
+    @MainActor
+    private func chosenPointSize(_ settings: AppSettings) -> CGFloat {
+        #if canImport(UIKit)
+        return UIFontMetrics(forTextStyle: .body).scaledValue(for: settings.readerPointSize)
+        #else
+        return settings.readerPointSize
+        #endif
+    }
+
+    private func pointSize(_ text: String, in string: NSAttributedString) throws -> CGFloat {
+        let location = (string.string as NSString).range(of: text).location
+        return try XCTUnwrap(string.attribute(.font, at: location, effectiveRange: nil) as? PlatformFont).pointSize
+    }
 }
