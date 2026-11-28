@@ -92,11 +92,9 @@ final class MacReaderChapterNavigationTests: XCTestCase {
             visibleRect.maxY + 0.5,
             "Every laid-out glyph must remain inside the final visible document rect."
         )
-        XCTAssertLessThanOrEqual(
-            visibleRect.maxY - usedRect.maxY,
-            text.textContainerInset.height * 2 + 0.5,
-            "The previous chapter must end without a large trailing gap."
-        )
+        let pageStarts = MacReaderTextLayout.pageStarts(of: text, viewportHeight: scroll.contentView.bounds.height)
+        XCTAssertEqual(scroll.contentView.bounds.origin.y, try XCTUnwrap(pageStarts.last), accuracy: 1,
+                       "The previous chapter must open on its last whole-line page.")
         let backwardProgress = try XCTUnwrap(ReaderProgressStore.read(bookId: identifier))
         XCTAssertEqual(backwardProgress.chapterIndex, 0)
         XCTAssertEqual(backwardProgress.offsetFraction, 1, accuracy: 0.001)

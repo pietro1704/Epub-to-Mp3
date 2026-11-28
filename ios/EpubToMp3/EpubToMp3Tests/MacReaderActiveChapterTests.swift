@@ -132,8 +132,12 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertNotNil(footnotesControl(), "The prepared chapter already owns its footnotes")
             XCTAssertTrue(footnotesShortcutIsVisible())
             XCTAssertEqual(UserDefaults.standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey), 6)
+            // Restoring lands on the start of the whole-line page that holds the saved position.
             let distance = text.frame.height - scroll.contentView.bounds.height
-            XCTAssertEqual(scroll.contentView.bounds.origin.y, distance * 0.6, accuracy: 2)
+            let starts = MacReaderTextLayout.pageStarts(of: text, viewportHeight: scroll.contentView.bounds.height)
+            let page = starts[MacReaderTextLayout.pageIndex(of: distance * 0.6, in: starts)]
+            XCTAssertGreaterThan(page, distance * 0.6 - scroll.contentView.bounds.height)
+            XCTAssertEqual(scroll.contentView.bounds.origin.y, page, accuracy: 2)
         } else if invalidateProjection {
             try await Task.sleep(nanoseconds: 100_000_000)
             XCTAssertTrue(text.string.isEmpty, "Changed source must invalidate the old chapter projection")
@@ -179,7 +183,11 @@ final class MacReaderActiveChapterTests: XCTestCase {
             }
             XCTAssertEqual(controller.numberOfRows(in: NSTableView()), expected.chapters.count,
                            "Chapter navigation waits until the complete catalog hydrates")
-            XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 2)
+            // A deferred font change relays out the lines, so compare with the page that now holds that offset.
+            let hydratedStarts = MacReaderTextLayout.pageStarts(of: text, viewportHeight: scroll.contentView.bounds.height)
+            let held = deferredAppearance
+                ? hydratedStarts[MacReaderTextLayout.pageIndex(of: before, in: hydratedStarts)] : before
+            XCTAssertEqual(scroll.contentView.bounds.origin.y, held, accuracy: 2)
             let previouslyAvailable = try XCTUnwrap(footnotesControl())
             XCTAssertEqual(previouslyAvailable.identifier, ReaderTool.footnotes.accessibilityIdentifier)
             XCTAssertTrue(footnotesShortcutIsVisible())
