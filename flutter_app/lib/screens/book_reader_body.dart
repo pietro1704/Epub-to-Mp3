@@ -67,16 +67,11 @@ class _BookReaderBody extends ConsumerWidget {
         title: bookTitle,
         filePath: shown.path,
         prefs: ref.watch(sharedPrefsProvider),
+        // A PDF is not parsed on open (the OCR pass is costly): the list shows once the book
+        // has been parsed for listening and cached.
         loadContents: () async {
-          final cache = ref.read(localFulltextCacheProvider);
-          var book = await cache.read(bookId);
-          if (book == null) {
-            book = await ref
-                .read(embeddedConverterProvider)
-                .parse(inputPath: shown.path, jobId: bookId);
-            await cache.save(book, bookId);
-          }
-          return pdfContentsRows(book);
+          final book = await ref.read(localFulltextCacheProvider).read(bookId);
+          return book == null ? const [] : pdfContentsRows(book);
         },
       );
     }
