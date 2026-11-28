@@ -59,6 +59,13 @@ final class MacReaderViewComposition {
     let settingsPopover = NSPopover()
     private(set) var toolBar: MacReaderToolBar?
 
+    /// Closes the open reader popover. False when none is open.
+    func dismissOpenPopover() -> Bool {
+        guard let popover = [settingsPopover, tocPopover].first(where: \.isShown) else { return false }
+        popover.performClose(nil)
+        return true
+    }
+
     init(view: NSView, target: NSViewController, settings: AppSettings, actions: Actions,
          cancelJourney: @escaping () -> Void, onLink: @escaping (URL, String) -> Bool,
          onKeyDown: @escaping (NSEvent) -> Bool, onPageTap: @escaping (Bool) -> Void,
