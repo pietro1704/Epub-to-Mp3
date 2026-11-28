@@ -29,7 +29,9 @@ final class ChapterNavigationDecision {
     func rememberReaderPlaybackAnchor() {
         guard let chapter = location.readerChapter else { return }
         readerPlaybackAnchor = ReaderPlaybackAnchor(
-            bookID: location.readingBookID,
+            // Resumed from the library (mini player or remote command) with no reader open: the narration
+            // still belongs to the playing book, and its reader must follow it once opened.
+            bookID: location.readingBookID ?? location.playingBookID,
             chapterIndex: chapter,
             pageRatio: location.pageRatio
         )
