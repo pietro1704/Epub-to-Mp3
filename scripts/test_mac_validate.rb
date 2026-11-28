@@ -284,18 +284,21 @@ class MacValidateTest < Minitest::Test
     refute_includes File.read(@trace), 'open '
   end
 
-  def test_running_simulator_prevents_gui_launch_without_stopping_user_processes
+  # Host guards were removed by owner decision (#1321): Simulator state no
+  # longer refuses a launch, and validation never stops it.
+  def test_running_simulator_does_not_refuse_gui_launch_or_get_stopped
     receipt
     FileUtils.rm_f(@trace)
-    File.write(File.join(@bin, 'xcrun'), "#!/bin/sh\necho '{\"devices\":{\"iOS\":[{\"state\":\"Booted\"}]}}'\n")
+    File.write(File.join(@bin, 'xcrun'), <<~SH)
+      #!/bin/sh
+      echo xcrun "$@" >> "$MAC_VALIDATE_TEST_TRACE"
+      echo '{"devices":{"iOS":[{"state":"Booted"}]}}'
+    SH
     _out, error, status = invoke('gui')
-    if RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-      refute status.success?
-      assert_includes error, 'GUI launch refused'
-      refute_includes File.read(@trace), 'open '
-    else
-      assert status.success?, error
-    end
+    assert status.success?, error
+    trace = File.read(@trace)
+    assert_includes trace, "open #{@app}"
+    refute_match(/shutdown|kill/, trace)
   end
 
   def test_failed_guard_stops_build_without_writing_receipt
