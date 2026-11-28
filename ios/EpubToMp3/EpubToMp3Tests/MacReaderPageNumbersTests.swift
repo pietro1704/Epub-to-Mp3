@@ -26,6 +26,24 @@ final class MacReaderPageNumbersTests: XCTestCase {
         }
     }
 
+    /// MAC-READER-PAGINATED-SCROLLBAR: like the iPhone, only the scrolling layout has a scroll bar, also after
+    /// switching the layout with the book open.
+    func testOnlyTheScrollingLayoutHasAScrollBar() async throws {
+        for opening in [ReaderLayout.paginated, .scrolling] {
+            try await withReader(layout: opening) { textView, _ in
+                let scroll = try XCTUnwrap(textView.enclosingScrollView)
+                let settings = try XCTUnwrap(settingsUnderTest)
+                let other: ReaderLayout = opening == .paginated ? .scrolling : .paginated
+                for layout in [opening, other, opening] {
+                    settings.readerLayout = layout
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                    XCTAssertEqual(scroll.hasVerticalScroller, layout == .scrolling,
+                                   "opened \(opening.rawValue), now \(layout.rawValue)")
+                }
+            }
+        }
+    }
+
     /// MAC-READER-PAGE-BOTTOM-CLIP: a one-column page holds whole lines only, the next page starts at the next line,
     /// and the page count and the scroll snap use the same page starts.
     func testOneColumnPagesShowWholeLinesOnceEach() async throws {
