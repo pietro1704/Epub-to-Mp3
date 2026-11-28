@@ -48,3 +48,76 @@ pub unsafe extern "C" fn converter_book_library_metadata_json_v1(
         },
     )
 }
+
+const DEFAULT_SHELF_COVER_EDGE: u32 = 480;
+const MAX_SHELF_COVER_EDGE: u32 = 2048;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ShelfRequest {
+    paths: Vec<std::path::PathBuf>,
+    cover_max_edge: Option<u32>,
+}
+
+fn library_shelf_json(request: &str) -> Result<String, String> {
+    let request: ShelfRequest = serde_json::from_str(request)
+        .map_err(|error| format!("invalid library shelf request: {error}"))?;
+    let edge = request.cover_max_edge.unwrap_or(DEFAULT_SHELF_COVER_EDGE);
+    if !(1..=MAX_SHELF_COVER_EDGE).contains(&edge) {
+        return Err(format!(
+            "coverMaxEdge must be between 1 and {MAX_SHELF_COVER_EDGE}"
+        ));
+    }
+    let books: Vec<_> = converter_core::epub::read_library_shelf(&request.paths, edge)
+        .into_iter()
+        .map(|book| match book {
+            Ok(metadata) => json!({
+                "title": metadata.title,
+                "author": metadata.author,
+                "language": metadata.language,
+                "coverMimeType": metadata.cover_mime,
+                "coverBase64": metadata.cover.map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)),
+                "error": null,
+            }),
+            Err(error) => json!({
+                "title": null,
+                "author": null,
+                "language": null,
+                "coverMimeType": null,
+                "coverBase64": null,
+                "error": error.to_string(),
+            }),
+        })
+        .collect();
+    Ok(json!({ "books": books }).to_string())
+}
+
+/// Batch form of the shelf call. The request is
+/// `{"paths": [...], "coverMaxEdge": 480}` (`coverMaxEdge` is optional, 1 to
+/// 2048). Returns `{"books": [...]}` in request order, each entry shaped like
+/// the single-book result plus `error`, with the cover as a JPEG thumbnail. An
+/// unreadable book only sets its own `error`. Returns null for an invalid
+/// request and stores the error for `converter_last_error`. Free the result
+/// with `converter_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn converter_book_library_shelf_json_v1(
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard(
+        "converter_book_library_shelf_json_v1",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let request = match c_string(request_json, "request_json") {
+                Ok(request) => request,
+                Err(error) => return fail(error),
+            };
+            match library_shelf_json(&request).and_then(|json| {
+                CString::new(json).map_err(|error| format!("metadata contains NUL: {error}"))
+            }) {
+                Ok(value) => value.into_raw(),
+                Err(error) => fail(error),
+            }
+        },
+    )
+}

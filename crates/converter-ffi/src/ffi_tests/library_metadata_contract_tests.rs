@@ -66,3 +66,34 @@ fn library_metadata_reports_unreadable_input_through_the_last_error() {
     assert!(library_metadata(not_epub.path()).is_none());
     unsafe { assert!(converter_book_library_metadata_json_v1(ptr::null()).is_null()) };
 }
+
+fn library_shelf(request: serde_json::Value) -> Option<serde_json::Value> {
+    let request = CString::new(request.to_string()).unwrap();
+    unsafe {
+        let raw = converter_book_library_shelf_json_v1(request.as_ptr());
+        if raw.is_null() {
+            return None;
+        }
+        let value = serde_json::from_str(CStr::from_ptr(raw).to_str().unwrap()).unwrap();
+        converter_string_free(raw);
+        Some(value)
+    }
+}
+
+#[test]
+fn library_shelf_reports_each_book_and_rejects_invalid_requests() {
+    let book = library_book(b"not an image");
+    let missing = std::env::temp_dir().join("missing-shelf-book.epub");
+    let value = library_shelf(serde_json::json!({ "paths": [missing, book.path()] })).unwrap();
+    assert!(value["books"][0]["title"].is_null());
+    assert!(value["books"][0]["error"].is_string());
+    assert_eq!(value["books"][1]["title"], "Quincas Borba");
+    assert_eq!(value["books"][1]["author"], "Machado de Assis");
+    assert!(value["books"][1]["error"].is_null());
+    assert!(value["books"][1]["coverBase64"].is_null());
+
+    assert!(library_shelf(serde_json::json!({ "paths": [], "coverMaxEdge": 0 })).is_none());
+    assert!(library_shelf(serde_json::json!({ "paths": [], "coverMaxEdge": 4096 })).is_none());
+    assert!(library_shelf(serde_json::json!({ "books": [] })).is_none());
+    unsafe { assert!(converter_book_library_shelf_json_v1(ptr::null()).is_null()) };
+}
