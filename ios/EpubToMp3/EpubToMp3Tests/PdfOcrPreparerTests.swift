@@ -64,6 +64,26 @@ final class PdfOcrPreparerTests: XCTestCase {
         XCTAssertEqual(again, 0)
     }
 
+    #if os(macOS)
+    func testListeningFromAnOCRPageStartsAtThatPage() throws {
+        let source = try temporaryDirectory().appendingPathComponent("mixed.pdf")
+        try ScannedPdfFixture.write([
+            .text("The first page of this book already has text that can be selected and narrated."),
+            .image("The lighthouse keeper counted seven grey boats before breakfast."),
+            .text("The last page can also be selected, and it closes this short synthetic book."),
+        ], to: source)
+        try ConverterFFIAdapter().setPdfOcrText(
+            "The lighthouse keeper counted seven grey boats before breakfast.", page: 2, at: source)
+
+        let map = try XCTUnwrap(MacReaderPDFView.prepare(source).audioMap)
+
+        let anchor = try XCTUnwrap(map.playbackAnchor(page: 1))
+        let narration = map.chapters[anchor.chapterIndex].text.unicodeScalars
+        let heard = String(String.UnicodeScalarView(narration.dropFirst(anchor.sourceScalarOffset)))
+        XCTAssertTrue(heard.hasPrefix("The lighthouse keeper"), "listening starts at: \(heard.prefix(60))")
+    }
+    #endif
+
     func testRecognitionLanguagesPreferTheBookThenPortuguese() {
         let supported = ["en-US", "fr-FR", "pt-BR", "es-ES"]
         XCTAssertEqual(VisionPageReader.recognitionLanguages(bookLanguage: "es", supported: supported),

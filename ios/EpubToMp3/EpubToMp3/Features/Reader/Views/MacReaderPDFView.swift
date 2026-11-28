@@ -24,7 +24,9 @@ final class MacReaderPDFView: PDFView {
             // Rust supplies the same native text used for narration. The
             // scanned-spread path must not replace selectable source text.
             let metadata = try? ConverterFFIAdapter().openBook(at: url).metadataJSON
-            let audioMap = metadata.flatMap { try? PDFReadingAudioMap(metadata: $0, pageTexts: pageTexts) }
+            let audioMap = metadata.flatMap {
+                try? PDFReadingAudioMap(metadata: $0, pageTexts: PDFReadingAudioMap.pageTexts(of: document))
+            }
             return (document, audioMap, false)
         }
         if let normalized = PdfReadingPageNormalizer.normalizedDocument(from: url) {

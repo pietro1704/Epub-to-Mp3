@@ -83,7 +83,7 @@ final class ReaderPDFPresentation {
         toldSkippedPages = false
         if let document, let metadata {
             audioMap = try? PDFReadingAudioMap(metadata: metadata,
-                pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
+                pageTexts: PDFReadingAudioMap.pageTexts(of: document))
         }
         view.document = document
         if let document, let saved = ReaderProgressStore.savedPDFPosition(bookId: bookID, defaults: defaults),

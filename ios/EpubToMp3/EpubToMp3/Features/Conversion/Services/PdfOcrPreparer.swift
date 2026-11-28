@@ -19,9 +19,9 @@ struct PdfOcrPreparer: Sendable {
         guard url.pathExtension.lowercased() == "pdf" else { return 0 }
         let work = Task.detached(priority: .userInitiated) { () throws -> Int in
             guard let pages = try? listPages(url) else { return 0 }
-            let stored = Self.storedPages(url)
+            let stored = Self.storedText(url)
             var read = 0
-            for page in pages where !stored.contains(page) {
+            for page in pages where stored[page] == nil {
                 try Task.checkCancellation()
                 guard !isCancelled() else { throw CancellationError() }
                 if readPage(page, of: url) { read += 1 }
@@ -37,11 +37,13 @@ struct PdfOcrPreparer: Sendable {
         return (try? store(url, page, text)) != nil
     }
 
-    private static func storedPages(_ url: URL) -> Set<Int> {
+    /// The text the Rust core keeps beside the book, by 1-based page.
+    static func storedText(_ url: URL) -> [Int: String] {
         struct Sidecar: Decodable { let pages: [String: String] }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: url.path + ".ocr.json")),
-              let sidecar = try? JSONDecoder().decode(Sidecar.self, from: data) else { return [] }
-        return Set(sidecar.pages.keys.compactMap(Int.init))
+              let sidecar = try? JSONDecoder().decode(Sidecar.self, from: data) else { return [:] }
+        return Dictionary(sidecar.pages.compactMap { page, text in Int(page).map { ($0, text) } },
+                          uniquingKeysWith: { first, _ in first })
     }
 }
 
