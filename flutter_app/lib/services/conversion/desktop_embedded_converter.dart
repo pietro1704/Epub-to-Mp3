@@ -16,6 +16,7 @@ import '../../models/language_model_resolution.dart';
 import '../../models/narration_plan.dart';
 import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
+import 'voice_audition.dart';
 import 'linux_page_ocr.dart';
 import 'windows_page_ocr.dart';
 import 'pdf_ocr_preparer.dart';
@@ -33,6 +34,7 @@ part 'desktop_library_metadata.dart';
 part 'desktop_chapter_names.dart';
 part 'desktop_filename_cover.dart';
 part 'desktop_pdf_ocr.dart';
+part 'desktop_voice_audition.dart';
 part 'desktop_audio_export.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
