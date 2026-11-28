@@ -181,9 +181,22 @@ final class PreparedChapterRendererTests: XCTestCase {
             settings.readerTheme = theme
             let textSettings = ReaderTextSettings(settings: settings)
             let expected = settings.readerColors
+#if os(iOS)
+            // Dynamic colours compare by identity, so compare what each appearance resolves to.
+            for style in [UIUserInterfaceStyle.light, .dark] {
+                let traits = UITraitCollection(userInterfaceStyle: style)
+                let pairs = [(textSettings.colors.background, expected.background),
+                             (textSettings.colors.foreground, expected.foreground),
+                             (textSettings.colors.link, expected.link)]
+                for (actual, wanted) in pairs {
+                    XCTAssertEqual(actual.resolvedColor(with: traits), wanted.resolvedColor(with: traits), "\(theme) \(style.rawValue)")
+                }
+            }
+#else
             XCTAssertEqual(textSettings.colors.background, expected.background, "\(theme)")
             XCTAssertEqual(textSettings.colors.foreground, expected.foreground, "\(theme)")
             XCTAssertEqual(textSettings.colors.link, expected.link, "\(theme)")
+#endif
             XCTAssertEqual(textSettings.preferredColorScheme, settings.readerPreferredColorScheme, "\(theme)")
         }
     }
