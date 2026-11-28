@@ -614,12 +614,17 @@ void main() {
       },
     );
 
-    testWidgets('Listen in the chapter where the audio waits does not ask', (
-      t,
-    ) async {
-      final (_, started) = await pumpListenChoice(t, readerChapter: 0);
-      expect(find.text('Continue from where?'), findsNothing);
-      expect(started, hasLength(1));
-    });
+    testWidgets(
+      'Listen resumes the audio directly when its narration is on the visible page',
+      (t) async {
+        final (player, started) = await pumpListenChoice(
+          t,
+          readerChapter: 0,
+        );
+        expect(find.text('Continue from where?'), findsNothing);
+        expect(started, isEmpty, reason: 'no new listen start');
+        expect(player.isPlaying, isTrue);
+      },
+    );
   });
 }

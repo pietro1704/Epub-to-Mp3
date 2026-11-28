@@ -79,6 +79,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   StreamSubscription<String?>? _sentenceSub;
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
+  final ReaderPageProbe _pageProbe = ReaderPageProbe();
 
   /// Paused narration keeps its sentence painted (it marks where it resumes) and
   /// drops it on a seek, like the measured path and the Apple reader.
@@ -446,6 +447,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
               onPlayFromHere: widget.onListenFrom == null
                   ? null
                   : (utf16) => _playFromHere(chapter, utf16),
+              pageProbe: _pageProbe,
               onVisibleTextOffset: (offset) {
                 _visibleTextOffset = offset ?? _visibleTextOffset;
                 final book = widget.bookId;
