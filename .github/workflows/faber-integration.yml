@@ -226,8 +226,16 @@ jobs:
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Build the minified release APK (also regenerates the release plugin registrant)
         working-directory: flutter_app
-        run: mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --release --no-pub --target-platform android-arm64
+        run: |
+          # The integration build above generated a registrant that lists the dev-only
+          # integration_test plugin, which the release classpath lacks; build with pub so it is rewritten.
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --release --target-platform android-arm64
+      - name: Assemble the minified app and instrumentation APKs together
+        working-directory: flutter_app/android
+        run: mise exec -- ./gradlew -PtestMinifiedRelease :app:assembleRelease :app:assembleReleaseAndroidTest --max-workers=1
       - name: Run the ML Kit PDF OCR in the minified release build
+        timeout-minutes: 12
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
@@ -240,7 +248,7 @@ jobs:
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -accel on
           emulator-build: '16740729'
-          script: bash -c 'cd flutter_app/android && mise exec -- ./gradlew -PtestMinifiedRelease :app:connectedReleaseAndroidTest --max-workers=1'
+          script: bash scripts/verify_android_release_ocr.sh
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -253,6 +261,8 @@ jobs:
             flutter_app/build/app/test-results
             .reports/tts-preferences/android-inference.log
             .reports/tts-preferences/android-diagnostics.log
+            .reports/tts-preferences/android-ocr/
+            flutter_app/build/app/outputs/mapping/releaseAndroidTest/mapping.txt
           if-no-files-found: warn
           retention-days: 14
 
