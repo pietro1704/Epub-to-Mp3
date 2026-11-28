@@ -3,12 +3,6 @@ import CoreText
 import Foundation
 import ImageIO
 
-/// What Rust asks a client to draw for a book without a cover.
-struct FilenameCover: Decodable, Equatable {
-    let label: String
-    let backgroundRgb: [UInt8]
-}
-
 /// Draws that cover as a PNG: the file name in bold white, centred, on the book's colour.
 enum FilenameCoverRenderer {
     private static let size = CGSize(width: 300, height: 450)

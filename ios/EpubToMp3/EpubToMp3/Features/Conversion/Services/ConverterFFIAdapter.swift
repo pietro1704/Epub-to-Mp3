@@ -4,6 +4,12 @@ import Darwin
 protocol EmbeddedConverter { func openBook(at url: URL) throws -> EmbeddedBook }
 struct EmbeddedBook { let metadataJSON: Data }
 
+/// What Rust asks a client to draw for a book without a cover.
+struct FilenameCover: Decodable, Equatable {
+    let label: String
+    let backgroundRgb: [UInt8]
+}
+
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
