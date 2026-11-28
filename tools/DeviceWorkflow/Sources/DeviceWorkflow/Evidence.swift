@@ -32,6 +32,11 @@ public enum Evidence {
             && !lines.contains { $0.hasPrefix("Test Case ") && $0.contains("' passed (") }
     }
 
+    /// xcodebuild asked for an unlock and no test case ever started.
+    public static func waitedForUnlockWithoutRunning(_ log: String) -> Bool {
+        log.contains("Unlock iPhone to Continue") && !log.contains("Test Case ")
+    }
+
     public static func verifySummary(_ summary: [String: Any], benchmark: Bool) throws {
         guard summary["result"] as? String == "Passed",
               integer(summary["failedTests"]) == 0,

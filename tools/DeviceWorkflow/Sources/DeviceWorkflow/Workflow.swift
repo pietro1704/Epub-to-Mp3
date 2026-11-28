@@ -193,7 +193,10 @@ public final class Workflow {
             }
             let nap = min(unlockPollSeconds, unlockWaitSeconds - waited)
             sleeper(nap); slept += nap
-            lock = try deviceJSON(["info", "lockState"], phase)
+            // One query that times out must not end a long wait; the deadline and an interruption still do.
+            do { lock = try deviceJSON(["info", "lockState"], phase) } catch {
+                if HostInterruption.interrupted { throw error }
+            }
         }
         timings["deviceWaitSeconds", default: 0] += waitedSeconds()
         report["status"] = previousStatus
@@ -317,8 +320,18 @@ public final class Workflow {
             report["nextAction"] = "Observe the workflow owner; do not restart between child phases."
             let attemptCommand = testCommand + ["-resultBundlePath", resultBundle.path, "-test-timeouts-enabled", "YES",
                 "-default-test-execution-time-allowance", String(options.timeout), "-maximum-test-execution-time-allowance", String(options.timeout)]
-            test = try command(attemptCommand, "testWall", timeout: TimeInterval(options.timeout + 120), check: false)
-            guard test.code != 0, Evidence.neverReachedForeground(test.output) else { break }
+            let neverRan: Bool
+            do {
+                test = try command(attemptCommand, "testWall", timeout: TimeInterval(options.timeout + 120), check: false)
+                neverRan = test.code != 0 && Evidence.neverReachedForeground(test.output)
+            } catch {
+                // The phone locked after the check: xcodebuild waits for the unlock until this timeout ends it.
+                let log = (try? String(contentsOf: directory.appendingPathComponent("testWall.log"), encoding: .utf8)) ?? ""
+                guard !HostInterruption.interrupted, Evidence.waitedForUnlockWithoutRunning(log) else { throw error }
+                test = CommandResult(code: 1, output: log)
+                neverRan = true
+            }
+            guard neverRan else { break }
             // The bundle of a launch that stayed behind another app may hold a recording of that app.
             if FileManager.default.fileExists(atPath: resultBundle.path) { try FileManager.default.removeItem(at: resultBundle) }
             let waited = max(ProcessInfo.processInfo.systemUptime - foregroundStart, slept)

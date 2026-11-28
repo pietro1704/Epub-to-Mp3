@@ -53,6 +53,57 @@ extension DeviceWorkflowTests {
         XCTAssertTrue(FileManager.default.fileExists(atPath: (bundles as? [String])?.last ?? ""))
     }
 
+    /// A long wait must survive a device query that times out; only the deadline ends it.
+    func testAFailedLockQueryDuringTheWaitKeepsWaiting() throws {
+        _ = try appFixture()
+        let base = fakeRunner(phases: NSMutableArray(), lockedQueries: 2)
+        var queries = 0
+        let work = try workflow(["test"], runner: { command, observe in
+            if command.phase == "lockState" {
+                queries += 1
+                if queries == 2 { return CommandResult(code: 2, output: "ERROR: Command timeout of 30.0 seconds exceeded.") }
+            }
+            return try base(command, observe)
+        })
+        XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+        XCTAssertGreaterThanOrEqual(queries, 3)
+    }
+
+    /// The phone can lock between the readiness check and the launch: xcodebuild then waits for the unlock until
+    /// the workflow times it out. Nothing ran, so the run goes back to waiting.
+    func testLockBetweenTheCheckAndTheLaunchWaitsAndRunsAgain() throws {
+        _ = try appFixture()
+        let base = fakeRunner(phases: NSMutableArray())
+        var launches = 0
+        let work = try workflow(["test"], runner: { command, observe in
+            let result = try base(command, observe)
+            guard command.phase == "testWall" else { return result }
+            launches += 1
+            guard launches == 1 else { return result }
+            try Data(("Run Destination Preflight: The destination is not ready.\n"
+                + "NSLocalizedDescription=Unlock iPhone to Continue\n").utf8).write(to: command.log)
+            throw WorkflowError("testWall timed out; inspect testWall.log.")
+        })
+        XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+        XCTAssertEqual(launches, 2)
+    }
+
+    func testATimeoutOfATestThatStartedIsNotRetried() throws {
+        _ = try appFixture()
+        let base = fakeRunner(phases: NSMutableArray())
+        var launches = 0
+        let work = try workflow(["test"], runner: { command, observe in
+            let result = try base(command, observe)
+            guard command.phase == "testWall" else { return result }
+            launches += 1
+            try Data(("NSLocalizedDescription=Unlock iPhone to Continue\n"
+                + "Test Case '-[EpubToMp3UITests.SampleUITests testSample]' started.\n").utf8).write(to: command.log)
+            throw WorkflowError("testWall timed out; inspect testWall.log.")
+        })
+        XCTAssertThrowsError(try work.execute())
+        XCTAssertEqual(launches, 1)
+    }
+
     func testForegroundWaitIsBoundedAndEndsBlocked() throws {
         _ = try appFixture()
         let phases = NSMutableArray()
