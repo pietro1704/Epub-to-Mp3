@@ -21,7 +21,7 @@ enum IOSReaderPlaybackPreparation {
     static func syncPlayerCoverArtNow(player: AudioPlayer, library: LibraryStore) {
         let bookID = player.location.playingBookID
             ?? player.location.readingBookID
-        let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
+        let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.displayCoverPNG }
         player.updateCoverArtData(cover)
     }
 

@@ -141,7 +141,7 @@ final class FullPlayerScreenController: UIViewController {
             content.chapterLabel.text = (content.chapterLabel.text ?? "") + "\n" + voice
         }
 
-        if let data = currentBook?.coverPNG, let image = UIImage(data: data) {
+        if let data = currentBook?.displayCoverPNG, let image = UIImage(data: data) {
             content.coverImageView.image = image
             content.coverImageView.contentMode = .scaleAspectFit
         } else {

@@ -316,7 +316,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func updateCover(for book: BookEntity?) {
-        guard let book, let data = book.coverPNG else {
+        guard let book, let data = book.displayCoverPNG else {
             coverDecodeTask?.cancel()
             coverDecodeTask = nil
             coverDecodeGeneration = UUID()
@@ -327,25 +327,26 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             return
         }
 
-        if let cached = LibraryCoverThumbnailCache.cached(for: book.id) {
+        let key = book.coverCacheKey
+        if let cached = LibraryCoverThumbnailCache.cached(for: key) {
             coverDecodeTask?.cancel()
             coverDecodeTask = nil
             coverDecodeGeneration = UUID()
-            coverBookID = book.id
+            coverBookID = key
             coverView.image = cached
             coverView.contentMode = .scaleAspectFill
             return
         }
-        guard coverBookID != book.id else { return }
+        guard coverBookID != key else { return }
 
         coverDecodeTask?.cancel()
         let generation = UUID()
         coverDecodeGeneration = generation
-        coverBookID = book.id
+        coverBookID = key
         coverView.image = UIImage(systemName: "book.closed")
         coverView.tintColor = .tintColor
         coverView.contentMode = .scaleAspectFit
-        coverDecodeTask = Task.detached(priority: .utility) { [bookID = book.id] in
+        coverDecodeTask = Task.detached(priority: .utility) { [bookID = key] in
             let image = LibraryCoverThumbnailCache.decode(data, bookID: bookID)
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in

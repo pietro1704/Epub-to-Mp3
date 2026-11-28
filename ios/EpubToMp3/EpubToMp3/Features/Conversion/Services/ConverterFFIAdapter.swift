@@ -4,11 +4,18 @@ import Darwin
 protocol EmbeddedConverter { func openBook(at url: URL) throws -> EmbeddedBook }
 struct EmbeddedBook { let metadataJSON: Data }
 
+/// What Rust asks a client to draw for a book without a cover.
+struct FilenameCover: Decodable, Equatable {
+    let label: String
+    let backgroundRgb: [UInt8]
+}
+
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
     private var chapterNamesUpdate: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?)
         -> UnsafeMutablePointer<CChar>?)?
+    private var filenameCoverJSON: (@convention(c) (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var auditionVoice: ConverterVoiceAudition?
     private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
     /// `converter_set_background_cpu_limit_v1`: absent in older libraries (then pacing is simply unavailable).
@@ -81,6 +88,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         handle = library
         chapterNamesUpdate = symbol("converter_chapter_names_update_json_v1", as: (@convention(c) (UnsafePointer<CChar>?,
             UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?).self)
+        filenameCoverJSON = symbol("converter_filename_cover_json_v1", as: (@convention(c) (UnsafePointer<CChar>?)
+            -> UnsafeMutablePointer<CChar>?).self)
         prepareAudio = symbol("converter_audio_prepare_v1", as: (@convention(c) (UnsafePointer<CChar>?) -> Bool).self)
         setBackgroundCPULimitSymbol = symbol("converter_set_background_cpu_limit_v1", as: (@convention(c) (UInt32) -> Void).self)
         close = { value in dispose(value) }
@@ -320,6 +329,15 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         return Dictionary(uniqueKeysWithValues: overrides.names.compactMap { key, value in
             Int(key).map { ($0, value) }
         })
+    }
+
+    func filenameCover(for fileName: String) throws -> FilenameCover {
+        guard let cover = filenameCoverJSON else { throw EmbeddedConverterError.artifactUnavailable }
+        guard let result = fileName.withCString({ cover($0) }) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(result) }
+        return try JSONDecoder().decode(FilenameCover.self, from: Data(String(cString: result).utf8))
     }
 
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }
