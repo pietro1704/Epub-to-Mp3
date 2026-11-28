@@ -16,6 +16,7 @@ enum MacReaderTextLayout {
               let container = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
         (textView as? MacReaderTextView)?.cachedPageStarts = nil
+        textView.minSize = .zero
 
         let usableWidth = viewport.width - textView.textContainerInset.width * 2
         let fitting = Int((usableWidth + columnGap) / (minimumColumnWidth + columnGap))
@@ -48,8 +49,17 @@ enum MacReaderTextLayout {
         textView.setFrameOrigin(.zero)
         textView.setFrameSize(NSSize(width: viewport.width, height: height))
         guard paginated, let last = pageStarts(of: textView, viewportHeight: viewport.height).last else { return }
-        // The last page must be able to scroll to its own first line.
-        textView.setFrameSize(NSSize(width: viewport.width, height: max(height, last + viewport.height)))
+        // The last page must be able to scroll to its own first line. The minimum size keeps AppKit's own
+        // size-to-fit from shrinking the view back to the text, which would drag that page backwards.
+        let pagedHeight = max(height, last + viewport.height)
+        textView.minSize = NSSize(width: 0, height: pagedHeight)
+        textView.setFrameSize(NSSize(width: viewport.width, height: pagedHeight))
+        // Measuring above shrank the view, which pulls a viewport on the last page backwards. Put it back.
+        let restored = min(viewport.origin.y, pagedHeight - viewport.height)
+        if restored > scrollView.contentView.bounds.origin.y + 0.5 {
+            scrollView.contentView.scroll(to: NSPoint(x: viewport.origin.x, y: restored))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     /// One-column pages: each one starts at the top of the first line that did not fit on the previous page, so a
