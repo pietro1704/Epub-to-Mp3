@@ -1,9 +1,66 @@
 # Changelog
 
-## [0.15.0] — 2026-11-27
+## [0.16.0] — 2026-11-28
 
 ### Bug Fixes
 
+- Resume an interrupted conversion of the same book and options (#1780) ([01c2aa0](https://github.com/pietro1704/Epub-to-Mp3/commit/01c2aa0bcba23bca8fee6db3e13ae78a18b3059c))
+- Keep the page viewport when the reader chrome hides (#1779) ([5f2fc05](https://github.com/pietro1704/Epub-to-Mp3/commit/5f2fc05d722c33cd026c2cf5da68662cd0a897b3))
+- Apply the chosen font size to HTML EPUB text (#1778) ([5d6cae2](https://github.com/pietro1704/Epub-to-Mp3/commit/5d6cae25df6edd153bb5203fb8912095203dfba8))
+- Mac:validate build refuses a stale converter dylib (#1776) ([9873527](https://github.com/pietro1704/Epub-to-Mp3/commit/98735279712a51dc17c1d9641f0e6bd24f89dae7))
+
+### Changes
+
+- Merge pull request #1775 from pietro1704/feat/apple-pdf-vision-ocr
+
+feat(apple): read image-only PDF pages with Vision before conversion ([a1b32db](https://github.com/pietro1704/Epub-to-Mp3/commit/a1b32db7a5d57aeb46ecac84968a1a0acd80f522))
+- Merge pull request #1774 from pietro1704/feat/apple-convert-library-export
+
+feat(apple): add a converted book to the library and export its audio (M4A/MP3) ([3e71103](https://github.com/pietro1704/Epub-to-Mp3/commit/3e711038d68ce66486c305489bc13601f57b0d04))
+
+### Chores
+
+- Bump version to 0.16.0 ([47b763d](https://github.com/pietro1704/Epub-to-Mp3/commit/47b763d626431ebd54b1a0e7f2edca592959d4b4))
+
+### Features
+
+- Read image-only PDF pages with Vision before conversion ([24d0b99](https://github.com/pietro1704/Epub-to-Mp3/commit/24d0b9968ab639380d8bb2149bd9e4a4fc3efab0))
+- Voice sample button per voice (#1772) ([4e8c24c](https://github.com/pietro1704/Epub-to-Mp3/commit/4e8c24cb5a67a366242a5826a1f8d555a5ed9a7e))
+- Voice sample JNI renderer (#1771) ([d4952de](https://github.com/pietro1704/Epub-to-Mp3/commit/d4952de9c3f01a35c6a813eb82539017ae5b8f48))
+- Add a converted book to the library and export its audio ([9ec0ac7](https://github.com/pietro1704/Epub-to-Mp3/commit/9ec0ac7af76db36db53f3a04534b7ce6e0845e70))
+
+### Performance
+
+- Rebuild the reader body only for title, path or cover changes (#1773) ([21c0d29](https://github.com/pietro1704/Epub-to-Mp3/commit/21c0d2922297769d679aa32034f2d55ed7dccd15))
+
+### Tests
+
+- GUI validation no longer expects a Simulator refusal (#1777) ([dff2c8b](https://github.com/pietro1704/Epub-to-Mp3/commit/dff2c8bf1940eddb37b5b36956795e772a208a33))
+
+## [0.15.0] — 2026-11-28
+
+### Bug Fixes
+
+- Show the system bars again when a book opens (#1768) ([046ae9c](https://github.com/pietro1704/Epub-to-Mp3/commit/046ae9c763ffa76b39748337b3eb2c8801d08dee))
+- Remove the duplicate converter_pdf_ocr_page_set_json_v1 export (#1762) ([6f5964a](https://github.com/pietro1704/Epub-to-Mp3/commit/6f5964a9842d2485176ad0dbe832f7ae24980dd0))
+- Keep the passage on screen after a font change (#1761) ([e43b4cd](https://github.com/pietro1704/Epub-to-Mp3/commit/e43b4cd8858432ea39d6e24544f8dbc79cfa1bde))
+- Keep the last page in place when the text is laid out again (#1755) ([f091c28](https://github.com/pietro1704/Epub-to-Mp3/commit/f091c286d01746eccd5ad4fe6d4a26894d80c196))
+- Hide the reader header together with the mini player on a page click (#1751) ([177644b](https://github.com/pietro1704/Epub-to-Mp3/commit/177644be15c75e014cb24291e663636e99e1ccf6))
+- Keep waiting after a failed lock query or a lock right before the launch (#1748) ([a707af8](https://github.com/pietro1704/Epub-to-Mp3/commit/a707af85a22279ec13ed045db0561a7a35a41bdf))
+- Wait until the iPhone can run the test instead of failing the launch (#1747) ([5de4830](https://github.com/pietro1704/Epub-to-Mp3/commit/5de48304ee78b490a6c06d233e20ae1208d438c2))
+- Windows reader GUI journey clicks the visible Contents toolbar button (#1746) ([74db0d3](https://github.com/pietro1704/Epub-to-Mp3/commit/74db0d336658032e15420fa7f1e4cc1a3c16cf26))
+- Name both places in the resume-choice alert (#1739) ([e97c38a](https://github.com/pietro1704/Epub-to-Mp3/commit/e97c38a30cf50e3ae979414c7e70db6ada9acf11))
+- Point the empty job history to the Convert screen (#1738) ([8083c5b](https://github.com/pietro1704/Epub-to-Mp3/commit/8083c5b7c84dfc198025097fe0a0a71a2c96f39a))
+- Keep the text in place on chrome toggles and show the status bar with the chrome (#1735) ([aadb8e0](https://github.com/pietro1704/Epub-to-Mp3/commit/aadb8e0411421a26d83b5bf3fe53b142b33162f8))
+- Read-only native lookups no longer queue behind a running conversion (#1734) ([1970b49](https://github.com/pietro1704/Epub-to-Mp3/commit/1970b49773bd6c7529b844ad2badae4a8dd8911b))
+- Listening from an image-only EPUB cover no longer fails the conversion (#1731) ([a5d80a6](https://github.com/pietro1704/Epub-to-Mp3/commit/a5d80a6c2eb36c16e5e8683a6361372aa85f1fad))
+- Keep imported books of an isolated launch in the throwaway root (#1729) ([dc92c3a](https://github.com/pietro1704/Epub-to-Mp3/commit/dc92c3af0b7c3902ace2bb8caf71b49a90b2d12d))
+- Give PDF narration a chapter timeline for Now Playing (#1727) ([70fe837](https://github.com/pietro1704/Epub-to-Mp3/commit/70fe837ff2d22f1cdd96509541acac5ff423f078))
+- Show landscape PDF pages at full width (#1726) ([417156f](https://github.com/pietro1704/Epub-to-Mp3/commit/417156f65114e1c3c5d7d44554a171021927c5dc))
+- Keep the PDF narration highlight when the measured word is not on the page (#1724) ([77a751f](https://github.com/pietro1704/Epub-to-Mp3/commit/77a751f0ff9cc8527ba0a4e8d2e56e049b8d35d9))
+- PDF Now Playing shows title and progress timeline (#1718) ([85b11ad](https://github.com/pietro1704/Epub-to-Mp3/commit/85b11ad9de2d5e8b16e45f1a12442154f7f29ecd))
+- Restore book menu, page click, selection menu and drop unplayable voice sample (#1720) ([e80c2aa](https://github.com/pietro1704/Epub-to-Mp3/commit/e80c2aa596cb525e536dbfbde4d0717fbe6c3f69))
+- Open a PDF at the top of its first page (#1719) ([79c3c95](https://github.com/pietro1704/Epub-to-Mp3/commit/79c3c958a9b14ba74d82d43df7d5f8464a4b0abd))
 - Decorative lines never become automatic chapter titles (#1716) ([640a5b7](https://github.com/pietro1704/Epub-to-Mp3/commit/640a5b7f1bc702a0f4b57b18baea5295e5104ec9))
 - Keep the projected highlight within one playback sample (#1714) ([15ab2cf](https://github.com/pietro1704/Epub-to-Mp3/commit/15ab2cf4d35be88ff3947103dd6dd69bc350cece))
 - PDF fills the width in landscape instead of a tiny whole-page fit (#1717) ([e70b3cd](https://github.com/pietro1704/Epub-to-Mp3/commit/e70b3cda9d26a4ec838bc85895f085717f4d1cb9))
@@ -17,14 +74,45 @@
 
 ### Chores
 
-- Bump version to 0.15.0 ([319326d](https://github.com/pietro1704/Epub-to-Mp3/commit/319326d68dc35684b4fea52697a37a50818950e6))
+- Node 26.13.1 and ruby 4.0.10 pins (#1767) ([8dc215c](https://github.com/pietro1704/Epub-to-Mp3/commit/8dc215cb70da3f253163b49f8d01ea18797858ba))
+- V0.15.0 (#1721) ([fed69fb](https://github.com/pietro1704/Epub-to-Mp3/commit/fed69fb646b2273a63d7561671ce21cacc66efd2))
 
 ### Features
 
+- Voice sample service and desktop FFI renderer (#1770) ([82ac3d6](https://github.com/pietro1704/Epub-to-Mp3/commit/82ac3d674f3516189434272834d070ce76b494c7))
+- OCR scanned PDF pages with Tesseract when installed (#1765) ([66fad86](https://github.com/pietro1704/Epub-to-Mp3/commit/66fad860b0e19d313875461ae9e1c3c39ec3f083))
+- OCR scanned PDF pages before opening (#1760) ([9b090d2](https://github.com/pietro1704/Epub-to-Mp3/commit/9b090d231719bcecd9743fac346a41660d7200f5))
+- ML Kit recognizer for scanned PDF pages (pdfOcrPage channel) (#1759) ([9401b05](https://github.com/pietro1704/Epub-to-Mp3/commit/9401b05e441219409fef4e43118a216b81ed4dbf))
+- JNI + channel for PDF OCR pages (#1758) ([df9a1a7](https://github.com/pietro1704/Epub-to-Mp3/commit/df9a1a7370be308d721ac7ba1f240d02cac4ed86))
+- Store client OCR text for PDF pages in a sidecar read on open (#1757) ([b44901d](https://github.com/pietro1704/Epub-to-Mp3/commit/b44901d115b4ee2ef570099bfe54c00793baa3a7))
+- List the PDF pages a client OCR must read (converter_pdf_image_pages_json_v1) (#1756) ([b77977f](https://github.com/pietro1704/Epub-to-Mp3/commit/b77977fe4300c36cd9fe5685fb09004a39d2c4b7))
+- Draw a file-name cover for books without one (#1754) ([aebfc49](https://github.com/pietro1704/Epub-to-Mp3/commit/aebfc4958261fc5b048e865de7210332dae536c0))
+- Silence trimming level in Settings and manual conversion (#1752) ([1768845](https://github.com/pietro1704/Epub-to-Mp3/commit/1768845dab40bde0ad25175e0654375376167ac6))
+- Rename automatic chapter names from the contents list (#1753) ([0a68e49](https://github.com/pietro1704/Epub-to-Mp3/commit/0a68e4946ee8b18b2d00c88c9b806af7498c6d5f))
+- Play Edge voice samples once online voices are allowed (#1750) ([bb2feb0](https://github.com/pietro1704/Epub-to-Mp3/commit/bb2feb061c390dccdf648bb452a86ec3f8481884))
+- Show every tool that fits on wide readers (iOS, iPadOS, macOS) (#1745) ([e3ce161](https://github.com/pietro1704/Epub-to-Mp3/commit/e3ce16115572cb11e4e8285fcf202677b1af547d))
+- Larger reader sizes up to 48 pt, same table as Apple (#1741) (#1743) ([5537cf1](https://github.com/pietro1704/Epub-to-Mp3/commit/5537cf1bbe4c7e544ae9e900fafac72f0cdf145f))
+- Larger reader sizes for low vision (iOS and macOS) (#1741) ([b333aaa](https://github.com/pietro1704/Epub-to-Mp3/commit/b333aaabf2f241ab9587de86bb5e678b0fe4b116))
+- Add to library and export audio after a manual conversion (#1740) ([774face](https://github.com/pietro1704/Epub-to-Mp3/commit/774face5c08d9d5ad71d9f415bf57a62a742f9b3))
+- MP3 export boundary (single file or NN - title per chapter) (#1737) ([e77c186](https://github.com/pietro1704/Epub-to-Mp3/commit/e77c1862f1492b668f4d4003017ee5c9551e8819))
+- Resume alert names both places (RESUME-ALERT-CLARITY) (#1736) ([980d2f2](https://github.com/pietro1704/Epub-to-Mp3/commit/980d2f29cab16cd2e3b79fcaa48c29ff87dfe838))
+- Adaptive reader toolbar (all tools on tablet/desktop, excess in More) (#1733) ([f3b6eeb](https://github.com/pietro1704/Epub-to-Mp3/commit/f3b6eeb7535f51973093d5800f12e342db14c4a6))
+- Bridge chapter renames and filename covers to Rust (#1732) ([02f1d88](https://github.com/pietro1704/Epub-to-Mp3/commit/02f1d88548c2ae8490e302fbaddb03ec746b6dcd))
+- Chapter name overrides and filename cover contract (#1723) ([bbd73af](https://github.com/pietro1704/Epub-to-Mp3/commit/bbd73afa7c3d2584ab594472dc7a347e8277a563))
+- Automatic contents list when the PDF has no usable outline (#1722) ([73dd53a](https://github.com/pietro1704/Epub-to-Mp3/commit/73dd53a06fbf15f0189bd14449afca39dfc8a76c))
 - Reader font steps 34 and 42 pt beyond the old 28 pt maximum (#1713) ([7afa97a](https://github.com/pietro1704/Epub-to-Mp3/commit/7afa97aa63ee1dd277a047ddd868bebe83b2ec0a))
 - Export chapter MP3s as one file or one per chapter with ID3 tags (#1712) ([e3e13c2](https://github.com/pietro1704/Epub-to-Mp3/commit/e3e13c28cd184dce6aa852e4b37f2771a8ad509c))
 - Reclaim build storage automatically when the disk runs low (#1711) ([3b0ddf5](https://github.com/pietro1704/Epub-to-Mp3/commit/3b0ddf5935dba47db3f6130554f59b24ded49782))
 - Silence trim level (Settings default + per-conversion) (#1708) ([785d1c1](https://github.com/pietro1704/Epub-to-Mp3/commit/785d1c1f5f864ab1708ced0be874e2bdb6218675))
+
+### Tests
+
+- One tap hides and shows the reader header and mini player together (#1769) ([af05ffd](https://github.com/pietro1704/Epub-to-Mp3/commit/af05ffdb26425a81a1db7a2be8fe2f914c6fbec1))
+- Fix the three reader tests that fail on master (#1764) ([e50341e](https://github.com/pietro1704/Epub-to-Mp3/commit/e50341e42b23c7844987a21b9cf48e9480472708))
+- Silence trim setting screens and font-change position regression (#1763) ([033c004](https://github.com/pietro1704/Epub-to-Mp3/commit/033c0049449eaa39ae5e595ddad19c6de87c54d4))
+- Dismiss the skipped-page notice in the PDF batch device test (#1749) ([69a8cba](https://github.com/pietro1704/Epub-to-Mp3/commit/69a8cba99dd083aa4371f99003c11f4c17e319a1))
+- Cover the Add to library button of a manual conversion (#1744) ([12c2e75](https://github.com/pietro1704/Epub-to-Mp3/commit/12c2e7517e560a2130eddb4ef274b1939b5901b4))
+- Evidence screens for resume alert and manual export (synthetic Hamlet) (#1742) ([f3a507e](https://github.com/pietro1704/Epub-to-Mp3/commit/f3a507ed64f26b60e31e763934fcb1b18f9d5c7f))
 
 ## [0.14.2] — 2026-11-27
 
