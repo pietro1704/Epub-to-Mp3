@@ -101,3 +101,27 @@ final localConversionHistoryProvider = FutureProvider<LocalConversionHistory>((
 
 /// One-shot request created by a Library long-press to download the full book.
 final manualDownloadRequestProvider = StateProvider<String?>((ref) => null);
+
+/// The voice sample service: Rust renders a short MP3 (FFI on desktop, JNI on Android) and a
+/// dedicated player plays it, apart from the book playback session. Null where unsupported.
+final voiceAuditionProvider = Provider<VoiceAudition?>((ref) {
+  final converter = ref.watch(embeddedConverterProvider);
+  final AuditionRender? render = converter is DesktopEmbeddedConverter
+      ? converter.voiceAuditionRender
+      : (Platform.isAndroid
+            ? androidVoiceAuditionRender(
+                const MethodChannel('epub_to_mp3/embedded_converter'),
+              )
+            : null);
+  if (render == null) return null;
+  final player = AudioPlayer();
+  ref.onDispose(player.dispose);
+  return VoiceAudition(
+    render: render,
+    play: (path) async {
+      await player.setFilePath(path);
+      unawaited(player.play());
+    },
+    stopPlayback: player.stop,
+  );
+});
