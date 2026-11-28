@@ -224,6 +224,23 @@ jobs:
           # the test finished in both attempts of 44618870851, before the driver read results.
           emulator-build: '16740729'
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
+      - name: Build the minified release APK (also regenerates the release plugin registrant)
+        working-directory: flutter_app
+        run: mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --release --no-pub --target-platform android-arm64
+      - name: Run the ML Kit PDF OCR in the minified release build
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          avd-name: faber-arm64-abi-translation
+          force-avd-creation: false
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -accel on
+          emulator-build: '16740729'
+          script: bash -c 'cd flutter_app/android && mise exec -- ./gradlew :app:connectedReleaseAndroidTest --max-workers=1'
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

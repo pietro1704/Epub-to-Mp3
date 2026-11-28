@@ -9,6 +9,9 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Built-in Kotlin needs the JVM test backend explicitly selected.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.0")
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.0")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
 }
 
 android {
@@ -24,6 +27,8 @@ android {
         }
     }
 
+    // The instrumented OCR test runs against the minified release build: `./gradlew :app:connectedReleaseAndroidTest`.
+    testBuildType = "release"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -39,6 +44,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
