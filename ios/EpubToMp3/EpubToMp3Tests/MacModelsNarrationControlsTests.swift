@@ -4,7 +4,8 @@ import XCTest
 @testable import EpubToMp3
 
 /// The Models screen keeps the system-voice fallback and the online consent under their accessibility
-/// identifiers. The voice itself is chosen per language and per book, so there is no global voice popup.
+/// identifiers. The voice itself is chosen per language and per book, so there is no global voice popup;
+/// the only popup is the silence trimming level.
 @MainActor
 final class MacModelsNarrationControlsTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
@@ -24,7 +25,8 @@ final class MacModelsNarrationControlsTests: XCTestCase {
         defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
         for _ in 0..<60 { try await Task.sleep(nanoseconds: 50_000_000) }
         let controls = descendants(controller.view)
-        XCTAssertTrue(controls.compactMap { $0 as? NSPopUpButton }.isEmpty, "No global voice or reserve popup")
+        XCTAssertEqual(controls.compactMap { $0 as? NSPopUpButton }.map { $0.accessibilityIdentifier() },
+                       ["settings.tts.silenceTrim"], "No global voice or reserve popup")
         let online = try XCTUnwrap(controls.compactMap { $0 as? NSSwitch }.first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
         let automatic = try XCTUnwrap(controls.compactMap { $0 as? NSSwitch }.first { $0.accessibilityIdentifier() == "settings.tts.automaticSystemFallback" })
         XCTAssertEqual(online.state, .off)

@@ -13,6 +13,7 @@ import os.log
 final class SpeechPreferences: ObservableObject {
     static let automaticSystemFallbackKey = "allowAutomaticSystemVoiceFallback"
     static let narratesFootnotesKey = "narratesFootnotes"
+    static let silenceTrimKey = "silenceTrim"
     static let languageModelChoicesKey = "languageModelChoices.v1"
     private let defaults: UserDefaults
     private var loadingPersistedValues = true
@@ -28,6 +29,7 @@ final class SpeechPreferences: ObservableObject {
         self.allowAutomaticSystemVoiceFallback =
             defaults.object(forKey: Self.automaticSystemFallbackKey) as? Bool ?? true
         self.narratesFootnotes = defaults.object(forKey: Self.narratesFootnotesKey) as? Bool ?? true
+        self.silenceTrim = defaults.string(forKey: Self.silenceTrimKey).flatMap(SilenceTrim.init) ?? .light
         self.languageModelChoices = Self.storedLanguageChoices(defaults)
         loadingPersistedValues = false
         migrateUnconsentedEdgePrimary()
@@ -68,6 +70,13 @@ final class SpeechPreferences: ObservableObject {
         didSet {
             guard !loadingPersistedValues else { return }
             defaults.set(narratesFootnotes, forKey: Self.narratesFootnotesKey)
+        }
+    }
+    /// Default silence trimming for new audio; a manual conversion may override it.
+    @Published var silenceTrim = SilenceTrim.light {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(silenceTrim.rawValue, forKey: Self.silenceTrimKey)
         }
     }
     @Published var allowOnlineAudioFallback = false {
@@ -158,7 +167,8 @@ final class SpeechPreferences: ObservableObject {
                               secondary: secondary,
                               allowOnlineFallback: allowOnlineAudioFallback,
                               policyVersion: allowAutomaticSystemVoiceFallback ? 2 : 3,
-                              footnoteNarration: narratesFootnotes ? nil : .skip)
+                              footnoteNarration: narratesFootnotes ? nil : .skip,
+                              silenceTrim: silenceTrim.sentValue)
     }
 
     var configuredNarrationSelections: [TtsSelection] {

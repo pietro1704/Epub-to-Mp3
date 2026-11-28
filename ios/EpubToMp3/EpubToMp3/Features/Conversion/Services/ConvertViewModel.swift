@@ -18,6 +18,9 @@ final class ConvertViewModel {
     var clearCache = false
     var forceReprocess = false
     var maxPerformance = false
+    /// Set only when this conversion picks its own level; Settings stays untouched.
+    var silenceTrimOverride: SilenceTrim?
+    var silenceTrim: SilenceTrim { silenceTrimOverride ?? inheritedPreferences?.silenceTrim ?? .light }
     var modelsRoot: String?
     var recoverySelection: TtsRecoveryCandidate?
     var recoveryLanguage: String?
@@ -84,6 +87,7 @@ final class ConvertViewModel {
                     policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil,
                     footnoteNarration: inheritedPreferences?.footnoteNarration)
             }
+            options.ttsPreferences?.silenceTrim = silenceTrim.sentValue
             if let recoverySelection, let recoveryLanguage {
                 options = options.recovering(with: recoverySelection, language: recoveryLanguage)
                 self.recoverySelection = nil

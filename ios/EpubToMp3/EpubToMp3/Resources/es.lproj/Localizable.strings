@@ -469,6 +469,12 @@
 "settings.automaticSystemFallbackDescription" = "Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.";
 "settings.footnoteNarration" = "Leer las notas al pie en el texto";
 "settings.footnoteNarrationDescription" = "Cada nota se lee donde se cita, entre los avisos \"Nota al pie N\". Desactiva para omitir las notas.";
+"silenceTrim.title" = "Recorte de silencio";
+"silenceTrim.description" = "Pausas más cortas en el audio nuevo. El audio existente solo cambia al convertir de nuevo. Los títulos y finales de capítulo conservan sus pausas.";
+"silenceTrim.level.off" = "Desactivado";
+"silenceTrim.level.light" = "Suave";
+"silenceTrim.level.medium" = "Medio";
+"silenceTrim.level.strong" = "Fuerte";
 
 // Speech compatibility recovery and converter diagnostics.
 "error.converterUnavailable" = "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.";

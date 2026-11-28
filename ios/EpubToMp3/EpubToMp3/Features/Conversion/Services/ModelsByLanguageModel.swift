@@ -266,6 +266,10 @@ final class ModelsByLanguageModel: ObservableObject {
         get { settings.narratesFootnotes }
         set { settings.narratesFootnotes = newValue }
     }
+    var silenceTrim: SilenceTrim {
+        get { settings.silenceTrim }
+        set { settings.silenceTrim = newValue }
+    }
     var allowAutomaticSystemVoiceFallback: Bool {
         get { settings.allowAutomaticSystemVoiceFallback }
         set { settings.allowAutomaticSystemVoiceFallback = newValue }

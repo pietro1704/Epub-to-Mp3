@@ -85,6 +85,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
+        tableView.register(IOSContentCell.self, forCellReuseIdentifier: "SilenceTrim")
         submissionObserver = viewModel.session.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.reloadData() }
@@ -95,7 +96,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         viewModel.inheritedPreferences = settings.ttsPreferences
         if viewModel.usesPreferences { viewModel.engine = settings.primaryEngine }
         viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
-        tableView.reloadSections(IndexSet(integer: Section.engine.rawValue), with: .none)
+        tableView.reloadSections(IndexSet([Section.engine.rawValue, Section.flags.rawValue]), with: .none)
     }
 
     func refreshFromStores() {
@@ -117,7 +118,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         case .chapters:
             return 1
         case .flags:
-            return 3
+            return 4
         case .result:
             var count = 0
             if viewModel.submittedJobId != nil { count += 2 }
@@ -204,6 +205,11 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             alert.popoverPresentationController?.sourceView = tableView
             alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
             present(alert, animated: true)
+        case .flags where indexPath.row == 3:
+            present(SilenceTrimControl.picker(from: tableView, at: indexPath) { [weak self] level in
+                self?.viewModel.silenceTrimOverride = level
+                self?.reloadData()
+            }, animated: true)
         case .engine, .chapters, .flags:
             break
         }
@@ -303,6 +309,12 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     }
 
     private func flagCell(for indexPath: IndexPath) -> UITableViewCell {
+        if indexPath.row == 3 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SilenceTrim", for: indexPath)
+            SilenceTrimControl.configure(cell, level: viewModel.silenceTrim,
+                                         accessibilityIdentifier: "convert.silenceTrim")
+            return cell
+        }
         let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
         switch indexPath.row {
         case 0:

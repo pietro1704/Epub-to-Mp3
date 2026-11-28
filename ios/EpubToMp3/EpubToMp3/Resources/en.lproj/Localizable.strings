@@ -469,6 +469,12 @@
 "settings.automaticSystemFallbackDescription" = "If selected voices fail, try an installed system voice. Turn off to use only your selected voices.";
 "settings.footnoteNarration" = "Read footnotes in the text";
 "settings.footnoteNarrationDescription" = "Each note is read where it is referenced, between \"Footnote N\" markers. Turn off to skip the notes.";
+"silenceTrim.title" = "Silence trimming";
+"silenceTrim.description" = "Shorter pauses in new audio. Existing audio changes only when converted again. Titles and chapter ends keep their pauses.";
+"silenceTrim.level.off" = "Off";
+"silenceTrim.level.light" = "Light";
+"silenceTrim.level.medium" = "Medium";
+"silenceTrim.level.strong" = "Strong";
 
 // Speech compatibility recovery and converter diagnostics.
 "error.converterUnavailable" = "The speech converter is unavailable. Please reinstall the app or try again.";
