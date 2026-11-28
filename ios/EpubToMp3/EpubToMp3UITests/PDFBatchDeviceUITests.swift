@@ -67,6 +67,10 @@ final class PDFBatchDeviceUITests: XCTestCase {
         assertNoOCRFailure()
         let close = app.buttons["fullPlayer.close"].firstMatch
         if close.exists && close.isHittable { tap(close) }
+        // The fixture skips its image-only page. The app says so in an alert, which blocks every later touch.
+        let notice = app.alerts.containing(NSPredicate(format: "label CONTAINS %@", "without selectable text")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10), "The skipped page must be reported")
+        tap(notice.buttons["OK"])
         // Highlight position samples: the page is short, so consecutive frames show it moving.
         for sample in 1...4 {
             Thread.sleep(forTimeInterval: 1.5)
