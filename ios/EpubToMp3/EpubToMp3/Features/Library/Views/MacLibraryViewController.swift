@@ -561,7 +561,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             guard !Task.isCancelled else { return }
             self?.showFacts(facts)
         }
-        coverView.image = book.coverPNG.flatMap(NSImage.init(data:))
+        coverView.image = book.displayCoverPNG.flatMap(NSImage.init(data:))
             ?? NSImage(systemSymbolName: book.fileType == .pdf ? "doc.richtext" : "book.closed",
                        accessibilityDescription: nil)
     }

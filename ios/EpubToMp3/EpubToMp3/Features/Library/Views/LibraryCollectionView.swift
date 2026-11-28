@@ -363,14 +363,14 @@ final class BookGridCell: UICollectionViewCell {
         let token = UUID()
         configurationToken = token
         cover.image = UIImage(systemName: "book.closed")
-        cover.contentMode = book.coverPNG == nil ? .scaleAspectFit : .scaleAspectFill
+        cover.contentMode = book.displayCoverPNG == nil ? .scaleAspectFit : .scaleAspectFill
 
-        guard let data = book.coverPNG else { return }
-        if let hit = LibraryCoverThumbnailCache.cached(for: book.id) {
+        guard let data = book.displayCoverPNG else { return }
+        if let hit = LibraryCoverThumbnailCache.cached(for: book.coverCacheKey) {
             cover.image = hit
             return
         }
-        Task.detached(priority: .userInitiated) { [bookID = book.id] in
+        Task.detached(priority: .userInitiated) { [bookID = book.coverCacheKey] in
             let decoded = LibraryCoverThumbnailCache.decode(data, bookID: bookID)
             await MainActor.run { [weak self] in
                 guard let self, self.configurationToken == token, let decoded else { return }

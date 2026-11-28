@@ -89,7 +89,7 @@ final class MacReaderLoadingPresentation {
     }
 
     func showLoading(for book: BookEntity) {
-        loadingCoverView.image = book.coverPNG.flatMap(NSImage.init(data:))
+        loadingCoverView.image = book.displayCoverPNG.flatMap(NSImage.init(data:))
             ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
         loadingTitleLabel.stringValue = book.resolvedTitle
         loadingStatusLabel.stringValue = L10n.string("reader.loading")

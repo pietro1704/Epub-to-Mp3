@@ -134,7 +134,7 @@ final class MacFullPlayerViewController: NSViewController {
             ?? player.location.readingBookID
         let book = bookID.flatMap { id in library.books.first(where: { $0.id == id }) }
         titleLabel.stringValue = state.job?.bookTitle ?? book?.resolvedTitle ?? L10n.string("player.nothingPlaying")
-        coverView.image = book?.coverPNG.flatMap(NSImage.init(data:))
+        coverView.image = book?.displayCoverPNG.flatMap(NSImage.init(data:))
             ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
         statusLabel.stringValue = state.isConverting
             ? L10n.string("player.preparingAudio")

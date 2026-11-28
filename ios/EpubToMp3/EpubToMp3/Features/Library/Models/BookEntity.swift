@@ -92,6 +92,13 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// Optional cached cover art. PNG/JPEG bytes, kept inline for now;
     /// large covers can be moved to a separate file cache later.
     var coverPNG: Data?
+    /// Drawn from the file name while the book has no cover. Saved apart from `coverPNG`
+    /// so cover discovery still sees it as missing; the widget reads it from the index.
+    var generatedCoverPNG: Data?
+    /// What every screen, Now Playing and the widget show.
+    var displayCoverPNG: Data? { coverPNG ?? generatedCoverPNG }
+    /// Thumbnail cache key: a real cover found later must not hit the drawn one.
+    var coverCacheKey: String { coverPNG == nil ? "\(id)#generated" : id }
     /// Missing on legacy rows; refreshed lazily from the PDF on macOS.
     var pdfCoverVersion: Int?
 
@@ -143,7 +150,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, title, author, bookmark, displayFilename, addedAt,
              lastOpenedAt, lastPlayedAt, lastChapterIndex, lastPositionSeconds,
-             coverPNG, pdfCoverVersion, lastJobId, cachedOffline, fileType, tags
+             coverPNG, generatedCoverPNG, pdfCoverVersion, lastJobId, cachedOffline, fileType, tags
     }
 
     init(
@@ -195,6 +202,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         self.lastChapterIndex = try c.decodeIfPresent(Int.self, forKey: .lastChapterIndex)
         self.lastPositionSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .lastPositionSeconds)
         self.coverPNG = try c.decodeIfPresent(Data.self, forKey: .coverPNG)
+        self.generatedCoverPNG = try c.decodeIfPresent(Data.self, forKey: .generatedCoverPNG)
         self.pdfCoverVersion = try c.decodeIfPresent(Int.self, forKey: .pdfCoverVersion)
         self.lastJobId = try c.decodeIfPresent(String.self, forKey: .lastJobId)
         self.cachedOffline = (try c.decodeIfPresent(Bool.self, forKey: .cachedOffline)) ?? false

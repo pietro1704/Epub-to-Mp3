@@ -99,7 +99,8 @@ final class LibraryStore: ObservableObject {
         case .success(let (books, needsPersist)):
             hasLoadedSuccessfully = true
             self.books = books
-            if needsPersist { persist() }
+            // Drawn in memory only: opening the library never writes the index by itself.
+            if needsPersist { persist() } else { drawMissingCovers() }
         case .failure(let error):
             self.loadError = error
         case .empty:
@@ -462,7 +463,23 @@ final class LibraryStore: ObservableObject {
 
     private func persist() {
         guard hasLoadedSuccessfully else { return }
+        drawMissingCovers()
         indexPersistence.enqueue(books)
+    }
+
+    private static func lacksCover(_ book: BookEntity) -> Bool { book.displayCoverPNG == nil }
+
+    /// Every saved book has something to show; each cover is drawn once.
+    private func drawMissingCovers() {
+        let missing = books.indices.filter { Self.lacksCover(books[$0]) }
+        guard !missing.isEmpty else { return }
+        let converter = ConverterFFIAdapter()
+        var drawn = books
+        for index in missing {
+            guard let cover = try? converter.filenameCover(for: drawn[index].displayFilename) else { continue }
+            drawn[index].generatedCoverPNG = FilenameCoverRenderer.png(cover)
+        }
+        books = drawn
     }
 
     private var unavailableCatalogError: NSError {

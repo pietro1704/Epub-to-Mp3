@@ -198,7 +198,7 @@ final class MacPlayerBarViewController: NSViewController {
         etaLabel.stringValue = transport.clock.durationSeconds > 0
             ? L10n.string("player.remaining", formatTime(transport.playbackDurationSeconds - transport.playbackPositionSeconds))
             : ""
-        coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
+        coverView.image = book?.displayCoverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
         playButton.image = NSImage(systemSymbolName: state.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
         playButton.setAccessibilityLabel(L10n.string(state.isPlaying ? "player.pause" : "player.play"))
         playButton.toolTip = L10n.string(state.isPlaying ? "player.pause" : "player.play")

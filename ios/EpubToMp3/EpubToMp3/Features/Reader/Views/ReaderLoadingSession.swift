@@ -57,7 +57,7 @@ final class ReaderLoadingSession {
         composition.loadingSpinner.startAnimating()
         composition.loadingStatusLabel.text = nil
         composition.loadingRetryButton.isHidden = true
-        if let cover = document.book.coverPNG, let image = UIImage(data: cover) {
+        if let cover = document.book.displayCoverPNG, let image = UIImage(data: cover) {
             composition.loadingCoverView.image = image
             composition.loadingCoverView.backgroundColor = .clear
         } else {

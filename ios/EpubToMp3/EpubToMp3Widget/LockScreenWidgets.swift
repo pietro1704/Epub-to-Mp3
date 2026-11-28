@@ -83,7 +83,7 @@ struct LockScreenProvider: TimelineProvider {
             let defaults = UserDefaults(suiteName: appGroupID),
             let bookId = defaults.string(forKey: nowPlayingKey),
             let data = defaults.data(forKey: libraryKey),
-            let books = try? JSONDecoder().decode([_LockWidgetBook].self, from: data),
+            let books = try? JSONDecoder().decode([WidgetBook].self, from: data),
             let book = books.first(where: { $0.id == bookId })
         else { return .empty }
 
@@ -100,13 +100,6 @@ struct LockScreenProvider: TimelineProvider {
             totalChapters: defaults.object(forKey: nowPlayingTotalChaptersKey) as? Int
         )
     }
-}
-
-// Minimal book shape — only what lock-screen widgets need.
-private struct _LockWidgetBook: Codable {
-    let id: String
-    let title: String
-    let coverPNG: Data?
 }
 
 private func formatLockWidgetTime(_ seconds: Double) -> String {

@@ -12,6 +12,9 @@ struct WidgetBook: Codable {
         case id, title, author, lastOpenedAt, lastChapterIndex, coverPNG
     }
 
+    /// The app's cover drawn from the file name, for books without their own.
+    private enum DrawnCoverKeys: String, CodingKey { case generatedCoverPNG }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id             = try c.decode(String.self, forKey: .id)
@@ -20,6 +23,7 @@ struct WidgetBook: Codable {
         lastOpenedAt   = try c.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
         lastChapterIndex = try c.decodeIfPresent(Int.self, forKey: .lastChapterIndex)
         coverPNG       = try c.decodeIfPresent(Data.self, forKey: .coverPNG)
+            ?? decoder.container(keyedBy: DrawnCoverKeys.self).decodeIfPresent(Data.self, forKey: .generatedCoverPNG)
     }
 }
 
