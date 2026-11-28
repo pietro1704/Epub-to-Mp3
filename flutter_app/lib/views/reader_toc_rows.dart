@@ -78,3 +78,45 @@ List<ReaderTocRow> readerTocRows(
   ];
   return flatten(fulltext.toc, 0);
 }
+
+/// One row of a PDF's automatic contents list: the page the entry starts on (1-based).
+class PdfContentsRow {
+  const PdfContentsRow({
+    required this.title,
+    required this.level,
+    required this.page,
+  });
+
+  final String title;
+  final int level;
+  final int page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PdfContentsRow &&
+      other.title == title &&
+      other.level == level &&
+      other.page == page;
+
+  @override
+  int get hashCode => Object.hash(title, level, page);
+}
+
+/// The contents list of a parsed PDF; empty when the book has no list (nothing to show).
+/// A PDF chapter starts at `page-N`, so each entry opens the page its chapter starts on.
+List<PdfContentsRow> pdfContentsRows(EbookFulltext fulltext) {
+  if (fulltext.toc.isEmpty) return const [];
+  return [
+    for (final row in readerTocRows(fulltext))
+      if (row.chapterIndex case final index?)
+        if (_pdfPage(fulltext.chapters[index].sourcePath) case final page?)
+          PdfContentsRow(title: row.title, level: row.level, page: page),
+  ];
+}
+
+int? _pdfPage(String? sourcePath) {
+  final page = int.tryParse(
+    sourcePath?.startsWith('page-') ?? false ? sourcePath!.substring(5) : '',
+  );
+  return page != null && page >= 1 ? page : null;
+}

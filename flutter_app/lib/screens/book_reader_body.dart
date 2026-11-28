@@ -67,6 +67,17 @@ class _BookReaderBody extends ConsumerWidget {
         title: bookTitle,
         filePath: shown.path,
         prefs: ref.watch(sharedPrefsProvider),
+        loadContents: () async {
+          final cache = ref.read(localFulltextCacheProvider);
+          var book = await cache.read(bookId);
+          if (book == null) {
+            book = await ref
+                .read(embeddedConverterProvider)
+                .parse(inputPath: shown.path, jobId: bookId);
+            await cache.save(book, bookId);
+          }
+          return pdfContentsRows(book);
+        },
       );
     }
 

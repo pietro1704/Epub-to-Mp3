@@ -48,6 +48,7 @@ _FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) =>
       anchors: (json['anchors'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, (e as num).toInt()),
       ),
+      sourcePath: json['sourcePath'] as String?,
     );
 
 Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
@@ -61,6 +62,7 @@ Map<String, dynamic> _$FulltextChapterToJson(_FulltextChapter instance) =>
       'segments': instance.segments,
       'footnotes': instance.footnotes,
       'anchors': instance.anchors,
+      'sourcePath': instance.sourcePath,
     };
 
 _FulltextTocEntry _$FulltextTocEntryFromJson(Map<String, dynamic> json) =>
