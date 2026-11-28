@@ -44,8 +44,9 @@ final class ReaderNarrationFollower {
     func userAskedToGoToReading() { rules.apply(.goToReading) }
 
     /// Call with the freshly computed pairing; moves the reader when the narration left the visible page.
-    func evaluate(paired: Bool) {
-        guard rules.shouldFollow(paired: paired, isNarrating: isNarrating()) else { return }
+    /// A reader that knows the narrated page passes it, so its own movement is told apart from the narration's.
+    func evaluate(paired: Bool, spokenPage: Int? = nil) {
+        guard rules.shouldFollow(paired: paired, isNarrating: isNarrating(), spokenPage: spokenPage) else { return }
         isRevealing = true
         defer { isRevealing = false }
         follow()

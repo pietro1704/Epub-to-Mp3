@@ -17,21 +17,28 @@ struct ReaderFollowNarration: Equatable {
     enum Direction: Equatable { case forward, backward }
 
     private(set) var isSuspended = false
+    /// The narrated page the reader was last showing.
+    private var shownPage: Int?
 
     mutating func apply(_ event: Event) {
         switch event {
         case .manualPageTurn: isSuspended = true
-        case .explicitNarrationJump, .goToReading: isSuspended = false
+        case .explicitNarrationJump, .goToReading:
+            isSuspended = false
+            shownPage = nil
         }
     }
 
     /// Whether the reader must move to the spoken passage now. `paired` is the pairing state the reader
     /// publishes; `isNarrating` is true while the narration of this reader's book is playing.
-    mutating func shouldFollow(paired: Bool, isNarrating: Bool) -> Bool {
+    mutating func shouldFollow(paired: Bool, isNarrating: Bool, spokenPage: Int? = nil) -> Bool {
         if paired {
             isSuspended = false
+            shownPage = spokenPage
             return false
         }
+        // The narration is still on the page that was on screen, so it is the reader that moved.
+        if let spokenPage, spokenPage == shownPage { isSuspended = true }
         return isNarrating && !isSuspended
     }
 

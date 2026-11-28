@@ -222,7 +222,7 @@ final class ReaderPDFPresentation {
         guard let player else { return }
         let paired = computePaired(player)
         player.readerPairing.publish(paired: paired, owner: ObjectIdentifier(self))
-        follower?.evaluate(paired: paired)
+        follower?.evaluate(paired: paired, spokenPage: spokenPage(player))
     }
 
     /// Any page change that the reader did not make itself came from the user (page turn, scroll, contents).
@@ -256,13 +256,17 @@ final class ReaderPDFPresentation {
         self.follower = follower
     }
 
-    private func computePaired(_ player: AudioPlayer) -> Bool {
-        guard hasLoaded, player.isPlaybackForReaderBook(bookID), let map = audioMap, let document = view.document,
+    private func spokenPage(_ player: AudioPlayer) -> Int? {
+        guard hasLoaded, player.isPlaybackForReaderBook(bookID), let map = audioMap,
               let location = ReaderPlaybackLocation(player: player),
-              map.chapters.indices.contains(location.chapterIndex) else { return false }
+              map.chapters.indices.contains(location.chapterIndex) else { return nil }
         let text = map.chapters[location.chapterIndex].text
         let offset = location.characterOffset(chapterText: text, renderedText: text)
-        let spoken = map.displayLocation(chapter: location.chapterIndex, character: offset)?.page
+        return map.displayLocation(chapter: location.chapterIndex, character: offset)?.page
+    }
+
+    private func computePaired(_ player: AudioPlayer) -> Bool {
+        guard let spoken = spokenPage(player), let document = view.document else { return false }
         var visible = view.visiblePages.map { document.index(for: $0) }.filter { $0 != NSNotFound }
         if let current = currentPage { visible.append(current) }
         return ReaderNarrationPairing.isPaired(spokenPage: spoken, visiblePages: visible)
