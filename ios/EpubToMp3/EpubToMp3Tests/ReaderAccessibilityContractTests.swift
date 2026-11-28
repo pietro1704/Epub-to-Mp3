@@ -14,14 +14,10 @@ final class ReaderAccessibilityContractTests: XCTestCase {
 #if os(macOS)
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let identifiers = Set(descendants(harness.controller.view).compactMap { $0.accessibilityIdentifier() })
-        for identifier in ["reader.content", "reader.more"] {
+        let tools = ReaderTool.allCases.filter { $0 != .footnotes }.map(\.accessibilityIdentifier)
+        for identifier in ["reader.content"] + tools {
             XCTAssertTrue(identifiers.contains(identifier), "Missing installed accessibility element: \(identifier)")
         }
-        let more = try XCTUnwrap(descendants(harness.controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "reader.more" })
-        let tools = try XCTUnwrap(more.menu).items.compactMap { $0.representedObject as? String }
-        XCTAssertTrue(tools.contains("voiceModels"))
-        XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.filter { $0 != .footnotes }.map(\.rawValue)))
 #else
         XCTAssertEqual(harness.composition.textView.accessibilityIdentifier, "reader.content")
         let reader = BookOpenScreenController(book: harness.book,

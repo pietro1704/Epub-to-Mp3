@@ -296,6 +296,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         if settings.readerLayout == .paginated, let root = rootContainer {
             miniPlayerClearance.update(self, occlusion: root.readerMiniPlayerReservation(in: view))
         } else { miniPlayerClearance.update(self, occlusion: nil) }
+        toolBar.adapt(width: view.bounds.width, isRegularWidth: traitCollection.horizontalSizeClass == .regular)
         textPresentation.layoutCommittedViewport()
     }
     private func showChapter(_ index: Int, preparedRendering: NSAttributedString? = nil) {

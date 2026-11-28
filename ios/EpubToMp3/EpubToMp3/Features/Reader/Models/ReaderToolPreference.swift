@@ -36,6 +36,20 @@ enum ReaderTool: String, CaseIterable {
     }
 }
 
+/// Wide readers show every tool that fits; the rest, in the same order, go to the "more" menu.
+enum ReaderToolLayout {
+    static func capacity(width: CGFloat, reserved: CGFloat, itemWidth: CGFloat) -> Int {
+        max(1, Int((width - reserved) / itemWidth))
+    }
+
+    /// `capacity` counts toolbar slots, so the "more" button takes one when anything overflows.
+    static func split(_ tools: [ReaderTool], capacity: Int) -> (inline: [ReaderTool], overflow: [ReaderTool]) {
+        guard tools.count > capacity else { return (tools, []) }
+        let visible = max(0, capacity - 1)
+        return (Array(tools.prefix(visible)), Array(tools.dropFirst(visible)))
+    }
+}
+
 struct ReaderToolPreference {
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }

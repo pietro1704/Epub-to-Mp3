@@ -202,9 +202,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         XCTAssertTrue(player.isPlaying)
         play.performClick(nil)
         XCTAssertFalse(player.isPlaying)
-        let contents = try XCTUnwrap(descendants(root.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "reader.more" })
-        let command = try XCTUnwrap(contents.menu?.items.first { ($0.representedObject as? String) == ReaderTool.contents.rawValue })
+        let command = try XCTUnwrap(MacReaderToolControl.find(.contents, in: root.view))
         // `showTOC` presents nothing until the book's full text has loaded, and that happens a little
         // after the first page is on screen (visibly later in a loaded full-suite run). Ask again
         // until the contents list is up instead of asking once.
@@ -213,7 +211,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
                 .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == 12 }
         }
         for _ in 0..<100 where contentsTable() == nil {
-            NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
+            _ = command.send()
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         let table = try XCTUnwrap(contentsTable(), "The contents list must appear")

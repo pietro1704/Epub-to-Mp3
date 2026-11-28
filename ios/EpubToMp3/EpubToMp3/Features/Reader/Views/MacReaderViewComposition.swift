@@ -57,7 +57,7 @@ final class MacReaderViewComposition {
     let statusLabel = NSTextField(labelWithString: "")
     let tocPopover = NSPopover()
     let settingsPopover = NSPopover()
-    private var toolBar: MacReaderToolBar?
+    private(set) var toolBar: MacReaderToolBar?
 
     init(view: NSView, target: NSViewController, settings: AppSettings, actions: Actions,
          cancelJourney: @escaping () -> Void, onLink: @escaping (URL, String) -> Bool,
@@ -109,8 +109,7 @@ final class MacReaderViewComposition {
         toolbar.addArrangedSubview(leadingSpacer)
         toolbar.addArrangedSubview(bookTitleLabel)
         toolbar.addArrangedSubview(trailingSpacer)
-        toolbar.addArrangedSubview(tools.recent)
-        toolbar.addArrangedSubview(tools.more)
+        for tool in tools.views { toolbar.addArrangedSubview(tool) }
         toolbar.orientation = .horizontal
         toolbar.alignment = .centerY
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)

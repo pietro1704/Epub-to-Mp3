@@ -211,10 +211,7 @@ final class MacReaderPDFViewportTests: XCTestCase {
             let word = try XCTUnwrap(chapterText.range(of: "selectable"))
             XCTAssertEqual(clicked.sourceScalarOffset, chapterText[..<word.lowerBound].unicodeScalars.count)
 
-            let more = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-                .first { $0.accessibilityIdentifier() == "reader.more" })
-            let listen = try XCTUnwrap(more.menu?.items.first { $0.representedObject as? String == ReaderTool.listen.rawValue })
-            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(listen.action), to: listen.target, from: listen))
+            XCTAssertTrue(try XCTUnwrap(MacReaderToolControl.find(.listen, in: controller.view)).send())
             XCTAssertEqual(played.count, 2)
             XCTAssertEqual(played.last?.chapterIndex, 1)
             XCTAssertEqual(genericListenRequests, 0, "PDF playback must use its own visible location")

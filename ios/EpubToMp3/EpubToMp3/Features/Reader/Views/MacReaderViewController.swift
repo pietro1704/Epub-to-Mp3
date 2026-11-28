@@ -142,6 +142,7 @@ final class MacReaderViewController: NSViewController {
     override func viewDidLayout() {
         observeOpenStage("reader_view_did_layout_started")
         super.viewDidLayout()
+        composition.toolBar?.adapt(width: view.bounds.width)
         if contentScrollView.documentView === textView {
             MacReaderTextLayout.fit(textView, in: contentScrollView, columns: settings.readerColumns,
                                     paginated: settings.readerLayout == .paginated)
