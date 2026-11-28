@@ -57,6 +57,7 @@ import '../services/playback/playback_narration_resolver.dart';
 import '../views/reader_narration_menu.dart'
     show installedNarrationModelIdsProvider;
 import '../views/reader_toc_audio_state.dart' show ReaderDownloadActions;
+import '../views/reader_toc_rows.dart';
 import 'pdf_reader_screen.dart';
 
 part 'book_content_session.dart';

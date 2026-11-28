@@ -56,6 +56,9 @@ abstract class FulltextChapter with _$FulltextChapter {
 
     /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
     Map<String, int>? anchors,
+
+    /// Where the chapter starts in the source: an EPUB file path, or `page-N` for a PDF.
+    String? sourcePath,
   }) = _FulltextChapter;
 
   factory FulltextChapter.fromJson(Map<String, dynamic> json) =>

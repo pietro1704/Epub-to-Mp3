@@ -1089,6 +1089,9 @@ mixin _$FulltextChapter {
   /// TOC fragment id -> scalar offset inside [text]; absent when the book has none.
   Map<String, int>? get anchors;
 
+  /// Where the chapter starts in the source: an EPUB file path, or `page-N` for a PDF.
+  String? get sourcePath;
+
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1127,7 +1130,9 @@ mixin _$FulltextChapter {
             const DeepCollectionEquality().equals(
               other.anchors,
               _this.anchors,
-            ));
+            ) &&
+            (identical(other.sourcePath, _this.sourcePath) ||
+                other.sourcePath == _this.sourcePath));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1145,13 +1150,14 @@ mixin _$FulltextChapter {
       const DeepCollectionEquality().hash(_this.segments),
       const DeepCollectionEquality().hash(_this.footnotes),
       const DeepCollectionEquality().hash(_this.anchors),
+      _this.sourcePath,
     );
   }
 
   @override
   String toString() {
     final _this = this as FulltextChapter;
-    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments}, footnotes: ${_this.footnotes}, anchors: ${_this.anchors})';
+    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments}, footnotes: ${_this.footnotes}, anchors: ${_this.anchors}, sourcePath: ${_this.sourcePath})';
   }
 }
 
@@ -1172,6 +1178,7 @@ abstract mixin class $FulltextChapterCopyWith<$Res> {
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
     Map<String, int>? anchors,
+    String? sourcePath,
   });
 }
 
@@ -1197,6 +1204,7 @@ class _$FulltextChapterCopyWithImpl<$Res>
     Object? segments = freezed,
     Object? footnotes = freezed,
     Object? anchors = freezed,
+    Object? sourcePath = freezed,
   }) {
     return _then(
       FulltextChapter(
@@ -1236,6 +1244,10 @@ class _$FulltextChapterCopyWithImpl<$Res>
             ? _self.anchors
             : anchors // ignore: cast_nullable_to_non_nullable
                   as Map<String, int>?,
+        sourcePath: freezed == sourcePath
+            ? _self.sourcePath
+            : sourcePath // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -1344,6 +1356,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
       Map<String, int>? anchors,
+      String? sourcePath,
     )?
     $default, {
     required TResult orElse(),
@@ -1361,6 +1374,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.segments,
           _that.footnotes,
           _that.anchors,
+          _that.sourcePath,
         );
       case _:
         return orElse();
@@ -1392,6 +1406,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
       Map<String, int>? anchors,
+      String? sourcePath,
     )
     $default,
   ) {
@@ -1408,6 +1423,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.segments,
           _that.footnotes,
           _that.anchors,
+          _that.sourcePath,
         );
       case _:
         throw StateError('Unexpected subclass');
@@ -1438,6 +1454,7 @@ extension FulltextChapterPatterns on FulltextChapter {
       List<FulltextSegment>? segments,
       List<FulltextFootnote>? footnotes,
       Map<String, int>? anchors,
+      String? sourcePath,
     )?
     $default,
   ) {
@@ -1454,6 +1471,7 @@ extension FulltextChapterPatterns on FulltextChapter {
           _that.segments,
           _that.footnotes,
           _that.anchors,
+          _that.sourcePath,
         );
       case _:
         return null;
@@ -1474,6 +1492,7 @@ class _FulltextChapter extends FulltextChapter {
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
     Map<String, int>? anchors,
+    this.sourcePath,
   }) : _segments = segments,
        _footnotes = footnotes,
        _anchors = anchors,
@@ -1527,6 +1546,10 @@ class _FulltextChapter extends FulltextChapter {
     return EqualUnmodifiableMapView(value);
   }
 
+  /// Where the chapter starts in the source: an EPUB file path, or `page-N` for a PDF.
+  @override
+  final String? sourcePath;
+
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
   @override
@@ -1557,7 +1580,9 @@ class _FulltextChapter extends FulltextChapter {
               other.footnotes,
               _footnotes,
             ) &&
-            const DeepCollectionEquality().equals(other.anchors, _anchors));
+            const DeepCollectionEquality().equals(other.anchors, _anchors) &&
+            (identical(other.sourcePath, sourcePath) ||
+                other.sourcePath == sourcePath));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1574,12 +1599,13 @@ class _FulltextChapter extends FulltextChapter {
       const DeepCollectionEquality().hash(_segments),
       const DeepCollectionEquality().hash(_footnotes),
       const DeepCollectionEquality().hash(_anchors),
+      sourcePath,
     );
   }
 
   @override
   String toString() {
-    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments, footnotes: $footnotes, anchors: $anchors)';
+    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments, footnotes: $footnotes, anchors: $anchors, sourcePath: $sourcePath)';
   }
 }
 
@@ -1602,6 +1628,7 @@ abstract mixin class _$FulltextChapterCopyWith<$Res>
     List<FulltextSegment>? segments,
     List<FulltextFootnote>? footnotes,
     Map<String, int>? anchors,
+    String? sourcePath,
   });
 }
 
@@ -1627,6 +1654,7 @@ class __$FulltextChapterCopyWithImpl<$Res>
     Object? segments = freezed,
     Object? footnotes = freezed,
     Object? anchors = freezed,
+    Object? sourcePath = freezed,
   }) {
     return _then(
       _FulltextChapter(
@@ -1666,6 +1694,10 @@ class __$FulltextChapterCopyWithImpl<$Res>
             ? _self._anchors
             : anchors // ignore: cast_nullable_to_non_nullable
                   as Map<String, int>?,
+        sourcePath: freezed == sourcePath
+            ? _self.sourcePath
+            : sourcePath // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }

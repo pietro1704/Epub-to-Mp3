@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/latency_observation.dart';
+import '../views/reader_toc_rows.dart';
 
 typedef PdfViewerBuilder = Widget Function(
   BuildContext context,
@@ -14,6 +16,7 @@ typedef PdfViewerBuilder = Widget Function(
   ValueChanged<int> onPageChanged,
 );
 typedef PdfDocumentLoader = Future<void> Function();
+typedef PdfContentsLoader = Future<List<PdfContentsRow>> Function();
 
 bool isPdfFilePath(String path) => path.toLowerCase().endsWith('.pdf');
 
@@ -39,6 +42,7 @@ class PdfReaderScreen extends StatefulWidget {
     required this.prefs,
     this.viewerBuilder,
     this.loadDocument,
+    this.loadContents,
   });
 
   final String bookId;
@@ -47,6 +51,9 @@ class PdfReaderScreen extends StatefulWidget {
   final SharedPreferences prefs;
   final PdfViewerBuilder? viewerBuilder;
   final PdfDocumentLoader? loadDocument;
+
+  /// The automatic contents list; the Contents action shows only when it has rows.
+  final PdfContentsLoader? loadContents;
 
   @override
   State<PdfReaderScreen> createState() => _PdfReaderScreenState();
@@ -68,6 +75,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   bool _loading = false;
   bool _chromeVisible = true;
   String? _readerJourneyId;
+  List<PdfContentsRow> _contents = const [];
 
   @override
   void initState() {
@@ -84,6 +92,43 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       _loading = true;
       unawaited(_load());
     }
+    unawaited(_loadContents());
+  }
+
+  Future<void> _loadContents() async {
+    try {
+      final rows = await widget.loadContents?.call() ?? const [];
+      if (mounted && rows.isNotEmpty) setState(() => _contents = rows);
+    } catch (_) {
+      // No contents list is the same as a book without one.
+    }
+  }
+
+  Future<void> _showContents() async {
+    final page = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final row in _contents)
+              ListTile(
+                key: ValueKey('pdf-contents-${row.page}'),
+                contentPadding: EdgeInsets.only(left: 16.0 + 16 * row.level),
+                title: Text(row.title),
+                trailing: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Text('${row.page}'),
+                ),
+                onTap: () => Navigator.pop(context, row.page),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (page != null) await _goToPage(page);
   }
 
   Future<void> _load() async {
@@ -159,6 +204,13 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
           ? AppBar(
               title: Text(widget.title),
               actions: [
+                if (_contents.isNotEmpty)
+                  IconButton(
+                    key: const ValueKey('pdf-contents-button'),
+                    tooltip: AppLocalizations.of(context)!.tableOfContents,
+                    onPressed: _showContents,
+                    icon: const Icon(Icons.list),
+                  ),
                 IconButton(
                   tooltip: 'Hide controls',
                   onPressed: () => setState(() => _chromeVisible = false),
@@ -220,7 +272,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   }
 
   Future<void> _goToPage(int page) async {
-    if (page < 1) return;
+    if (page < 1 || !_controller.isReady) return;
     await _controller.goToPage(pageNumber: page);
   }
 
