@@ -26,6 +26,7 @@ ModelsScreenAlertTests
 NarrationPlanContractTests
 NativeFormAccessibilityTests
 NativePlaybackFeedbackTests
+PDFPlayFromHereTests
 PDFRunningLinesAnchorTests
 PdfOcrPreparerTests
 PlatformSettingsCellTests
@@ -44,6 +45,7 @@ ReaderHighlightContrastTests
 ReaderLinkContrastTests
 ReaderNarrationFollowerTests
 ReaderPagePlaybackChoiceTests
+ReaderPlayFromPageTests
 ReaderProgressiveListeningTests
 ReaderSelectionWiringTests
 ReaderSettingsScopeHeaderTests

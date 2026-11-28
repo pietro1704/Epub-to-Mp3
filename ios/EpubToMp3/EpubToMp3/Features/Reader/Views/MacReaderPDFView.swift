@@ -114,10 +114,8 @@ final class MacReaderPDFView: PDFView {
         let pagePoint = convert(point, to: page)
         if let annotation = page.annotation(at: pagePoint),
            annotation.action != nil || annotation.type == PDFAnnotationSubtype.link.rawValue { return nil }
-        let character = page.characterIndex(at: pagePoint)
-        guard character != NSNotFound, character >= 0 else { return nil }
-        let wordStart = firstCharacter(in: page.selectionForWord(at: pagePoint), on: page) ?? character
-        guard let anchor = audioMap?.anchor(page: document.index(for: page), character: wordStart) else { return nil }
+        guard let character = PDFReadingAudioMap.character(at: pagePoint, on: page),
+              let anchor = audioMap?.anchor(page: document.index(for: page), character: character) else { return nil }
 
         let play = NSMenuItem(title: L10n.string("reader.selection.playFromHere"),
                               action: #selector(playFromMenu(_:)), keyEquivalent: "")

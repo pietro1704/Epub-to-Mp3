@@ -188,8 +188,7 @@ final class ReaderPDFPresentation {
 
     func anchor(at point: CGPoint) -> PDFReadingAudioMap.Anchor? {
         guard let document = view.document, let page = view.page(for: point, nearest: false) else { return nil }
-        let character = page.characterIndex(at: view.convert(point, to: page))
-        guard character != NSNotFound, character >= 0 else { return nil }
+        guard let character = PDFReadingAudioMap.character(at: view.convert(point, to: page), on: page) else { return nil }
         return audioMap?.anchor(page: document.index(for: page), character: character)
     }
 

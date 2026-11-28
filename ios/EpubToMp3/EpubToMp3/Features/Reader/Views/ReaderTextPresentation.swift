@@ -198,7 +198,6 @@ final class ReaderTextPresentation {
             in: document.fulltext?.chapters ?? []
         ) ?? chapter.zeroBasedEpubIndex
         location.setReaderAnchor(chapter: epubIndex, pageRatio: 0)
-        readingPosition.playback.resetForChapter()
         player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
         synchronizeChromeVisibility()
 

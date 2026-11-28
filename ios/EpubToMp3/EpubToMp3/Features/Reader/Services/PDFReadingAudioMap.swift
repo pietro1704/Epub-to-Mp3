@@ -64,13 +64,14 @@ struct PDFReadingAudioMap: Sendable {
             var cursor = 0
             for pageIndex in start..<end {
                 guard cursor <= canonical.text.length,
-                      let (displayed, match) = Self.locate(pageTexts[pageIndex], in: canonical.text, from: cursor)
+                      let found = Self.locate(pageTexts[pageIndex], in: canonical.text, from: cursor)
+                        ?? Self.locateByLines(pageTexts[pageIndex], in: canonical.text, from: cursor)
                 else { continue }
-                mapped[pageIndex] = Page(chapterIndex: chapterIndex, displayOffsets: displayed.offsets,
-                    chapterOffsets: Array(canonical.offsets[match.location..<NSMaxRange(match)]),
-                    speechOffsets: Array(canonical.scalarOffsets[match.location..<NSMaxRange(match)]),
+                mapped[pageIndex] = Page(chapterIndex: chapterIndex, displayOffsets: found.displayOffsets,
+                    chapterOffsets: found.narration.map { canonical.offsets[$0] },
+                    speechOffsets: found.narration.map { canonical.scalarOffsets[$0] },
                     chapterLength: chapter.text.unicodeScalars.count)
-                cursor = NSMaxRange(match)
+                cursor = found.end
             }
         }
         pages = mapped
@@ -117,8 +118,14 @@ struct PDFReadingAudioMap: Sendable {
         return lastLocation
     }
 
-    private static func locate(_ page: String, in narration: NSString, from cursor: Int)
-        -> (displayed: (text: NSString, offsets: [Int], scalarOffsets: [Int]), match: NSRange)? {
+    /// Where a page sits in the narration: for each matched unit, its page and narration positions.
+    private struct Placement {
+        var displayOffsets: [Int]
+        var narration: [Int]
+        var end: Int
+    }
+
+    private static func locate(_ page: String, in narration: NSString, from cursor: Int) -> Placement? {
         for (attempt, candidate) in narrationCandidates(page).enumerated() {
             let displayed = normalized(candidate)
             // A trimmed leftover such as a lone page number would match anywhere.
@@ -126,9 +133,37 @@ struct PDFReadingAudioMap: Sendable {
             // Literal matching keeps the offset tables aligned with the matched range.
             let match = narration.range(of: displayed.text as String, options: .literal,
                 range: NSRange(location: cursor, length: narration.length - cursor))
-            if match.location != NSNotFound, match.length == displayed.text.length { return (displayed, match) }
+            if match.location != NSNotFound, match.length == displayed.text.length {
+                return Placement(displayOffsets: displayed.offsets,
+                                 narration: Array(match.location..<NSMaxRange(match)), end: NSMaxRange(match))
+            }
         }
         return nil
+    }
+
+    /// PDFKit and Rust extract text separately, so a few lines of a page may differ. The lines that
+    /// do match, in reading order and close together, still place the page when they are most of it.
+    private static func locateByLines(_ page: String, in narration: NSString, from cursor: Int) -> Placement? {
+        var placement = Placement(displayOffsets: [], narration: [], end: cursor)
+        var lineStart = 0, total = 0, reach = narration.length
+        for line in page.components(separatedBy: "\n") {
+            defer { lineStart += line.utf16.count + 1 }
+            let displayed = normalized(line)
+            let length = displayed.text.length
+            total += length
+            // A short line is only trusted where the previous one ended.
+            let limit = length >= 8 ? min(reach, narration.length) : min(placement.end + length, narration.length)
+            guard length > 0, !placement.narration.isEmpty || length >= 8, limit - placement.end >= length else { continue }
+            let match = narration.range(of: displayed.text as String, options: .literal,
+                range: NSRange(location: placement.end, length: limit - placement.end))
+            guard match.location != NSNotFound, match.length == length else { continue }
+            if placement.narration.isEmpty { reach = match.location + normalized(page).text.length * 2 }
+            placement.displayOffsets += displayed.offsets.map { lineStart + $0 }
+            placement.narration += match.location..<NSMaxRange(match)
+            placement.end = NSMaxRange(match)
+        }
+        guard !placement.narration.isEmpty, placement.narration.count * 10 >= total * 7 else { return nil }
+        return placement
     }
 
     /// The page as shown, then without what Rust may leave out of the narration: layout slugs and a
@@ -177,6 +212,16 @@ extension PDFReadingAudioMap {
             guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
             return recognized[index + 1] ?? text
         }
+    }
+
+    /// The position in `page.string` of the text touched at `point` (page space).
+    /// `characterIndex(at:)` drifts from `page.string` line by line; a word's range does not.
+    static func character(at point: CGPoint, on page: PDFPage) -> Int? {
+        let index = page.characterIndex(at: point)
+        guard index != NSNotFound, index >= 0 else { return nil }
+        guard let word = page.selectionForWord(at: point), word.numberOfTextRanges(on: page) > 0 else { return index }
+        let start = word.range(at: 0, on: page).location
+        return start == NSNotFound ? index : start
     }
 }
 #endif
