@@ -27,6 +27,35 @@ final class ReaderFollowNarrationTests: XCTestCase {
         XCTAssertTrue(follow.shouldFollow(paired: false, isNarrating: true), "The next time it leaves the page, follow")
     }
 
+    /// A page turn can pass through a state that still shows the old page next to the new one, which
+    /// counts as paired. Once only the new page is left, the narration has not moved: the user did.
+    @MainActor
+    func testLeavingTheNarratedPageIsTheUsersMoveWhileTheNarrationStaysOnIt() {
+        var follows = 0
+        let follower = ReaderNarrationFollower(jumps: Empty().eraseToAnyPublisher(),
+                                               isNarrating: { true }, follow: { follows += 1 })
+        follower.evaluate(paired: true, spokenPage: 5)
+
+        follower.evaluate(paired: false, spokenPage: 5)
+        follower.evaluate(paired: false, spokenPage: 5)
+        follower.evaluate(paired: false, spokenPage: 6)
+
+        XCTAssertEqual(follows, 0, "the reader must not pull back to the narrated page")
+        XCTAssertTrue(follower.isSuspended)
+    }
+
+    @MainActor
+    func testTheReaderStillFollowsWhenTheNarrationLeavesTheShownPage() {
+        var follows = 0
+        let follower = ReaderNarrationFollower(jumps: Empty().eraseToAnyPublisher(),
+                                               isNarrating: { true }, follow: { follows += 1 })
+        follower.evaluate(paired: true, spokenPage: 5)
+
+        follower.evaluate(paired: false, spokenPage: 6)
+
+        XCTAssertEqual(follows, 1)
+    }
+
     func testPairingWhilePausedAlsoClearsTheSuspension() {
         var follow = ReaderFollowNarration()
         follow.apply(.manualPageTurn)
