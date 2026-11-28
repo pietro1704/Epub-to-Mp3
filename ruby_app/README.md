@@ -16,6 +16,6 @@ curl http://127.0.0.1:9292/health
 curl http://127.0.0.1:9292/api/metadata
 ```
 
-The development bundle requires Ruby 3.2 or newer for Minitest 6 and Bundler 4; the project pins Ruby 4.0.7. The boundary remains dependency-light. The Rails gateway reuses the client and keeps Rails responsible for authentication, persistence, and jobs without duplicating conversion logic.
+The development bundle requires Ruby 3.2 or newer for Minitest 6 and Bundler 4; the project pins Ruby 4.0.10. The boundary remains dependency-light. The Rails gateway reuses the client and keeps Rails responsible for authentication, persistence, and jobs without duplicating conversion logic.
 
 `rails_gateway/` is also the Rails web client (it replaced the former React client in `web/`, removed in the Rails cutover); see `rails_gateway/README.md`. Its `/books…` and `/api/metadata` routes are the server-side compatibility API and are mounted only when `RUST_CONVERTER_URL` is set.
