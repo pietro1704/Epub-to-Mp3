@@ -297,7 +297,7 @@ final class MacReaderTextPresentation {
             scrollPage(forward: false)
             return true
         case 53:
-            closeReader()
+            if !composition.dismissOpenPopover() { closeReader() }
             return true
         default:
             return false
