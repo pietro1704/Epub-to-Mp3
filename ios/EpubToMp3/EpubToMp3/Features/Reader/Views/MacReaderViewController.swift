@@ -192,7 +192,8 @@ final class MacReaderViewController: NSViewController {
         document: document, composition: composition,
         persistProgress: { [weak self] in self?.persistReadingProgress() },
         showChapter: { [weak self] in self?.showChapter($0) },
-        makeDownloads: { [weak self] in self?.makeChapterDownloads() }
+        makeDownloads: { [weak self] in self?.makeChapterDownloads() },
+        publishTitle: { [weak self] in self?.player.updateReaderChapterTitle($0, for: $1) }
     )
     private func makeChapterDownloads() -> ReaderChapterDownloads? {
         guard let book = library.books.first(where: { $0.id == document.currentBookId }),

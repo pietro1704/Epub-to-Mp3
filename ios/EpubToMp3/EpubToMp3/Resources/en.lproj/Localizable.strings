@@ -680,3 +680,7 @@
 "library.facts.minutes" = "%d min";
 "library.facts.added" = "Added %@";
 "library.facts.lastRead" = "Read %@";
+"toc.rename" = "Rename chapter";
+"toc.restoreName" = "Restore automatic name";
+"toc.renameSave" = "Save";
+"toc.renameFailed" = "The chapter name could not be saved. Use a single line of up to 200 characters.";

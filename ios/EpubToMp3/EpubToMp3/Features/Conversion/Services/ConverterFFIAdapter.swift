@@ -7,6 +7,8 @@ struct EmbeddedBook { let metadataJSON: Data }
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
+    private var chapterNamesUpdate: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?)
+        -> UnsafeMutablePointer<CChar>?)?
     private var auditionVoice: ConverterVoiceAudition?
     private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
     /// `converter_set_background_cpu_limit_v1`: absent in older libraries (then pacing is simply unavailable).
@@ -77,6 +79,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; return
         }
         handle = library
+        chapterNamesUpdate = symbol("converter_chapter_names_update_json_v1", as: (@convention(c) (UnsafePointer<CChar>?,
+            UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?).self)
         prepareAudio = symbol("converter_audio_prepare_v1", as: (@convention(c) (UnsafePointer<CChar>?) -> Bool).self)
         setBackgroundCPULimitSymbol = symbol("converter_set_background_cpu_limit_v1", as: (@convention(c) (UInt32) -> Void).self)
         close = { value in dispose(value) }
@@ -298,6 +302,24 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         guard json.withCString({ validator($0) }) else {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
+    }
+
+    /// Reads (`index == nil`), sets or resets (`name == nil`) a chapter name override.
+    func chapterNames(at file: URL, index: String?, name: String?) throws -> [Int: String] {
+        guard let update = chapterNamesUpdate else { throw EmbeddedConverterError.artifactUnavailable }
+        func optional<T>(_ value: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
+            value.map { $0.withCString(body) } ?? body(nil)
+        }
+        let result = file.path.withCString { path in
+            optional(index) { index in optional(name) { update(path, index, $0) } }
+        }
+        guard let result else { throw EmbeddedConverterError.conversionFailed(readError()) }
+        defer { freeString(result) }
+        struct Overrides: Decodable { let names: [String: String] }
+        let overrides = try JSONDecoder().decode(Overrides.self, from: Data(String(cString: result).utf8))
+        return Dictionary(uniqueKeysWithValues: overrides.names.compactMap { key, value in
+            Int(key).map { ($0, value) }
+        })
     }
 
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }

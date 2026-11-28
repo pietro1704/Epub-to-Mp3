@@ -9,6 +9,7 @@ struct PDFReadingAudioMap: Sendable {
         let name: String
         let sourcePath: String
         let text: String
+        func title(_ names: [Int: String]) -> String { Int(index).flatMap { names[$0] } ?? name }
         var startPage: Int? {
             Int(sourcePath.replacingOccurrences(of: "page-", with: "")).map { $0 - 1 }.flatMap { $0 >= 0 ? $0 : nil }
         }

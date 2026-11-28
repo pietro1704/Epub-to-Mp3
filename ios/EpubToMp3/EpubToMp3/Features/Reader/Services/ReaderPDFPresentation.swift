@@ -92,8 +92,9 @@ final class ReaderPDFPresentation {
             if view.isUsingPageViewController { view.go(to: page) }
             else { view.go(to: PDFDestination(page: page, at: CGPoint(x: saved.x, y: saved.y))) }
         }
+        let names = ChapterNameStore.shared.names(bookID: bookID)
         for (index, chapter) in (audioMap?.chapters ?? []).enumerated() {
-            player?.updateReaderChapterTitle(chapter.name, for: index)
+            player?.updateReaderChapterTitle(chapter.title(names), for: index)
         }
         hasLoaded = true
         publishPosition()

@@ -151,7 +151,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     var playbackChapterCatalog: [(index: Int, title: String)] {
         if let chapters = composition.contentSurface.pdfPresentation?.audioMap?.chapters {
-            return chapters.enumerated().map { ($0.offset, $0.element.name) }
+            let names = document.chapterNames
+            return chapters.enumerated().map { ($0.offset, $0.element.title(names)) }
         }
         if let fulltext = document.fulltext {
             return fulltext.chapters.map { ($0.zeroBasedEpubIndex, $0.displayTitle) }

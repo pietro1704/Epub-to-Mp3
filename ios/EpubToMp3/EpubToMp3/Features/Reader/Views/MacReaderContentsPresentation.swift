@@ -3,7 +3,7 @@ import AppKit
 import PDFKit
 
 @MainActor
-final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
     private let document: MacReaderDocument
     private let composition: MacReaderViewComposition
     private let persistProgress: () -> Void
@@ -30,7 +30,9 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
 
     init(document: MacReaderDocument, composition: MacReaderViewComposition,
          persistProgress: @escaping () -> Void, showChapter: @escaping (Int) -> Void,
-         makeDownloads: @escaping () -> ReaderChapterDownloads? = { nil }) {
+         makeDownloads: @escaping () -> ReaderChapterDownloads? = { nil },
+         publishTitle: @escaping (String, Int) -> Void = { _, _ in }) {
+        self.publishTitle = publishTitle
         self.makeDownloads = makeDownloads
         self.document = document
         self.composition = composition
@@ -45,6 +47,7 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
     }
 
     private var tocRows: [ReaderTocRow] { document.tocRows }
+    private let publishTitle: (String, Int) -> Void
 
     func numberOfRows(in tableView: NSTableView) -> Int { tocRows.count }
 
@@ -219,10 +222,66 @@ final class MacReaderContentsPresentation: NSObject, NSTableViewDataSource, NSTa
         tocPopover.performClose(nil)
     }
 
+    private var renaming: ChapterRenaming { ChapterRenaming(publish: publishTitle) }
+
+    /// The contents list's context menu, rebuilt for the row that was clicked.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let row = chaptersTable.clickedRow
+        guard let tocRow = tocRows[safe: row] else { return }
+        for action in renaming.actions(for: tocRow, in: document) {
+            let item = NSMenuItem(title: action.title + (action.kind == .rename ? "…" : ""),
+                                  action: action.kind == .rename ? #selector(renameChapter(_:)) : #selector(restoreChapterName(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = row
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func renameChapter(_ sender: NSMenuItem) {
+        guard let row = tocRows[safe: sender.tag], let bookID = document.currentBookId,
+              let window = composition.view.window else { return }
+        // The transient popover closes behind a sheet, so the question belongs to the reader window.
+        tocPopover.performClose(nil)
+        let alert = NSAlert()
+        alert.messageText = L10n.string("toc.rename")
+        let field = NSTextField(string: row.title)
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        field.setAccessibilityIdentifier("reader.toc.rename.field")
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.string("toc.renameSave"))
+        alert.addButton(withTitle: L10n.string("common.cancel"))
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, field.stringValue != row.title else { return }
+            self?.applyName(field.stringValue, to: row, bookID: bookID)
+        }
+    }
+
+    @objc private func restoreChapterName(_ sender: NSMenuItem) {
+        guard let row = tocRows[safe: sender.tag], let bookID = document.currentBookId else { return }
+        applyName(nil, to: row, bookID: bookID)
+    }
+
+    private func applyName(_ name: String?, to row: ReaderTocRow, bookID: String) {
+        guard document.currentBookId == bookID else { return }
+        do {
+            try renaming.apply(name, to: row, in: document, bookID: bookID)
+            chaptersTable.reloadData()
+            selectCurrentTOCRow()
+        } catch {
+            present(failure: L10n.string("toc.rename"), message: L10n.string("toc.renameFailed"))
+        }
+    }
+
     private func configureTOCPopover() {
         chaptersTable.headerView = nil
         chaptersTable.delegate = self
         chaptersTable.dataSource = self
+        let rowMenu = NSMenu()
+        rowMenu.delegate = self
+        chaptersTable.menu = rowMenu
         chaptersTable.usesAlternatingRowBackgroundColors = true
         chaptersTable.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("chapter")))
         let scrollView = NSScrollView()
