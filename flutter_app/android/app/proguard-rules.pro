@@ -16,3 +16,8 @@
 
 # The minified androidTest APK (R8 proof of the ML Kit OCR) references compile-only annotations.
 -dontwarn com.google.errorprone.annotations.**
+
+# ML Kit instantiates the Firebase registrars named in manifest metadata by reflection.
+-keep,allowoptimization class com.google.mlkit.** implements com.google.firebase.components.ComponentRegistrar {
+    public <init>();
+}

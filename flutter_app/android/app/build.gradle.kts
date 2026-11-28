@@ -79,6 +79,9 @@ android {
             // R8 minifies the instrumented-test APK only from testProguardFiles; reuse the app rules
             // (errorprone -dontwarn) so `-PtestMinifiedRelease` can build it.
             testProguardFiles("proguard-rules.pro")
+            if (project.hasProperty("testMinifiedRelease")) {
+                proguardFile("proguard-instrumented-target.pro")
+            }
         }
     }
 }
