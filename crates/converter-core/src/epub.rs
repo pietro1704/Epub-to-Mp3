@@ -1,6 +1,7 @@
 mod epub_chapter_content;
 mod epub_footnotes;
 mod epub_library_metadata;
+#[cfg(not(target_arch = "wasm32"))]
 mod epub_library_shelf;
 mod epub_package;
 mod epub_resources;
@@ -10,6 +11,7 @@ use epub_chapter_content::{
 };
 pub use epub_footnotes::Footnote;
 pub use epub_library_metadata::{read_library_metadata, LibraryMetadata};
+#[cfg(not(target_arch = "wasm32"))]
 pub use epub_library_shelf::read_library_shelf;
 use epub_package::{
     normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text,
