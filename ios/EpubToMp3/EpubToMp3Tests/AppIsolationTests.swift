@@ -15,6 +15,47 @@ final class AppIsolationTests: XCTestCase {
         XCTAssertFalse(AppIsolation.isActive)
     }
 
+    /// UI tests that use the fixture also reset reading progress and run on real devices: the fixture alone must
+    /// isolate the launch, so no test can forget to ask for it.
+    func testTheUITestFixtureLaunchIsIsolated() {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("isolation-fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        let root = AppIsolation.activateIfRequested(arguments: ["EpubToMp3", "-uiTestFixture"],
+                                                    temporaryDirectory: temporary, redirectHome: false)
+
+        XCTAssertNotNil(root, "-uiTestFixture must never run against the real installation")
+        XCTAssertTrue(AppIsolation.isActive)
+    }
+
+    /// Without moving HOME (always the case on iOS) every store that resolves its own folder must still land in
+    /// the throwaway home, and deactivating must give the real folders back.
+    func testIsolationKeepsEveryAppDirectoryInTheThrowawayHome() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("isolation-directories-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let directories: [FileManager.SearchPathDirectory] = [
+            .documentDirectory, .applicationSupportDirectory, .cachesDirectory, .libraryDirectory,
+        ]
+        let real = directories.map { FileManager.default.urls(for: $0, in: .userDomainMask) }
+
+        let root = AppIsolation.activate(temporaryDirectory: temporary, redirectHome: false)
+        let prefix = root.resolvingSymlinksInPath().path + "/"
+
+        for directory in directories {
+            let listed = try XCTUnwrap(FileManager.default.urls(for: directory, in: .userDomainMask).first)
+            let resolved = try FileManager.default.url(for: directory, in: .userDomainMask,
+                                                       appropriateFor: nil, create: false)
+            for url in [listed, resolved] {
+                XCTAssertTrue(url.resolvingSymlinksInPath().path.hasPrefix(prefix),
+                              "Directory \(directory.rawValue) still reaches the real installation")
+            }
+        }
+        AppIsolation.deactivate()
+        XCTAssertEqual(directories.map { FileManager.default.urls(for: $0, in: .userDomainMask) }, real)
+    }
+
     /// An isolated launch sees an empty throwaway library, while iOS keeps the real files. That index must never
     /// be used to decide which book data is orphaned.
     @MainActor

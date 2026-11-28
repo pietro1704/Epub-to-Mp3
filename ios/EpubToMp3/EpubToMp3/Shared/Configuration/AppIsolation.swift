@@ -3,18 +3,20 @@ import ObjectiveC
 
 /// Launch-only isolation for UI tests and evidence captures.
 ///
-/// With `-uiTestIsolatedSettings` the app must never read or write the real installation: not the library, the
+/// With `-uiTestIsolatedSettings`, or `-uiTestFixture` (which implies it), the app must never read or write the real installation: not the library, the
 /// imported books, caches, models, reading/session state, settings, nor the widget App Group. Instead of
 /// threading a flag through every store, the process is redirected once, before anything touches disk:
 ///  - macOS: `HOME`/`CFFIXED_USER_HOME` point at a throwaway directory (deleted at every launch), so
 ///    Application Support, Caches, Documents and the Rust conversion roots all land there;
-///  - iOS keeps the sandbox home: only imported book files are redirected (`LibraryImportFiles`), and stores that
-///    resolve Application Support or Caches themselves still use the real folders;
+///  - iOS keeps the sandbox home, so on both platforms `FileManager` also resolves Documents, Application
+///    Support, Caches and Library inside the throwaway directory;
 ///  - `UserDefaults.standard` returns a throwaway suite, so every present and future call site is covered;
 ///  - the App Group defaults suite and container are replaced by throwaway ones (widgets never see test data).
 /// Normal launches never touch any of this.
 enum AppIsolation {
     static let launchArgument = "-uiTestIsolatedSettings"
+    /// The in-memory library of the UI tests. They reset reading progress and run on real devices.
+    static let fixtureLaunchArgument = "-uiTestFixture"
     static let defaultsSuiteName = "com.pietrocode.epubtomp3.uitest-isolated-settings"
     static let groupDefaultsSuiteName = "com.pietrocode.epubtomp3.uitest-isolated-group"
     static let rootDirectoryName = "EpubToMp3-isolated-home"
@@ -30,15 +32,19 @@ enum AppIsolation {
         var standardIMP: IMP?
         var suiteIMP: IMP?
         var containerIMP: IMP?
+        var directoryListIMP: IMP?
+        var directoryIMP: IMP?
     }
     private static var saved: Saved?
     private static var isolatedStandard: UserDefaults?
 
     /// Activates the isolation when `arguments` ask for it. Call first thing in `main`.
     @discardableResult
-    static func activateIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) -> URL? {
-        guard arguments.contains(launchArgument) else { return nil }
-        return activate()
+    static func activateIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments,
+                                    temporaryDirectory: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true),
+                                    redirectHome: Bool = true) -> URL? {
+        guard arguments.contains(launchArgument) || arguments.contains(fixtureLaunchArgument) else { return nil }
+        return activate(temporaryDirectory: temporaryDirectory, redirectHome: redirectHome)
     }
 
     /// Redirects the process. Idempotent; returns the throwaway home.
@@ -94,9 +100,55 @@ enum AppIsolation {
             let block: @convention(block) (AnyObject, NSString) -> URL? = { _, _ in container }
             method_setImplementation(method, imp_implementationWithBlock(block))
         }
+        redirectDirectories(into: home, saving: &state)
         saved = state
         root = home
         return home
+    }
+
+    private static let directoryListSelector = NSSelectorFromString("URLsForDirectory:inDomains:")
+    private static let directorySelector =
+        NSSelectorFromString("URLForDirectory:inDomain:appropriateForURL:create:error:")
+
+    /// Stores resolve their own folders through `FileManager`, which moving HOME does not cover on iOS.
+    private static func redirectDirectories(into home: URL, saving state: inout Saved) {
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let folders: [UInt: URL] = [
+            FileManager.SearchPathDirectory.documentDirectory.rawValue:
+                home.appendingPathComponent("Documents", isDirectory: true),
+            FileManager.SearchPathDirectory.applicationSupportDirectory.rawValue:
+                library.appendingPathComponent("Application Support", isDirectory: true),
+            FileManager.SearchPathDirectory.cachesDirectory.rawValue:
+                library.appendingPathComponent("Caches", isDirectory: true),
+            FileManager.SearchPathDirectory.libraryDirectory.rawValue: library,
+        ]
+        let user = FileManager.SearchPathDomainMask.userDomainMask.rawValue
+
+        if let method = class_getInstanceMethod(FileManager.self, directoryListSelector) {
+            let original = method_getImplementation(method)
+            state.directoryListIMP = original
+            typealias Original = @convention(c) (AnyObject, Selector, UInt, UInt) -> NSArray
+            let call = unsafeBitCast(original, to: Original.self)
+            let block: @convention(block) (AnyObject, UInt, UInt) -> NSArray = { object, directory, domain in
+                if domain == user, let folder = folders[directory] { return [folder as NSURL] }
+                return call(object, directoryListSelector, directory, domain)
+            }
+            method_setImplementation(method, imp_implementationWithBlock(block))
+        }
+        if let method = class_getInstanceMethod(FileManager.self, directorySelector) {
+            let original = method_getImplementation(method)
+            state.directoryIMP = original
+            typealias Original = @convention(c)
+                (AnyObject, Selector, UInt, UInt, NSURL?, ObjCBool, UnsafeMutableRawPointer?) -> NSURL?
+            let call = unsafeBitCast(original, to: Original.self)
+            let block: @convention(block)
+                (AnyObject, UInt, UInt, NSURL?, ObjCBool, UnsafeMutableRawPointer?) -> NSURL? = {
+                    object, directory, domain, appropriate, create, error in
+                    if domain == user, let folder = folders[directory] { return folder as NSURL }
+                    return call(object, directorySelector, directory, domain, appropriate, create, error)
+                }
+            method_setImplementation(method, imp_implementationWithBlock(block))
+        }
     }
 
     /// The variables that move Foundation's home-relative directories (and the Rust side's) into `home`.
@@ -118,6 +170,14 @@ enum AppIsolation {
         if let imp = state.containerIMP,
            let method = class_getInstanceMethod(FileManager.self,
                                                 NSSelectorFromString("containerURLForSecurityApplicationGroupIdentifier:")) {
+            method_setImplementation(method, imp)
+        }
+        if let imp = state.directoryListIMP,
+           let method = class_getInstanceMethod(FileManager.self, directoryListSelector) {
+            method_setImplementation(method, imp)
+        }
+        if let imp = state.directoryIMP,
+           let method = class_getInstanceMethod(FileManager.self, directorySelector) {
             method_setImplementation(method, imp)
         }
         #if os(macOS)
