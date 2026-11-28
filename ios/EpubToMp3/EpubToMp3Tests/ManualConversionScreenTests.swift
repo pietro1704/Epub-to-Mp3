@@ -38,6 +38,30 @@ final class ManualConversionScreenTests: XCTestCase {
         """.utf8), outputDirectory: URL(fileURLWithPath: "/fixture-only/output"))
     }
 
+    func testFinishedConversionOffersAddToLibraryAndExportWithoutAddingAnything() async throws {
+        let session = ManualConversionSession(executor: { _, id, _, _, _, _, _ in
+            .init(jobID: id, manifestJSON: Data("""
+            {"manifest":{"jobId":"\(id)","title":"Manual fixture","author":"Author",
+             "chapters":[{"title":"Um","filename":"one.mp3","textChars":3}]}}
+            """.utf8), outputDirectory: URL(fileURLWithPath: "/fixture-only/output"))
+        })
+        let (controller, _, _) = try makeScreen(session)
+        let source = try EpubFixture.createWithChapters(["A book that is not in the library"])
+        addTeardownBlock { try? FileManager.default.removeItem(at: source) }
+        await session.run(file: source, start: -1, end: -1, options: nil)
+        let result = 4
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: result), 2)
+
+        await controller.prepareDelivery(source: source)
+
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: result), 4)
+        let identifiers = (2..<4).map {
+            controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: $0, section: result))
+                .accessibilityIdentifier
+        }
+        XCTAssertEqual(identifiers, ["convert.addToLibrary", "convert.export"])
+    }
+
     func testResultMetadataClearsAccessoriesReusedFromChaptersAndActions() throws {
         let session = ManualConversionSession(executor: { _, id, _, _, _, _, _ in self.result(id) })
         let (_, navigation, player) = try makeScreen(session)

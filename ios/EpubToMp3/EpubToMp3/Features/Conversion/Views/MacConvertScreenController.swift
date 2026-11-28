@@ -28,6 +28,11 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     /// Overrides the app-owned inbox that picked documents are copied into.
     private let inboxDirectory: URL?
     private let presentPronunciation: (String, NSViewController) -> Void
+    struct ExportChoice {
+        let directory: URL
+        let layout: ManualConversionDelivery.Layout
+        let format: ManualConversionDelivery.Format
+    }
     private var observation: AnyCancellable?
     private var audioRemovalObservation: AnyCancellable?
     /// The library book whose conversion is running, and whether its audio was
@@ -45,6 +50,9 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     private var sourceError: String?
     private var resultSnapshot: JobSnapshot?
     private var resultDirectory: URL?
+    private let chooseExport: (() async -> ExportChoice?)?
+    private var deliveryMessage: String?
+    private var isDelivering = false
     private(set) var selectedBookID: String?
     /// The file the form currently holds; exposed so tests can observe copy lifetime.
     var currentSelectionForTesting: URL? { viewModel.selectedFile }
@@ -53,8 +61,10 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     init(settings: AppSettings, library: LibraryStore, viewModel: ConvertViewModel? = nil,
          resolveBookFile: ((String) async throws -> URL)? = nil,
          inboxDirectory: URL? = nil,
-         presentPronunciation: ((String, NSViewController) -> Void)? = nil) {
+         presentPronunciation: ((String, NSViewController) -> Void)? = nil,
+         chooseExport: (() async -> ExportChoice?)? = nil) {
         self.inboxDirectory = inboxDirectory
+        self.chooseExport = chooseExport
         self.settings = settings
         self.library = library
         self.viewModel = viewModel ?? ConvertViewModel()
@@ -73,7 +83,9 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         super.viewDidLoad()
         for (button, action) in [(form.pickFile, #selector(pickFile)), (form.pronunciation, #selector(editPronunciation)),
                                  (form.submit, #selector(startConversion)), (form.cancel, #selector(cancelConversion)),
-                                 (form.revealResult, #selector(revealResult)), (form.history, #selector(showJobs))] {
+                                 (form.revealResult, #selector(revealResult)), (form.history, #selector(showJobs)),
+                                 (form.addToLibrary, #selector(addToLibraryClicked)),
+                                 (form.exportAudio, #selector(exportClicked))] {
             button.target = self
             button.action = action
         }
@@ -186,6 +198,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         sourceError = nil
         resultSnapshot = nil
         resultDirectory = nil
+        deliveryMessage = nil
         refresh()
         return selectionID
     }
@@ -237,6 +250,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         sourceError = nil
         resultSnapshot = nil
         resultDirectory = nil
+        deliveryMessage = nil
         convertingBookID = bookID
         audioRemovedDuringConversion = false
         await viewModel.submit()
@@ -337,8 +351,99 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         } ?? ""
         form.revealResult.isHidden = resultDirectory == nil
         form.silenceTrim.selectItem(at: SilenceTrim.allCases.firstIndex(of: viewModel.silenceTrim) ?? 0)
+        refreshDelivery()
         for label in [form.status, form.failure, form.result] { label.isHidden = label.stringValue.isEmpty }
     }
+
+    /// The finished result of the current selection, when there is one to deliver.
+    private var deliverable: (snapshot: JobSnapshot, source: URL, bookID: String)? {
+        guard let resultSnapshot, let source = viewModel.selectedFile, let bookID = selectedBookID else { return nil }
+        return (resultSnapshot, source, bookID)
+    }
+
+    private func audiobook() -> ManualConversionDelivery.Audiobook? {
+        guard let deliverable else { return nil }
+        return ManualConversionDelivery.audiobook(from: deliverable.snapshot,
+            libraryBook: library.books.first { $0.id == deliverable.bookID }, source: deliverable.source)
+    }
+
+    private func refreshDelivery() {
+        let deliverable = deliverable
+        let hasAudio = audiobook() != nil
+        form.addToLibrary.isHidden = deliverable.map { value in
+            library.books.contains { $0.id == value.bookID }
+        } ?? true
+        form.addToLibrary.isEnabled = !isDelivering
+        form.exportAudio.isHidden = deliverable == nil
+        form.exportAudio.isEnabled = hasAudio && !isDelivering
+        form.delivery.stringValue = deliverable == nil ? "" : deliveryMessage
+            ?? (hasAudio ? "" : L10n.string("convert.export.needsPiper"))
+        form.delivery.isHidden = form.delivery.stringValue.isEmpty
+    }
+
+    func addResultToLibrary() async {
+        guard !isDelivering, let deliverable, let jobID = viewModel.session.result?.jobID else { return }
+        let selection = selectionID
+        isDelivering = true
+        refresh()
+        var message: String
+        do {
+            try await ManualConversionDelivery.addToLibrary(source: deliverable.source, jobID: jobID, library: library)
+            message = L10n.string("convert.addedToLibrary")
+        } catch {
+            message = AppErrorReporter.message(error, context: "Add converted book to library")
+        }
+        isDelivering = false
+        if selection == selectionID { deliveryMessage = message }
+        refresh()
+    }
+
+    func exportResult() async {
+        guard !isDelivering, let book = audiobook() else { return }
+        let selection = selectionID
+        isDelivering = true
+        refresh()
+        var message: String?
+        if let choice = await (chooseExport ?? presentExportPanel)() {
+            if selection == selectionID {
+                deliveryMessage = L10n.string("convert.export.running")
+                refresh()
+            }
+            let accessing = choice.directory.startAccessingSecurityScopedResource()
+            defer { if accessing { choice.directory.stopAccessingSecurityScopedResource() } }
+            do {
+                let files = try await ManualConversionDelivery.export(
+                    book, layout: choice.layout, format: choice.format, to: choice.directory)
+                message = ManualConversionDelivery.doneMessage(fileCount: files.count)
+            } catch {
+                message = L10n.string("convert.export.failed") + " "
+                    + AppErrorReporter.message(error, context: "Export converted audio")
+            }
+        }
+        isDelivering = false
+        if selection == selectionID { deliveryMessage = message }
+        refresh()
+    }
+
+    /// Folder, layout and format are all chosen in the system folder panel.
+    private func presentExportPanel() async -> ExportChoice? {
+        guard let window = view.window else { return nil }
+        let options = MacExportOptionsView()
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = L10n.string("convert.export")
+        panel.message = L10n.string("convert.export.chooseFolder")
+        panel.accessoryView = options
+        panel.isAccessoryViewDisclosed = true
+        guard await panel.beginSheetModal(for: window) == .OK, let directory = panel.url else { return nil }
+        return ExportChoice(directory: directory, layout: options.selectedLayout, format: options.selectedFormat)
+    }
+
+    @objc private func addToLibraryClicked() { Task { [weak self] in await self?.addResultToLibrary() } }
+    @objc private func exportClicked() { Task { [weak self] in await self?.exportResult() } }
 
     @objc private func showJobs() { onShowJobs() }
     @objc private func pickFile() {
