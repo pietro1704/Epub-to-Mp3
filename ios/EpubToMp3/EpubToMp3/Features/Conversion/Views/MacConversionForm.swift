@@ -12,6 +12,7 @@ final class MacConversionForm: NSView {
     let voice = NSTextField()
     let language = NSTextField()
     let chapters = NSTextField()
+    let silenceTrim = NSPopUpButton()
     let clearCache = NSButton(checkboxWithTitle: L10n.string("convert.clearCache"), target: nil, action: nil)
     let forceReprocess = NSButton(checkboxWithTitle: L10n.string("convert.forceReprocess"), target: nil, action: nil)
     let maxPerformance = NSButton(checkboxWithTitle: L10n.string("convert.maxPerformance"), target: nil, action: nil)
@@ -51,6 +52,12 @@ final class MacConversionForm: NSView {
         configure(language, key: "convert.languageOptional", identifier: "convert.language")
         configure(chapters, key: "convert.chapterRangeOptional", identifier: "convert.chapters")
         chapters.placeholderString = L10n.string("convert.chapterRangeHelp")
+        silenceTrim.addItems(withTitles: SilenceTrim.allCases.map(\.title))
+        silenceTrim.setAccessibilityIdentifier("convert.silenceTrim")
+        silenceTrim.setAccessibilityLabel(L10n.string("silenceTrim.title"))
+        let silenceTrimDescription = NSTextField(wrappingLabelWithString: L10n.string("silenceTrim.description"))
+        silenceTrimDescription.font = .preferredFont(forTextStyle: .subheadline)
+        silenceTrimDescription.textColor = .readableSecondaryLabel
         clearCache.setAccessibilityIdentifier("convert.clearCache")
         forceReprocess.setAccessibilityIdentifier("convert.forceReprocess")
         maxPerformance.setAccessibilityIdentifier("convert.maxPerformance")
@@ -68,12 +75,13 @@ final class MacConversionForm: NSView {
             field(L10n.string("convert.voiceOptional"), voice),
             field(L10n.string("convert.languageOptional"), language),
             field(L10n.string("convert.chapterRangeOptional"), chapters),
+            field(L10n.string("silenceTrim.title"), silenceTrim), silenceTrimDescription,
             clearCache, forceReprocess, maxPerformance, actions, status, failure, result, revealResult])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         MacScrollableStack.install(stack, in: self)
-        for label in [header, fileLabel, status, failure, result] {
+        for label in [header, fileLabel, silenceTrimDescription, status, failure, result] {
             label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
     }
@@ -82,7 +90,8 @@ final class MacConversionForm: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     var editableControls: [NSControl] {
-        [pickFile, pronunciation, engine, secondary, voice, language, chapters, clearCache, forceReprocess, maxPerformance]
+        [pickFile, pronunciation, engine, secondary, voice, language, chapters, silenceTrim,
+         clearCache, forceReprocess, maxPerformance]
     }
 
     private func configure(_ button: NSButton, key: String, identifier: String) {

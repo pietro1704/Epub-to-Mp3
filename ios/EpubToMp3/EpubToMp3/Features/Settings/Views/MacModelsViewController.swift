@@ -24,6 +24,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     private let automaticFallbackButton = NSSwitch()
     private let onlineFallbackButton = NSSwitch()
     private let footnotesButton = NSSwitch()
+    private let silenceTrimPopup = NSPopUpButton()
     private let lowQualityButton = NSSwitch()
     private let bookLanguages: () -> [String]
     private var items: [Item] = []
@@ -103,6 +104,16 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
             return MacSettingsSections.row(title: L10n.string(titleKey), subtitle: L10n.string(descriptionKey),
                                            accessory: toggle)
         }
+        silenceTrimPopup.addItems(withTitles: SilenceTrim.allCases.map(\.title))
+        silenceTrimPopup.target = self
+        silenceTrimPopup.action = #selector(silenceTrimChanged)
+        silenceTrimPopup.setAccessibilityIdentifier("settings.tts.silenceTrim")
+        silenceTrimPopup.setAccessibilityLabel(L10n.string("silenceTrim.title"))
+        silenceTrimPopup.setAccessibilityHelp(L10n.string("silenceTrim.description"))
+        // Same place as on the iPhone: right after the footnote switch.
+        rows.insert(MacSettingsSections.row(title: L10n.string("silenceTrim.title"),
+                                            subtitle: L10n.string("silenceTrim.description"),
+                                            accessory: silenceTrimPopup), at: 3)
         languagesButton.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
         languagesButton.imagePosition = .imageOnly
         languagesButton.isBordered = false
@@ -175,11 +186,15 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
         automaticFallbackButton.state = model.allowAutomaticSystemVoiceFallback ? .on : .off
         onlineFallbackButton.state = model.allowOnlineFallback ? .on : .off
         footnotesButton.state = model.narratesFootnotes ? .on : .off
+        silenceTrimPopup.selectItem(at: SilenceTrim.allCases.firstIndex(of: model.silenceTrim) ?? 0)
         lowQualityButton.state = model.showLowQuality ? .on : .off
     }
 
     @objc private func automaticFallbackChanged() { model.allowAutomaticSystemVoiceFallback = automaticFallbackButton.state == .on }
     @objc private func footnotesChanged() { model.narratesFootnotes = footnotesButton.state == .on }
+    @objc private func silenceTrimChanged() {
+        model.silenceTrim = SilenceTrim.allCases[silenceTrimPopup.indexOfSelectedItem]
+    }
     @objc private func onlineFallbackChanged() { model.allowOnlineFallback = onlineFallbackButton.state == .on }
     @objc private func lowQualityChanged() {
         let show = lowQualityButton.state == .on

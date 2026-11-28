@@ -9,6 +9,11 @@ extension AppSettings {
         get { speechPreferences.narratesFootnotes }
         set { speechPreferences.narratesFootnotes = newValue }
     }
+    var silenceTrim: SilenceTrim {
+        get { speechPreferences.silenceTrim }
+        set { speechPreferences.silenceTrim = newValue }
+    }
+
     var allowAutomaticSystemVoiceFallback: Bool {
         get { speechPreferences.allowAutomaticSystemVoiceFallback }
         set { speechPreferences.allowAutomaticSystemVoiceFallback = newValue }

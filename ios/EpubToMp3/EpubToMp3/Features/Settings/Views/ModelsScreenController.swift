@@ -61,6 +61,7 @@ final class ModelsScreenController: UITableViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Model")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Narration")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "SilenceTrim")
         tableView.accessibilityIdentifier = "models.table"
         model.objectWillChange
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
@@ -92,7 +93,7 @@ final class ModelsScreenController: UITableViewController {
     /// Section 0 of the root holds the fallback switches, the quality filter and the
     /// language list entry; one section with the voice for each language follows. On the language page
     /// section 0 holds the Automatic row and the voice groups follow.
-    private enum NarrationRow: Int, CaseIterable { case automaticSystemFallback, onlineFallback, footnotes, showLowQuality, languages }
+    private enum NarrationRow: Int, CaseIterable { case automaticSystemFallback, onlineFallback, footnotes, silenceTrim, showLowQuality, languages }
 
     override func numberOfSections(in tableView: UITableView) -> Int { onlyLanguage == nil ? 2 : groups.count + 1 }
 
@@ -225,6 +226,11 @@ final class ModelsScreenController: UITableViewController {
                            isOn: model.narratesFootnotes, accessibilityIdentifier: "settings.tts.footnoteNarration")
             cell.onValueChanged = { [weak self] reads in self?.model.narratesFootnotes = reads }
             return cell
+        case .silenceTrim:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SilenceTrim", for: indexPath)
+            SilenceTrimControl.configure(cell, level: model.silenceTrim,
+                                         accessibilityIdentifier: "settings.tts.silenceTrim")
+            return cell
         case .showLowQuality:
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
             cell.configure(title: L10n.string("models.showLowQuality"),
@@ -249,6 +255,13 @@ final class ModelsScreenController: UITableViewController {
 
     // MARK: actions
 
+    private func chooseSilenceTrim(at indexPath: IndexPath) {
+        present(SilenceTrimControl.picker(from: tableView, at: indexPath) { [weak self] level in
+            self?.model.silenceTrim = level
+            self?.tableView.reloadRows(at: [indexPath], with: .none)
+        }, animated: true)
+    }
+
     private func showLanguages() {
         let list = ModelsLanguagesScreenController(languages: model.catalogLanguages) { [weak self] tag in
             self?.showLanguage(tag)
@@ -266,6 +279,7 @@ final class ModelsScreenController: UITableViewController {
         if indexPath.section == 0 {
             if let onlyLanguage { model.clearChoice(in: onlyLanguage) }
             else if NarrationRow(rawValue: indexPath.row) == .languages { showLanguages() }
+            else if NarrationRow(rawValue: indexPath.row) == .silenceTrim { chooseSilenceTrim(at: indexPath) }
             return
         }
         if onlyLanguage == nil { return showLanguage(languageItems[indexPath.row].language) }

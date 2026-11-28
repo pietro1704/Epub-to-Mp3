@@ -79,6 +79,8 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         }
         form.engine.target = self
         form.engine.action = #selector(engineChanged)
+        form.silenceTrim.target = self
+        form.silenceTrim.action = #selector(silenceTrimChanged)
         for button in [form.secondary, form.clearCache, form.forceReprocess, form.maxPerformance] {
             button.target = self
             button.action = #selector(optionsChanged)
@@ -293,6 +295,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         viewModel.clearCache = false
         viewModel.forceReprocess = false
         viewModel.maxPerformance = false
+        viewModel.silenceTrimOverride = nil
         updatePreferences()
         form.voice.stringValue = ""
         form.language.stringValue = ""
@@ -333,6 +336,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
             ([L10n.string("convert.completed")] + snapshot.playableChapters.map(\.displayTitle)).joined(separator: "\n")
         } ?? ""
         form.revealResult.isHidden = resultDirectory == nil
+        form.silenceTrim.selectItem(at: SilenceTrim.allCases.firstIndex(of: viewModel.silenceTrim) ?? 0)
         for label in [form.status, form.failure, form.result] { label.isHidden = label.stringValue.isEmpty }
     }
 
@@ -367,6 +371,11 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
             viewModel.engine = TtsSelection.selectableEngines[form.engine.indexOfSelectedItem - 1]
         }
         viewModel.allowSecondary = false
+        refresh()
+    }
+
+    @objc private func silenceTrimChanged() {
+        viewModel.silenceTrimOverride = SilenceTrim.allCases[form.silenceTrim.indexOfSelectedItem]
         refresh()
     }
 

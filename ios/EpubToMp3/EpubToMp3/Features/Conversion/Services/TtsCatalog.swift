@@ -23,9 +23,11 @@ struct TtsCatalog: Sendable {
             captured.session = TtsSessionSelection(provider: descriptor.provider, runtime: descriptor.runtime, modelID: nil, modelRevision: nil, voice: current.voice)
             return captured
         }
-        return TtsPreferences(primary: selection(preferences.primary), secondary: preferences.secondary.map(selection),
-            allowOnlineFallback: preferences.allowOnlineFallback, policyVersion: preferences.policyVersion,
-            footnoteNarration: preferences.footnoteNarration)
+        // Only the voices are captured; every other choice travels unchanged.
+        var captured = preferences
+        captured.primary = selection(preferences.primary)
+        captured.secondary = preferences.secondary.map(selection)
+        return captured
     }
 
     struct Model: Sendable {
