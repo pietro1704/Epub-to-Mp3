@@ -246,6 +246,8 @@ final class MacReaderTextPresentation {
         chapterTitleLabel.stringValue = chapter.name ?? ""
 
         composition.setPageIndicatorShown(!chapter.isImageOnly && settings.readerLayout == .paginated && settings.readerShowPageNumbers)
+        // Like the iPhone, pages have no scroll bar. Set before the text is measured: a bar can take width.
+        contentScrollView.hasVerticalScroller = settings.readerLayout == .scrolling
         view.layoutSubtreeIfNeeded()
         pageIndicator.textColor = settings.readerColors.foreground
 
