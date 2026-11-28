@@ -28,6 +28,12 @@ final class MacReaderLoadingPresentation {
         loadingCoverView.layer?.cornerRadius = 12
         loadingCoverView.layer?.masksToBounds = true
         loadingCoverView.translatesAutoresizingMaskIntoConstraints = false
+        // The artwork's pixel size must not drive layout: at the default priority a
+        // large cover forces the hidden overlay, and with it the window, to grow.
+        for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+            loadingCoverView.setContentCompressionResistancePriority(.defaultLow, for: axis)
+            loadingCoverView.setContentHuggingPriority(.defaultLow, for: axis)
+        }
 
         loadingSpinner.style = .spinning
         loadingSpinner.controlSize = .regular
