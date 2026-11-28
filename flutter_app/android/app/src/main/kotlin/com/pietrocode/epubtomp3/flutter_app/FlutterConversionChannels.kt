@@ -135,6 +135,28 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                         }
                     }
                 }
+                "libraryShelf" -> {
+                    if (!MainActivity.converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val request = call.argument<String>("request")
+                        if (request.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "request is required", null)
+                        } else {
+                            runQuery(result) {
+                                try {
+                                    val native = nativeLibraryShelf(request)
+                                    runOnUiThread {
+                                        if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                        else result.success(native)
+                                    }
+                                } catch (error: Throwable) {
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
+                            }
+                        }
+                    }
+                }
                 "chapterNames", "filenameCover" -> {
                     if (!MainActivity.converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
