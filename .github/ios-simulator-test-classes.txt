@@ -54,5 +54,6 @@ ReaderViewportConfigurationTests
 SettingsStorageActionTests
 TocDownloadRefreshTests
 TocScreenControllerTests
+UITestDeviceSafetyTests
 VoiceModelSettingsNavigationTests
 WCAGContrastTests

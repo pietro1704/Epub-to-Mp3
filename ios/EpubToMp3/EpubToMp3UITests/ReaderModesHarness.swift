@@ -277,3 +277,14 @@ final class ReaderModesHarness {
         )
     }
 }
+
+extension XCTestCase {
+    /// For tests that clear reading progress while using real books: on a physical device that progress belongs to
+    /// the listener, so they only run on a Simulator (`UITestDeviceSafetyTests` enforces the call).
+    @MainActor
+    func requireSimulator() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Clears real reading progress: runs only on a Simulator.")
+        #endif
+    }
+}

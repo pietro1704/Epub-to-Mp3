@@ -15,6 +15,7 @@ final class RealBookReaderUITests: XCTestCase {
     }
 
     private func verifyReader(bookID: String, smallText: Bool = false) throws {
+        try requireSimulator()
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(bundleIdentifier: "com.pietrocode.epubtomp3")

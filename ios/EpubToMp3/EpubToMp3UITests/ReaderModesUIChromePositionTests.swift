@@ -151,6 +151,7 @@ extension ReaderModesUITests {
     }
 
     func testNativeLOTRDoesNotMoveBackwardAfterInterruptedChromeToggles() throws {
+        try requireSimulator()
         let app = launchNativeLOTR()
         let nativeBook = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile."))
