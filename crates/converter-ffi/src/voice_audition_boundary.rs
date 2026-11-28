@@ -12,45 +12,15 @@ pub unsafe extern "C" fn converter_voice_audition_v1(
         clear_last_error();
         let result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
-                let options: EmbeddedConversionOptionsV1 =
-                    serde_json::from_str(&c_string(options_json, "audition options")?)
-                        .map_err(|error| error.to_string())?;
-                if options.contract_version != Some(2)
-                    || options
-                        .tts_preferences
-                        .as_ref()
-                        .is_none_or(|preferences| preferences.primary.session.is_none())
-                {
-                    return Err("Audition requires version-2 captured voice identity".into());
-                }
-                options.validate_contract()?;
-                let text = c_string(text, "audition text")?;
-                if text.trim().is_empty() || text.chars().count() > 300 {
-                    return Err("Audition requires 1–300 characters".into());
-                }
-                let output = std::path::PathBuf::from(c_string(output, "audition output")?);
-                if !output.is_absolute()
-                    || output.extension().and_then(|value| value.to_str()) != Some("mp3")
-                    || std::fs::symlink_metadata(&output).is_ok()
-                {
-                    return Err("Audition requires a new absolute MP3 output path".into());
-                }
                 let control = control
                     .as_ref()
                     .ok_or("Audition requires an independent cancellation control")?;
-                let token = control.control.cancellation_token();
-                if token.is_cancelled() {
-                    return Err("Audition cancelled".into());
-                }
-                // Swift cooperative workers have small stacks. Match the conversion
-                // boundary's stack budget for embedded eSpeak/ONNX inference.
-                std::thread::Builder::new()
-                    .name("converter-ffi-audition".into())
-                    .stack_size(8 * 1024 * 1024)
-                    .spawn(move || synthesize_audition(options, &text, &output, &token))
-                    .map_err(|error| format!("Failed to start audition thread: {error}"))?
-                    .join()
-                    .map_err(|_| "Voice audition panicked".to_owned())?
+                voice_audition_checked(
+                    &c_string(options_json, "audition options")?,
+                    &c_string(text, "audition text")?,
+                    &c_string(output, "audition output")?,
+                    &control.control,
+                )
             }));
         match result {
             Ok(Ok(())) => true,
@@ -64,6 +34,50 @@ pub unsafe extern "C" fn converter_voice_audition_v1(
             }
         }
     })
+}
+
+/// Validates and renders one audition. Shared by the C ABI and the Android JNI entrypoint.
+pub(crate) fn voice_audition_checked(
+    options_json: &str,
+    text: &str,
+    output: &str,
+    control: &ConversionControl,
+) -> Result<(), String> {
+    let options: EmbeddedConversionOptionsV1 =
+        serde_json::from_str(options_json).map_err(|error| error.to_string())?;
+    if options.contract_version != Some(2)
+        || options
+            .tts_preferences
+            .as_ref()
+            .is_none_or(|preferences| preferences.primary.session.is_none())
+    {
+        return Err("Audition requires version-2 captured voice identity".into());
+    }
+    options.validate_contract()?;
+    let text = text.to_owned();
+    if text.trim().is_empty() || text.chars().count() > 300 {
+        return Err("Audition requires 1–300 characters".into());
+    }
+    let output = std::path::PathBuf::from(output);
+    if !output.is_absolute()
+        || output.extension().and_then(|value| value.to_str()) != Some("mp3")
+        || std::fs::symlink_metadata(&output).is_ok()
+    {
+        return Err("Audition requires a new absolute MP3 output path".into());
+    }
+    let token = control.cancellation_token();
+    if token.is_cancelled() {
+        return Err("Audition cancelled".into());
+    }
+    // Swift cooperative workers have small stacks. Match the conversion
+    // boundary's stack budget for embedded eSpeak/ONNX inference.
+    std::thread::Builder::new()
+        .name("converter-ffi-audition".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || synthesize_audition(options, &text, &output, &token))
+        .map_err(|error| format!("Failed to start audition thread: {error}"))?
+        .join()
+        .map_err(|_| "Voice audition panicked".to_owned())?
 }
 
 /// Edge is online, so its sample runs only with the captured online consent.
@@ -233,6 +247,10 @@ mod tests {
     }
 
     fn edge_options(consent: bool) -> EmbeddedConversionOptionsV1 {
+        serde_json::from_value(edge_options_value(consent)).unwrap()
+    }
+
+    fn edge_options_value(consent: bool) -> serde_json::Value {
         let mut primary = converter_core::tts_preferences::TtsSelection {
             engine: "edge".into(),
             model_id: None,
@@ -241,7 +259,7 @@ mod tests {
         };
         primary.session =
             Some(converter_core::tts_session::SessionSelection::from_legacy(&primary).unwrap());
-        serde_json::from_value(serde_json::json!({
+        serde_json::json!({
             "contract_version": 2,
             "language": "pt",
             "tts_preferences": converter_core::tts_preferences::TtsPreferences {
@@ -250,8 +268,7 @@ mod tests {
                 allow_online_fallback: consent,
                 ..Default::default()
             },
-        }))
-        .unwrap()
+        })
     }
 
     #[test]
@@ -280,5 +297,26 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("[[edge_consent_required_v1"), "{error}");
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn shared_audition_check_refuses_a_cancelled_control_before_rendering() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("preview.mp3");
+        let control = ConversionControl::new();
+        control.cancel();
+        let error = voice_audition_checked(
+            &edge_options_json(),
+            "Uma amostra.",
+            output.to_str().unwrap(),
+            &control,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Audition cancelled");
+        assert!(!output.exists());
+    }
+
+    fn edge_options_json() -> String {
+        edge_options_value(true).to_string()
     }
 }
