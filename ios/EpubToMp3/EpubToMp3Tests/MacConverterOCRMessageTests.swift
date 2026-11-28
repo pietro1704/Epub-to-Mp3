@@ -37,6 +37,15 @@ final class MacConverterOCRMessageTests: XCTestCase {
         }
     }
 
+    func testScannedPDFWithReadableTextIsRecognizedAndConverted() async throws {
+        try await convert(pages: [nil, nil], scanned: [
+            "The lighthouse keeper counted seven grey boats before breakfast.",
+            "In the evening the harbour was quiet and every window had a light.",
+        ]) { _, session, _ in
+            XCTAssertEqual(session.phase, .completed, session.errorMessage ?? "")
+        }
+    }
+
     private func poll(_ condition: () -> Bool) async {
         for _ in 0..<40 where !condition() { try? await Task.sleep(nanoseconds: 50_000_000) }
     }
@@ -48,6 +57,7 @@ final class MacConverterOCRMessageTests: XCTestCase {
 
     private func convert(
         pages: [String?],
+        scanned: [String] = [],
         inspect: (MacConvertScreenController, ManualConversionSession, NSWindow) async throws -> Void
     ) async throws {
         let suite = "MacConverterOCR.\(UUID().uuidString)"
@@ -55,7 +65,11 @@ final class MacConverterOCRMessageTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = root.appendingPathComponent("Synthetic pages.pdf")
-        try Self.writePDF(pages: pages, to: source)
+        if scanned.isEmpty {
+            try Self.writePDF(pages: pages, to: source)
+        } else {
+            try ScannedPdfFixture.write(scanned.map { .image($0) }, to: source)
+        }
         let library = LibraryStore(defaults: defaults, importDirectory: root.appendingPathComponent("library"))
         let book = try library.importBook(from: source)
         let settings = AppSettings(defaults: defaults)

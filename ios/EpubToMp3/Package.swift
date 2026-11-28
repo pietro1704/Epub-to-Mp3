@@ -110,6 +110,7 @@ let production = [
     "Features/Conversion/Services/ConversionEventDelivery.swift",
     "Features/Conversion/Services/ConversionCallbackBoundary.swift",
     "Features/Conversion/Services/RustConversionCoordinator.swift",
+    "Features/Conversion/Services/PdfOcrPreparer.swift",
     "Features/Conversion/Services/RustConversionEvents.swift",
     "Features/Conversion/Services/RustConversionResult.swift",
     "Features/Conversion/Models/JobSnapshot.swift",
