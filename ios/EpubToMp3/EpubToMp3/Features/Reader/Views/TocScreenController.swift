@@ -24,7 +24,8 @@ final class TocScreenController: UITableViewController {
     private var downloadProgressTask: Task<Void, Never>?
     private var downloadRefreshTask: Task<Void, Never>?
     private var isVisible = false
-    private let sourceRows: [ReaderTocRow]?
+    private var sourceRows: [ReaderTocRow]?
+    var renaming: ContentsRenaming?
     private let downloadBookID: String?
     private let canSelectChapter: (Int) -> Bool
 
@@ -177,6 +178,56 @@ final class TocScreenController: UITableViewController {
         guard let chapter = selectionTarget(at: indexPath) else { return }
         onJump(chapter)
         dismiss(animated: true)
+    }
+
+    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath,
+                            point: CGPoint) -> UIContextMenuConfiguration? {
+        let actions = renameActions(at: indexPath.row)
+        guard !actions.isEmpty else { return nil }
+        return UIContextMenuConfiguration(actionProvider: { _ in UIMenu(children: actions) })
+    }
+
+    func renameActions(at position: Int) -> [UIAction] {
+        (renaming?.actions(position) ?? []).map { action in
+            UIAction(title: action.title,
+                     image: UIImage(systemName: action.kind == .rename ? "pencil" : "arrow.uturn.backward")) { [weak self] _ in
+                switch action.kind {
+                case .rename: self?.askForName(at: position)
+                case .restore: self?.applyName(nil, at: position)
+                }
+            }
+        }
+    }
+
+    private func askForName(at position: Int) {
+        guard let current = sourceRows?[position].title else { return }
+        let alert = UIAlertController(title: L10n.string("toc.rename"), message: nil, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.text = current
+            field.clearButtonMode = .whileEditing
+            field.autocapitalizationType = .sentences
+            field.accessibilityIdentifier = "reader.toc.rename.field"
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("toc.renameSave"), style: .default) { [weak self, weak alert] _ in
+            // A blank name restores the automatic one; an unchanged one is not an override.
+            guard let name = alert?.textFields?.first?.text, name != current else { return }
+            self?.applyName(name, at: position)
+        })
+        present(alert, animated: true)
+    }
+
+    private func applyName(_ name: String?, at position: Int) {
+        do {
+            guard let rows = try renaming?.apply(position, name) else { return }
+            sourceRows = rows
+            tableView.reloadData()
+        } catch {
+            let alert = UIAlertController(title: L10n.string("toc.rename"), message: L10n.string("toc.renameFailed"),
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L10n.string("player.close"), style: .default))
+            present(alert, animated: true)
+        }
     }
 
     private func selectionTarget(at indexPath: IndexPath) -> Int? {

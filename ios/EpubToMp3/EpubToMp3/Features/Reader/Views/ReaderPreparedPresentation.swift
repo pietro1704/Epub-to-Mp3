@@ -219,7 +219,7 @@ final class ReaderPreparedPresentation {
         document.fulltext = payload
         document.activePreparedChapter = nil
         LocalFulltextCache.recordWarmOpen(bookId: document.book.id)
-        send(.publishTitles(payload))
+        send(.publishTitles(document.fulltext ?? payload))
         send(.catalogReadyForNavigation)
         if let journeyID = document.openJourney.activeBookOpenJourneyID {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
@@ -255,7 +255,7 @@ final class ReaderPreparedPresentation {
         }
         document.fulltext = payload
         LocalFulltextCache.recordWarmOpen(bookId: document.book.id)
-        send(.publishTitles(payload))
+        send(.publishTitles(document.fulltext ?? payload))
         if !document.hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: document.book.id) {
             document.selectedChapter = entry.chapterIndex
         } else if !document.hasRestoredInitialPosition, document.selectedChapter == 0 {

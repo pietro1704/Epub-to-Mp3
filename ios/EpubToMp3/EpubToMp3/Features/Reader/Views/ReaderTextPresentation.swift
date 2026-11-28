@@ -178,7 +178,7 @@ final class ReaderTextPresentation {
             ]
         )
         document.fulltext = payload
-        publishTitles(payload)
+        publishTitles(document.fulltext ?? payload)
         showChapter(0)
     }
 

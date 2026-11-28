@@ -680,3 +680,7 @@
 "library.facts.minutes" = "%d min";
 "library.facts.added" = "Adicionado %@";
 "library.facts.lastRead" = "Lido %@";
+"toc.rename" = "Renomear capítulo";
+"toc.restoreName" = "Restaurar nome automático";
+"toc.renameSave" = "Salvar";
+"toc.renameFailed" = "Não foi possível salvar o nome do capítulo. Use uma única linha com até 200 caracteres.";

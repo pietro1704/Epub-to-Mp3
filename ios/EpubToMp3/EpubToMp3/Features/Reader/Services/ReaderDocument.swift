@@ -5,7 +5,15 @@ import Foundation
 /// owns the lifetime of source access and cache arrivals.
 @MainActor
 class ReaderDocument {
-    var fulltext: EbookFulltext?
+    var fulltext: EbookFulltext? {
+        get { namedFulltext }
+        set { namedFulltext = newValue?.applyingChapterNames(chapterNames) }
+    }
+    private var namedFulltext: EbookFulltext?
+    /// The open book's chapter name overrides.
+    var chapterNames: [Int: String] = [:] {
+        didSet { namedFulltext = namedFulltext?.applyingChapterNames(chapterNames) }
+    }
     var activePreparedChapter: PreparedReaderChapterStore.Snapshot?
     var lastPreparedChapterOrdinal: Int?
     var registeredFontURLs: [URL] = []

@@ -11,6 +11,8 @@ struct ReaderTocRow: Equatable {
     /// that doesn't resolve to a parsed chapter (e.g. an endnote container
     /// dropped as zero-length).
     let chapterIndex: Int?
+    /// True for the first row that leads to its chapter, the one that carries its name.
+    var opensChapter = true
 }
 
 enum ReaderTocFlattener {
@@ -20,7 +22,17 @@ enum ReaderTocFlattener {
     /// (or the book has none).
     static func rows(toc: [EbookFulltext.TocEntry]?, chapters: [EbookFulltext.Chapter]) -> [ReaderTocRow] {
         if let toc, !toc.isEmpty {
-            return flatten(toc, level: 0)
+            var opened: Set<Int> = []
+            return flatten(toc, level: 0).map { row in
+                guard let index = row.chapterIndex, chapters.indices.contains(index),
+                      opened.insert(index).inserted else {
+                    var row = row
+                    row.opensChapter = false
+                    return row
+                }
+                guard let name = chapters[index].customName else { return row }
+                return ReaderTocRow(title: name, level: row.level, chapterIndex: index)
+            }
         }
         return chapters.enumerated().map { offset, chapter in
             ReaderTocRow(title: chapter.displayTitle, level: 0, chapterIndex: offset)

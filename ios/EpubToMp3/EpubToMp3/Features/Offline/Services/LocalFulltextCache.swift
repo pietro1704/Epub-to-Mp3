@@ -93,6 +93,10 @@ enum LocalFulltextCache {
     /// Returns prepared fulltext when it is available locally. A corrupt
     /// payload falls through to the regular parser; it is never fatal.
     static func read(bookId: String) -> EbookFulltext? {
+        readStored(bookId: bookId)?.applyingChapterNames(ChapterNameStore.shared.names(bookID: bookId))
+    }
+
+    private static func readStored(bookId: String) -> EbookFulltext? {
         guard !Task.isCancelled else { return nil }
         if let payload = inMemoryPayload(bookId: bookId) {
             return payload

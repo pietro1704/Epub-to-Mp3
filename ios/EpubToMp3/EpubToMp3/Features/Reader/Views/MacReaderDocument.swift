@@ -8,7 +8,9 @@ import Combine
 final class MacReaderDocument: ReaderDocument {
     var loadGeneration: UUID = UUID()
     var presentationGeneration: UUID = UUID()
-    var currentBookId: String?
+    var currentBookId: String? {
+        didSet { chapterNames = currentBookId.map { ChapterNameStore.shared.names(bookID: $0) } ?? [:] }
+    }
     var isRestoringInitialPosition: Bool = false
     var pendingAppearanceRefresh: Bool = false
 

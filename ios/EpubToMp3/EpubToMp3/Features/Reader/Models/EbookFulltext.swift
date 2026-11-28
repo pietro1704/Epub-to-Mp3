@@ -91,6 +91,14 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         /// payloads) for every other format. Used to render an image page
         /// instead of text, and to disable TTS conversion for comics.
         let contentKind: String?
+        /// The reader's own name for this chapter. Left out of the coding keys, so it is
+        /// never written into prepared book text.
+        var customName: String? = nil
+
+        private enum CodingKeys: String, CodingKey {
+            case index, name, sourcePath, text, speechText, html, css, charCount, segments
+            case resources, footnotes, contentKind
+        }
 
         var isImageOnly: Bool { contentKind == "images" }
 
@@ -144,6 +152,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         var zeroBasedEpubIndex: Int { max(0, index - 1) }
 
         var displayTitle: String {
+            if let customName { return customName }
             if let heading = Self.firstHTMLHeading(in: html) {
                 if let name, !name.isEmpty, !Self.isGeneratedChapterLabel(name) {
                     return name
@@ -164,6 +173,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         }
 
         var tocTitle: String? {
+            if let customName { return customName }
             let title = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             return hasGeneratedName && Self.isGeneratedChapterLabel(title) ? nil : title
         }
@@ -317,6 +327,18 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         self.bookAuthor = bookAuthor
         self.chapters = chapters
         self.toc = toc
+    }
+
+    /// The book with the reader's chapter names; chapters without one keep their automatic name.
+    func applyingChapterNames(_ names: [Int: String]) -> EbookFulltext {
+        guard !names.isEmpty || chapters.contains(where: { $0.customName != nil }) else { return self }
+        let renamed = chapters.map { chapter in
+            var chapter = chapter
+            chapter.customName = names[chapter.index]
+            return chapter
+        }
+        return EbookFulltext(jobId: jobId, bookTitle: bookTitle, bookAuthor: bookAuthor,
+                             chapters: renamed, toc: toc)
     }
 }
 
