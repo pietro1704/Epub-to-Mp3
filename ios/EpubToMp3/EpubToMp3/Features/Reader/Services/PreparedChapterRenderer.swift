@@ -30,8 +30,9 @@ struct PreparedChapterRendererStyle: Equatable, Sendable {
 
 private struct PreparedChapterRendererSignature: Encodable {
     // v5 added native hyphenation/word wrapping for justified text; v6 maps
-    // absolute CSS lengths to native points instead of importer pixels.
-    let version = 6
+    // absolute CSS lengths to native points instead of importer pixels; v7
+    // keeps headings larger than the body under a chosen font size.
+    let version = 7
     let chapter: EbookFulltext.Chapter
     let boldOverride: Bool
     let customColors: [Double]

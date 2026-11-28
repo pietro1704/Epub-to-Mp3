@@ -63,15 +63,18 @@ enum EpubFontPresentation {
         let targetFamily = overrideFamily && textSettings.fontFamily != .original
             ? ReaderFontCatalog.font(for: textSettings.fontFamily, size: targetSize) : nil
         let colors = textSettings.colors
+        // Headings keep a hierarchy over the chosen body size (Flutter's cappedHeadingSize).
+        let headingSize = min(targetSize + 6, targetSize * 1.5)
 
         attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
             let baseFont = (attrs[.font] as? PlatformFont)
                 ?? serifFallbackFont(ofSize: targetSize)
+            let isHeadingRun = bodyFontSize > 0 && baseFont.pointSize > bodyFontSize + 0.5
             let mutatedFont = mutateFont(
                 baseFont,
                 family: targetFamily,
-                size: overrideSize ? targetSize : nil,
+                size: overrideSize ? (isHeadingRun ? headingSize : targetSize) : nil,
                 forceBold: boldAll,
                 stripItalic: suppressItalic
             )
@@ -123,7 +126,6 @@ enum EpubFontPresentation {
             // (fixing "o texto todo ta centralizado"). Body paragraphs at
             // or below the body size always take the user's alignment.
             let epubAlignment = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment
-            let isHeadingRun = bodyFontSize > 0 && baseFont.pointSize > bodyFontSize + 0.5
             if textSettings.overridesAlignment {
                 if (epubAlignment == .center || epubAlignment == .right), isHeadingRun {
                     mutable.alignment = epubAlignment!
