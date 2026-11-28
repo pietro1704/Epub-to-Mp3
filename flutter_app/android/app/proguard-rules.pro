@@ -13,3 +13,6 @@
     public boolean onNativeAudioChunk(java.lang.String, int, int, java.lang.String);
     native <methods>;
 }
+
+# The minified androidTest APK (R8 proof of the ML Kit OCR) references compile-only annotations.
+-dontwarn com.google.errorprone.annotations.**
