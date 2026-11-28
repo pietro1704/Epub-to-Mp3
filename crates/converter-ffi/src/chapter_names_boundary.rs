@@ -90,3 +90,31 @@ pub unsafe extern "C" fn converter_filename_cover_json_v1(file_name: *const c_ch
         },
     )
 }
+
+/// Returns `{"pages": [n, ...]}`: the 1-based pages of a PDF that draw content but have no
+/// text layer, which a client OCR reads. Free the result with `converter_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn converter_pdf_image_pages_json_v1(path: *const c_char) -> *mut c_char {
+    ffi_guard(
+        "converter_pdf_image_pages_json_v1",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            let path = match c_string(path, "path") {
+                Ok(value) => value,
+                Err(error) => return fail(error),
+            };
+            let result = std::fs::read(&path)
+                .map_err(|error| error.to_string())
+                .and_then(|source| {
+                    converter_core::ingestion::pdf_text::PdfTextIngestion::image_pages(
+                        Path::new(&path),
+                        &source,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .map(|pages| json!({ "pages": pages }).to_string());
+            json_result(result)
+        },
+    )
+}

@@ -19,8 +19,31 @@ pub trait PageOcr {
     fn recognize(&self, page_number: u32) -> Option<String>;
 }
 
+/// Records the pages the ingestion would hand to OCR, recognising nothing.
+struct RecordPages(std::cell::RefCell<Vec<u32>>);
+impl PageOcr for RecordPages {
+    fn recognize(&self, page_number: u32) -> Option<String> {
+        self.0.borrow_mut().push(page_number);
+        None
+    }
+}
+
 pub struct PdfTextIngestion;
 impl PdfTextIngestion {
+    /// The 1-based numbers of the pages that draw content but have no text layer: the pages a
+    /// client OCR would have to read. A scan with no text at all still lists its pages.
+    pub fn image_pages(path: &Path, source: &[u8]) -> Result<Vec<u32>, IngestionError> {
+        let recorder = RecordPages(Default::default());
+        match Self::from_bytes_with_ocr(path, source, &|| false, Some(&recorder)) {
+            Ok(_) => {}
+            // "No page has selectable text" is the very case this lists the pages for.
+            Err(IngestionError::InvalidInput { message })
+                if message.contains("OCR is required") => {}
+            Err(error) => return Err(error),
+        }
+        Ok(recorder.0.into_inner())
+    }
+
     pub fn from_bytes(path: &Path, source: &[u8]) -> Result<Book, IngestionError> {
         Self::from_bytes_with_cancel(path, source, &|| false)
     }

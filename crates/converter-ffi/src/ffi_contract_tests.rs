@@ -19,6 +19,7 @@ include!("ffi_tests/installed_piper_session_tests.rs");
 include!("ffi_tests/panic_boundary_contract_tests.rs");
 include!("ffi_tests/library_metadata_contract_tests.rs");
 include!("ffi_tests/chapter_names_contract_tests.rs");
+include!("ffi_tests/pdf_ocr_pages_contract_tests.rs");
 include!("ffi_tests/export_contract_tests.rs");
 include!("ffi_tests/chapter_footnotes_contract_tests.rs");
 include!("ffi_tests/toc_contract_tests.rs");
